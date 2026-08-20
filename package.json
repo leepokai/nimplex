@@ -1,0 +1,31 @@
+{
+  "name": "loopbox",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "license": "Apache-2.0",
+  "packageManager": "pnpm@10.30.3",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "turbo dev",
+    "check": "turbo check",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "test": "vitest run",
+    "db:generate": "pnpm --filter @loopbox/db generate",
+    "db:migrate": "pnpm --filter @loopbox/db migrate",
+    "db:seed": "pnpm --filter @loopbox/db seed",
+    "compose:up": "docker compose up -d",
+    "compose:down": "docker compose down"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.9",
+    "@types/node": "^26.2.0",
+    "tsx": "^4.23.12",
+    "turbo": "^2.10.11",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.11"
+  }
+}

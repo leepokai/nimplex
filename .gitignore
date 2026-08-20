@@ -1,0 +1,9 @@
+# Scraped competitor research — do not commit
+docs/competitor-analyze/
+
+node_modules/
+dist/
+.turbo/
+coverage/
+.env
+*.log
