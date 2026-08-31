@@ -1,0 +1,652 @@
+/* ==========================================================================
+   nimplex — 純黑白。
+   沒有任何彩色：強調靠「填滿 vs 描邊」與「反轉」，不靠色相。
+   底層是一張淡格線，所有東西都坐在格子上。
+   ========================================================================== */
+
+:root {
+  --bg: #0a0a0a;
+  --text: #ffffff;
+  --text-2: rgba(255, 255, 255, 0.62);
+  --text-3: rgba(255, 255, 255, 0.4);
+  --text-4: rgba(255, 255, 255, 0.22);
+  /* 格線比邊框更淡：格線是氛圍，邊框是結構 */
+  --grid: rgba(255, 255, 255, 0.055);
+  --line: rgba(255, 255, 255, 0.13);
+  --line-2: rgba(255, 255, 255, 0.28);
+  --sans: "Geist", system-ui, -apple-system, sans-serif;
+  --mono: "Geist Mono", ui-monospace, SFMono-Regular, monospace;
+  --gut: 28px;
+  --maxw: 1180px;
+  --cell: 68px;
+  --r: 4px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  /* 全頁格線：整個設計的地板 */
+  background-image:
+    linear-gradient(to right, var(--grid) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid) 1px, transparent 1px);
+  background-size: var(--cell) var(--cell);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+h1,
+h2,
+h3 {
+  font-weight: 400;
+  letter-spacing: -0.025em;
+  margin: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+.wrap {
+  width: 100%;
+  max-width: var(--maxw);
+  margin-inline: auto;
+  padding-inline: var(--gut);
+}
+
+.sec {
+  padding-block: 110px;
+}
+
+.lede {
+  color: var(--text-2);
+  max-width: 62ch;
+  margin: 0;
+}
+
+.mono {
+  font-family: var(--mono);
+}
+
+/* ---------- nav ---------- */
+.nav {
+  position: fixed;
+  inset-inline: 0;
+  top: 0;
+  z-index: 60;
+  height: 62px;
+  background: rgba(10, 10, 10, 0.86);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--line);
+}
+.nav .wrap {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 26px;
+}
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 17px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+.nav-links {
+  display: flex;
+  gap: 22px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+.nav-links a:hover {
+  color: var(--text);
+}
+.spacer {
+  flex: 1;
+}
+
+/* ---------- buttons ---------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  padding: 12px 24px;
+  border-radius: var(--r);
+  border: 1px solid var(--text);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.btn-primary {
+  background: var(--text);
+  color: #000;
+}
+.btn-primary:hover {
+  background: rgba(255, 255, 255, 0.86);
+}
+.btn:not(.btn-primary):hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+.btn-sm {
+  padding: 7px 15px;
+  font-size: 13px;
+}
+
+/* ---------- 小零件：pill / chip ---------- */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-2);
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  padding: 4px 13px;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.chip {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--text-2);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r);
+  padding: 3px 9px;
+  white-space: nowrap;
+}
+/* 虛線 = 還沒接上。用線型區分，不用顏色 */
+.chip.off {
+  border-style: dashed;
+  color: var(--text-4);
+}
+
+/* ---------- preloader ---------- */
+.preloader {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: var(--bg);
+  display: flex;
+  align-items: flex-end;
+  pointer-events: none;
+}
+.boot {
+  padding: 26px var(--gut) 34px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 2.1;
+  color: var(--text-3);
+}
+.boot-bar {
+  color: var(--text);
+}
+
+/* ---------- hero ---------- */
+.hero {
+  position: relative;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  border-bottom: 1px solid var(--line);
+}
+.field {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.hero > .wrap {
+  position: relative;
+  padding-block: 120px 70px;
+  text-align: center;
+}
+.hero h1 {
+  font-size: clamp(2.4rem, 6.4vw, 4.7rem);
+  line-height: 1.06;
+  margin: 26px auto 0;
+  max-width: 16ch;
+}
+/* 第一行退到 62%、第二行留白 —— insforge 用顏色分層，這裡用明度 */
+.hero h1 .soft {
+  color: var(--text-2);
+}
+.hero-sub {
+  margin: 26px auto 0;
+  max-width: 54ch;
+  color: var(--text-2);
+  font-size: 16.5px;
+}
+.hero-form {
+  margin-top: 38px;
+  display: flex;
+  justify-content: center;
+}
+.join-note {
+  margin: 20px auto 0;
+  max-width: 56ch;
+  font-size: 13px;
+  color: var(--text-3);
+}
+
+/* ---------- 相容列 ---------- */
+.strip {
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.strip .wrap {
+  display: flex;
+  align-items: center;
+  gap: 26px;
+  flex-wrap: wrap;
+  padding-block: 22px;
+}
+.strip .label {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-3);
+}
+.strip .items {
+  display: flex;
+  gap: 28px;
+  flex-wrap: wrap;
+  font-family: var(--mono);
+  font-size: 13.5px;
+  color: var(--text-2);
+}
+
+/* ---------- 硬格線的功能格 ---------- */
+.head-c {
+  text-align: center;
+  margin-bottom: 56px;
+}
+.head-c h2 {
+  font-size: clamp(1.7rem, 3.6vw, 2.9rem);
+  line-height: 1.15;
+}
+.head-c .lede {
+  margin: 18px auto 0;
+}
+.grid-cells {
+  border: 1px solid var(--line);
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+}
+.cell {
+  padding: 40px 34px 44px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 250px;
+}
+.cell h3 {
+  font-size: 19px;
+}
+.cell p {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 14px;
+  flex: 1;
+}
+.cell .num {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--text-4);
+}
+/* 撞頂那一刻整段反轉：difference 混合模式一個屬性就把文字、線、背景一起翻過來 */
+/* z-index 蓋過 .nav(60)：撞頂時連頂欄一起反轉。
+   刻意不加 isolation，讓 difference 能跟底下的 nav 一起混合。 */
+.tl-flip {
+  position: absolute;
+  inset: 0;
+  z-index: 70;
+  background: #fff;
+  mix-blend-mode: difference;
+  pointer-events: none;
+}
+
+/* ---------- 橫向釘住的三插槽 ---------- */
+.slots-sec {
+  position: relative;
+  overflow: hidden;
+  border-bottom: 1px solid var(--line);
+}
+.slots-track {
+  display: flex;
+  flex-direction: column;
+}
+.slot-intro,
+.slot-card {
+  padding: 72px var(--gut);
+}
+.slot-intro h2 {
+  font-size: clamp(1.7rem, 3.4vw, 2.9rem);
+  line-height: 1.15;
+  margin-bottom: 20px;
+}
+.slot-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 34px;
+  border-top: 1px solid var(--line);
+}
+.slot-card .idx {
+  font-family: var(--mono);
+  font-size: clamp(3.4rem, 9vw, 7rem);
+  line-height: 1;
+  color: var(--text-4);
+  user-select: none;
+}
+.slot-card h3 {
+  font-size: 22px;
+  margin-bottom: 12px;
+}
+.slot-card p {
+  max-width: 42ch;
+  color: var(--text-2);
+  margin: 0;
+}
+@media (min-width: 1024px) {
+  .slots-track {
+    flex-direction: row;
+    height: 100dvh;
+    align-items: stretch;
+    width: max-content;
+    will-change: transform;
+  }
+  .slot-intro {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    width: 44vw;
+    flex-shrink: 0;
+    padding: 0 5vw;
+  }
+  .slot-card {
+    width: 54vw;
+    flex-shrink: 0;
+    border-top: 0;
+    border-left: 1px solid var(--line);
+    padding: 9vh 5vw;
+  }
+}
+
+/* ---------- CTA ---------- */
+.cta {
+  text-align: center;
+  padding-block: 120px 130px;
+}
+.cta h2 {
+  font-size: clamp(1.9rem, 4.6vw, 3.4rem);
+  line-height: 1.12;
+  max-width: 18ch;
+  margin-inline: auto;
+}
+.cta .lede {
+  margin: 22px auto 0;
+}
+
+/* ---------- waitlist ---------- */
+.waitlist {
+  width: 100%;
+  max-width: 460px;
+  text-align: center;
+}
+.waitlist-done {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 13.5px;
+  color: var(--text-2);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r);
+  padding: 12px 16px;
+  display: inline-block;
+}
+.waitlist-setup {
+  border: 1px dashed var(--line-2);
+  border-radius: var(--r);
+  padding: 18px 20px;
+  font-size: 13px;
+  color: var(--text-2);
+  line-height: 1.75;
+  text-align: left;
+}
+.waitlist-setup strong {
+  display: block;
+  color: var(--text);
+  font-weight: 500;
+  margin-bottom: 8px;
+}
+.waitlist-setup ol {
+  margin: 0;
+  padding-left: 18px;
+}
+.waitlist-setup code {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 1px 5px;
+}
+.waitlist-fallback {
+  display: inline-block;
+  margin-top: 10px;
+  font-size: 13px;
+  text-decoration: underline;
+}
+
+/* ---------- HUD ---------- */
+.hud {
+  position: fixed;
+  right: 18px;
+  bottom: 16px;
+  z-index: 50;
+  display: none;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  color: var(--text-4);
+  pointer-events: none;
+}
+@media (min-width: 1024px) {
+  .hud {
+    display: flex;
+  }
+}
+
+/* ---------- 行動選單 ---------- */
+.menu-toggle {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r);
+  padding: 4px 9px;
+  cursor: pointer;
+  margin-left: 10px;
+}
+.mobile-menu {
+  position: fixed;
+  inset: 0;
+  z-index: 55;
+  background: var(--bg);
+  padding: 96px var(--gut) 0;
+}
+.mobile-menu nav {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.mobile-menu a {
+  font-size: 26px;
+}
+.mobile-menu .idx {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text-4);
+  margin-right: 14px;
+}
+.mobile-menu .btn {
+  width: max-content;
+  margin-top: 12px;
+}
+@media (min-width: 900px) {
+  .menu-toggle,
+  .mobile-menu {
+    display: none;
+  }
+}
+@media (max-width: 899px) {
+  .nav-links {
+    display: none;
+  }
+}
+
+/* ---------- footer ---------- */
+footer {
+  border-top: 1px solid var(--line);
+}
+.foot {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  flex-wrap: wrap;
+  padding-block: 26px 34px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+.foot .brand {
+  font-family: var(--sans);
+  color: var(--text);
+}
+
+@media (max-width: 760px) {
+  :root {
+    --gut: 20px;
+    --cell: 48px;
+  }
+  .sec {
+    padding-block: 76px;
+  }
+}
+
+/* ---------- swap：釘住 + scrub，只有三行在換 ---------- */
+.swap-sec {
+  position: relative;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  border-bottom: 1px solid var(--line);
+}
+.swap {
+  display: grid;
+  gap: 34px;
+  align-items: start;
+}
+.swap-code {
+  font-family: var(--mono);
+  font-size: clamp(12px, 1.15vw, 14.5px);
+  line-height: 2.15;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 26px 22px;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+.swap-code .ln {
+  padding-left: 14px;
+  border-left: 1px solid transparent;
+}
+.swap-code .ln.dim {
+  color: var(--text-3);
+}
+/* 會變的那三行永遠有一道左標線：捲之前就看得出「只有這裡會動」 */
+.swap-code .swap-line {
+  border-left-color: var(--line-2);
+}
+.swap-code .key {
+  color: var(--text-3);
+}
+.swap-code .val {
+  color: var(--text);
+}
+.swap-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+.swap-steps li {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 8px 12px;
+  color: var(--text-4);
+  border-left: 1px solid var(--line);
+}
+.swap-steps li.on {
+  color: var(--text);
+  border-left-color: var(--text);
+}
+.swap-steps .n {
+  color: var(--text-4);
+}
+.swap-steps li.on .n {
+  color: var(--text-2);
+}
+.swap-cap {
+  margin: 30px auto 0;
+  max-width: 62ch;
+  text-align: center;
+  font-size: 13.5px;
+  color: var(--text-3);
+}
+@media (min-width: 1024px) {
+  .swap {
+    grid-template-columns: minmax(0, 1fr) 260px;
+    gap: 44px;
+  }
+}

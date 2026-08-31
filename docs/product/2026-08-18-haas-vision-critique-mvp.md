@@ -1,7 +1,7 @@
 # Harness as a Service — 願景、批判分析與 MVP 定位（2026-08-18）
 
-**性質**：本文件是 loopbox HaaS 方向的完整 spec 前身——記錄原始願景、整合既有研究批判、補足缺席的競品視角、深化 persona、收斂 MVP 形態。
-**前置文件**：`~/mycode/claude-daily-tasks/personal/product/harness-as-a-service.md`（主 memo）、`research/harness-as-a-service-report-2026-08-14.md`、`research/harness-as-a-service-critique-2026-08-17.md`、`research/haas-round2-competitors-persona-2026-08-17.md`、`loopbox/docs/competitor-analyze/*`
+**性質**：本文件是 nimplex HaaS 方向的完整 spec 前身——記錄原始願景、整合既有研究批判、補足缺席的競品視角、深化 persona、收斂 MVP 形態。
+**前置文件**：`~/mycode/claude-daily-tasks/personal/product/harness-as-a-service.md`（主 memo）、`research/harness-as-a-service-report-2026-08-14.md`、`research/harness-as-a-service-critique-2026-08-17.md`、`research/haas-round2-competitors-persona-2026-08-17.md`、`nimplex/docs/competitor-analyze/*`
 **本輪新研究（全文歸檔於 `docs/competitor-analyze/haas-api/`）**：`research-firstparty-runtimes.md`（AWS/Google/Azure/Cloudflare）、`research-startup-oss-layer.md`（Omnara/LangGraph/Letta/Runloop/Blaxel 等）、`research-glue-layer.md`（Arcade/Nango/metering/agent security）、`research-persona-subsegments.md`（P3 五個子區隔實名證據）
 **狀態**：分析完成，MVP 形態待使用者選定（第 6 節）
 
@@ -25,7 +25,7 @@
 
 ## 2. 既有研究已確立的結論（不重新辯論，直接繼承）
 
-三份 memo（8/14、8/17 ×2）與 loopbox 競品文件已用一手查證確立以下事實。本文件把它們當作已定案的前提：
+三份 memo（8/14、8/17 ×2）與 nimplex 競品文件已用一手查證確立以下事實。本文件把它們當作已定案的前提：
 
 ### 2.1 原始形態已被證偽
 
@@ -78,11 +78,11 @@ Scrapybara Inc.（YC F24，~$4.1M seed）轉型後的產品。三角色自有 ha
 1. 其前身 Scrapybara 就是「virtual desktops for AI agents 的 API」——**這個純 computer-use API 產品 2025-10 收掉**。這是「computer use as a standalone API」生意的唯一實證數據點，而且是負面的。
 2. 證據面顯示其實際用戶是 solo founder/indie（X/IG 發布、Solo Founders program、零可歸屬企業 testimonial），不是企業——企業外皮下是 prosumer 生意。
 
-### 2.7 loopbox 競品文件已確認的技術積木（買/採用，不重造）
+### 2.7 nimplex 競品文件已確認的技術積木（買/採用，不重造）
 
-- **in-sandbox control plane**：`rivet-dev/sandbox-agent`（Apache-2.0）把 Claude Code/Codex/OpenCode/Cursor/Amp/Pi 統一在一個 HTTP+SSE API 後面——「幾乎就是 loopbox 需要的 in-sandbox control plane」。備選：`coder/agentapi`、SWE-ReX。
+- **in-sandbox control plane**：`rivet-dev/sandbox-agent`（Apache-2.0）把 Claude Code/Codex/OpenCode/Cursor/Amp/Pi 統一在一個 HTTP+SSE API 後面——「幾乎就是 nimplex 需要的 in-sandbox control plane」。備選：`coder/agentapi`、SWE-ReX。
 - **sandbox**：E2B（`e2b-dev/infra` Apache-2.0 可自架）、Modal、Vercel Sandbox（active-CPU 計價）、Cloudflare Sandbox SDK；snapshot/branch 的設計標竿是 Morph（<250ms N-way CoW branch）。
-- **OSS 真空（loopbox 原定位）**：沒有 OSS 專案同時具備 (a) VM sandbox + warm pool + snapshot versioning (b) BYO agent-CLI harness (c) event/cron loop engine。
+- **OSS 真空（nimplex 原定位）**：沒有 OSS 專案同時具備 (a) VM sandbox + warm pool + snapshot versioning (b) BYO agent-CLI harness (c) event/cron loop engine。
 
 ---
 
@@ -223,14 +223,14 @@ POST /v1/runs
 - **範圍內（v1）**：W2 全套（美元計量、硬上限、per-user 歸因、用量匯出）＋ W3 預設（sandbox + egress 防火牆 + secret 注入代理）＋ 1-2 個 harness（Codex CLI/OpenCode，經 rivet sandbox-agent）＋ BYO model keys ＋ 稽核 log。
 - **範圍外（v1 明確不做）**：自建 OAuth（integrate Nango）、W4 精緻 resume（先只做 snapshot 粗粒度）、computer use、自訂 harness 上傳、Monitor 跑分、marketplace。
 - **交付**：OSS control plane（可自架，Apache-2.0）＋ hosted cloud（active-CPU 轉售 + 平台費）。
-- **理由**：enforcement 需要擁有執行路徑（Q1 交集論）→ 只做 gateway 不夠；E 段形狀完全同構；保留 loopbox 的 sandbox/loop 工程認同。
+- **理由**：enforcement 需要擁有執行路徑（Q1 交集論）→ 只做 gateway 不夠；E 段形狀完全同構；保留 nimplex 的 sandbox/loop 工程認同。
 - **風險**：範圍仍大（solo founder 約 2-3 個月到可 demo）；毛利與訪談兩道門檻未過前不該全速寫。
 
 ### 方案 B：只做經濟層——「Agent Spend Gateway」
 
 LLM proxy + sandbox 供應商帳單彙整，提供 per-end-user 美元上限、歸因、轉售帳務；不跑 runtime。
 - **優點**：4-8 週可上線；正中「四牆中最沒有 drop-in 的一面」。
-- **缺點**：enforcement 弱（殺不掉別人家的 sandbox）；縫是 feature-sized，Cloudflare spend limits/Stripe-Metronome 正面壓過來；放棄 loopbox 的 sandbox 工程資產。
+- **缺點**：enforcement 弱（殺不掉別人家的 sandbox）；縫是 feature-sized，Cloudflare spend limits/Stripe-Metronome 正面壓過來；放棄 nimplex 的 sandbox 工程資產。
 
 ### 方案 C：OSS 優先——自架版四牆 runtime（先不做 hosted）
 
@@ -263,7 +263,7 @@ LLM proxy + sandbox 供應商帳單彙整，提供 per-end-user 美元上限、�
 **第一級物件從「run」改為「sandbox（agent 的電腦）」**：客戶的 agent（任何 framework）透過一個 MCP connect 或一個 API call，拿到一台**開機即用的 agent 電腦**。四道牆不再是獨立的「runtime 產品」，而是這台電腦的**預設屬性**。
 
 ```
-POST /v1/sandboxes          # 或 MCP: loopbox_computer 工具組
+POST /v1/sandboxes          # 或 MCP: nimplex_computer 工具組
 {
   "end_user": "usr_123",             # per-end-user 綁定（W1/W3 邊界）
   "budget_usd": 2.50,                # 美元硬上限，超額殺箱（W2）
@@ -289,13 +289,13 @@ POST /v1/sandboxes          # 或 MCP: loopbox_computer 工具組
 
 **可守的版本是換一個對比軸**：
 - eve/LangGraph 是「**自己寫 loop**」的框架——買家是要打造自有 agent 的工程師；
-- loopbox 是「**帶現成 harness 的電腦**」——買家是不想寫 loop、想直接讓 Codex/OpenCode 級的現成大腦在一台受控電腦裡替使用者幹活的產品團隊。
-- 經濟模式**抄 eve 而不是對抗 eve**：OSS 框架/control plane 免費 + hosted metered compute 收錢（active-CPU 轉售 + 平台費）——這正是 eve 的「免費框架、計量底座收錢」結構，loopbox 的底座 = sandbox 層（自己的工程資產所在），不是轉售。
+- nimplex 是「**帶現成 harness 的電腦**」——買家是不想寫 loop、想直接讓 Codex/OpenCode 級的現成大腦在一台受控電腦裡替使用者幹活的產品團隊。
+- 經濟模式**抄 eve 而不是對抗 eve**：OSS 框架/control plane 免費 + hosted metered compute 收錢（active-CPU 轉售 + 平台費）——這正是 eve 的「免費框架、計量底座收錢」結構，nimplex 的底座 = sandbox 層（自己的工程資產所在），不是轉售。
 - 對外話術不說「eve alternative」（會被拿去跟免費框架比），說「**your agent's computer**」。
 
 ### 8.4 與競品的一句話切分（皆出自本輪研究）
 
-E2B/Daytona 給裸 VM（無 harness、無 per-user、無美元上限）；Browserbase 只有 browser 這一塔；AgentCore 有整包但綁 AWS + IAM 稅、無美元 per-user 上限、secrets 進箱是預設；eve 要你自己寫 loop 且綁 Vercel 生態；Scrapybara 之死界定了 desktop-only API 不是生意。**loopbox = 開源、跨雲、harness-ready、四牆預設全開的 agent 電腦，MCP 一行接入。**
+E2B/Daytona 給裸 VM（無 harness、無 per-user、無美元上限）；Browserbase 只有 browser 這一塔；AgentCore 有整包但綁 AWS + IAM 稅、無美元 per-user 上限、secrets 進箱是預設；eve 要你自己寫 loop 且綁 Vercel 生態；Scrapybara 之死界定了 desktop-only API 不是生意。**nimplex = 開源、跨雲、harness-ready、四牆預設全開的 agent 電腦，MCP 一行接入。**
 
 ### 8.5 對驗證計畫的影響（第 7 節微調）
 

@@ -5,6 +5,6 @@ export default defineConfig({
   schema: "./src/schema.ts",
   out: "./migrations",
   dbCredentials: {
-    url: process.env.DATABASE_URL ?? "postgres://loopbox:loopbox@localhost:5433/loopbox",
+    url: process.env.DATABASE_URL ?? "postgres://nimplex:nimplex@localhost:5433/nimplex",
   },
 });

@@ -1,0 +1,24 @@
+{
+  "name": "@nimplex/gateway",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "check": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@nimplex/contracts": "workspace:*",
+    "@nimplex/core": "workspace:*",
+    "@nimplex/db": "workspace:*",
+    "drizzle-orm": "^0.45.2",
+    "hono": "^4.13.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.11"
+  }
+}

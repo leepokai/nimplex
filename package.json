@@ -1,5 +1,5 @@
 {
-  "name": "loopbox",
+  "name": "nimplex",
   "private": true,
   "version": "0.0.1",
   "type": "module",
@@ -14,9 +14,9 @@
     "lint": "biome check .",
     "format": "biome check --write .",
     "test": "vitest run",
-    "db:generate": "pnpm --filter @loopbox/db generate",
-    "db:migrate": "pnpm --filter @loopbox/db migrate",
-    "db:seed": "pnpm --filter @loopbox/db seed",
+    "db:generate": "pnpm --filter @nimplex/db generate",
+    "db:migrate": "pnpm --filter @nimplex/db migrate",
+    "db:seed": "pnpm --filter @nimplex/db seed",
     "compose:up": "docker compose up -d",
     "compose:down": "docker compose down"
   },

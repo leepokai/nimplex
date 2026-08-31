@@ -1,0 +1,351 @@
+<title>nimplex 開工計畫</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@700;900&family=Noto+Sans+TC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --bg: #F6F8F7;
+    --surface: #FFFFFF;
+    --ink: #22302E;
+    --muted: #5C6B68;
+    --line: #DBE2E0;
+    --you: #0E8074;
+    --you-tint: #E2F2EF;
+    --cf: #D96F0E;
+    --cf-tint: #FBEEDD;
+    --gone: #97A5A2;
+    --gone-tint: #EFF3F2;
+    --star: #8A5A00;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #12181A;
+      --surface: #1A2225;
+      --ink: #E5ECEA;
+      --muted: #92A3A0;
+      --line: #2B3538;
+      --you: #3CC2B0;
+      --you-tint: #16302C;
+      --cf: #F0973B;
+      --cf-tint: #33261A;
+      --gone: #6B7A77;
+      --gone-tint: #1F2A28;
+      --star: #E8B75B;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #12181A;
+    --surface: #1A2225;
+    --ink: #E5ECEA;
+    --muted: #92A3A0;
+    --line: #2B3538;
+    --you: #3CC2B0;
+    --you-tint: #16302C;
+    --cf: #F0973B;
+    --cf-tint: #33261A;
+    --gone: #6B7A77;
+    --gone-tint: #1F2A28;
+    --star: #E8B75B;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.85;
+  }
+  .wrap { max-width: 68rem; margin: 0 auto; padding: 0 1.25rem 5rem; }
+
+  header { padding: 3.5rem 0 2rem; border-bottom: 1px solid var(--line); }
+  .eyebrow {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.72rem; letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--you); margin: 0 0 0.75rem;
+  }
+  h1 {
+    font-family: "Noto Serif TC", "Songti TC", serif;
+    font-weight: 900;
+    font-size: clamp(2rem, 5vw, 2.9rem);
+    line-height: 1.28; margin: 0 0 0.75rem; text-wrap: balance;
+  }
+  .standfirst { font-size: 1.02rem; color: var(--muted); max-width: 44rem; margin: 0; }
+  .meta {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.74rem; color: var(--muted); margin-top: 1.1rem;
+  }
+
+  section { padding-top: 3rem; }
+  .tag {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.7rem; letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--you); margin: 0 0 0.4rem;
+  }
+  h2 {
+    font-family: "Noto Serif TC", serif;
+    font-weight: 700; font-size: 1.6rem; line-height: 1.35;
+    margin: 0 0 1rem; text-wrap: balance;
+  }
+  h3 { font-size: 1.05rem; font-weight: 700; margin: 1.8rem 0 0.5rem; }
+  p { margin: 0 0 1rem; max-width: 46rem; }
+  section > ul { max-width: 46rem; }
+  code {
+    font-family: "IBM Plex Mono", monospace; font-size: 0.85em;
+    background: var(--surface); border: 1px solid var(--line);
+    padding: 0.06em 0.4em; border-radius: 5px;
+  }
+
+  .legend { display: flex; gap: 0.6rem; flex-wrap: wrap; margin: 1.2rem 0; }
+  .legend span { font-size: 0.82rem; font-weight: 700; padding: 0.28rem 0.8rem; border-radius: 999px; border: 1.5px solid; }
+  .legend .l-gone { color: var(--gone); border-color: var(--gone); border-style: dashed; background: var(--gone-tint); }
+  .legend .l-cf   { color: var(--cf); border-color: var(--cf); background: var(--cf-tint); }
+  .legend .l-you  { color: var(--you); border-color: var(--you); background: var(--you-tint); }
+
+  .band { margin: 1.1rem 0; }
+  .band-title {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.72rem; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--muted); margin: 0 0 0.5rem;
+  }
+  .chips { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+  .chip {
+    font-size: 0.85rem; font-weight: 500;
+    padding: 0.42rem 0.8rem; border-radius: 10px;
+    border: 1.5px solid var(--line);
+    background: var(--surface);
+    line-height: 1.5;
+  }
+  .chip small { display: block; font-size: 0.72rem; color: var(--muted); font-weight: 400; }
+  .chip.gone { border-color: var(--gone); border-style: dashed; background: var(--gone-tint); color: var(--gone); }
+  .chip.gone .name { text-decoration: line-through; text-decoration-thickness: 1.5px; }
+  .chip.cf { border-color: var(--cf); background: var(--cf-tint); }
+  .chip.cf small { color: var(--cf); }
+  .chip.you { border-color: var(--you); background: var(--you-tint); }
+  .chip.you small { color: var(--you); }
+  .chip .star { color: var(--star); font-weight: 700; }
+
+  .tbl-scroll { overflow-x: auto; margin: 1.25rem 0; }
+  table {
+    border-collapse: collapse; width: 100%; max-width: 64rem;
+    font-size: 0.87rem; background: var(--surface);
+    border: 1px solid var(--line); border-radius: 8px;
+  }
+  th, td { text-align: left; padding: 0.55rem 0.9rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  th {
+    font-size: 0.7rem; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--muted); font-weight: 500;
+    font-family: "IBM Plex Mono", monospace;
+  }
+  td.k { font-family: "IBM Plex Mono", monospace; font-size: 0.76rem; white-space: nowrap; color: var(--gone); }
+  td.cfv { color: var(--cf); font-weight: 500; }
+
+  .phases { display: grid; gap: 0.9rem; margin-top: 1.3rem; max-width: 60rem; }
+  .phase {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--you);
+    border-radius: 10px;
+    padding: 1rem 1.2rem;
+    display: grid;
+    grid-template-columns: 3.2rem 1fr;
+    gap: 0.2rem 1rem;
+  }
+  .phase .no {
+    font-family: "IBM Plex Mono", monospace;
+    font-weight: 500; font-size: 1.15rem; color: var(--you);
+    grid-row: span 3;
+  }
+  .phase.now { border-left-color: var(--cf); }
+  .phase.now .no { color: var(--cf); }
+  .phase h4 { margin: 0; font-size: 1rem; font-weight: 700; }
+  .phase h4 .badge {
+    font-size: 0.68rem; font-weight: 700; color: var(--cf);
+    border: 1px solid var(--cf); border-radius: 999px;
+    padding: 0.05rem 0.5rem; margin-left: 0.5rem; vertical-align: 2px;
+  }
+  .phase p { font-size: 0.88rem; color: var(--muted); margin: 0.15rem 0 0; max-width: none; line-height: 1.7; }
+  .phase .accept { font-size: 0.82rem; margin-top: 0.35rem; }
+  .phase .accept b { color: var(--you); font-weight: 700; }
+
+  .guard {
+    border: 1px solid var(--line); border-left: 3px solid var(--star);
+    background: var(--surface); border-radius: 8px;
+    padding: 0.9rem 1.1rem; max-width: 46rem;
+    font-size: 0.9rem; margin: 0.8rem 0;
+  }
+  .guard b { color: var(--star); }
+
+  ul.tight { padding-left: 1.2rem; max-width: 46rem; }
+  ul.tight li { margin-bottom: 0.5rem; }
+  ul.tight li::marker { color: var(--you); }
+
+  footer {
+    margin-top: 4rem; padding-top: 1.4rem;
+    border-top: 1px solid var(--line);
+    font-size: 0.8rem; color: var(--muted); max-width: 46rem;
+  }
+  footer a { color: var(--you); }
+  :focus-visible { outline: 2px solid var(--you); outline-offset: 2px; }
+</style>
+
+<div class="wrap">
+
+<header>
+  <p class="eyebrow">Build Plan · 內部工作文件</p>
+  <h1>nimplex 開工計畫</h1>
+  <p class="standfirst">把 Omnara 的完整架構攤開，標出哪些區塊被 Cloudflare 平台直接吃掉、哪些換成現成原語、剩下真正要動手蓋的是什麼——以及按什麼順序動工。</p>
+  <p class="meta">2026-08-23 · 依據：Omnara 原始碼解剖（45 萬行）＋ CF computer/Think/Flue 三篇原文 ＋ 已定案決策（CF-first、前端先行、contracts-first）</p>
+</header>
+
+<section id="map">
+  <p class="tag">The Map</p>
+  <h2>一張圖：Omnara 的區塊，各自的命運</h2>
+  <p>Omnara 用約 45 萬行 Go（含測試）蓋了四層。在 Cloudflare 上重新疊一次，<strong>大約七成的工程量直接消失或變成平台原語</strong>——剩下的三成，才是使用者付錢的產品層。</p>
+  <div class="legend">
+    <span class="l-gone">灰·刪除線＝消失（平台吃掉，一行都不用寫）</span>
+    <span class="l-cf">橘＝換成 CF 原語（接上就用）</span>
+    <span class="l-you">綠＝你要蓋（產品層）</span>
+  </div>
+
+  <div class="band">
+    <p class="band-title">Omnara 第 1 層 · 控制平面</p>
+    <div class="chips">
+      <div class="chip gone"><span class="name">Redis 喚醒 pub/sub＋presence</span><small>DO 可定址，問題不存在</small></div>
+      <div class="chip gone"><span class="name">maintenance 收屍/對帳迴圈</span><small>平台保證取代人工兜底</small></div>
+      <div class="chip gone"><span class="name">compose 拓撲（PG/Valkey/MinIO/nginx)</span><small>wrangler deploy 取代</small></div>
+      <div class="chip cf">Postgres 事件日誌＋佇列<small>→ DO SQLite（per-agent 天生隔離）</small></div>
+      <div class="chip cf">cron_triggers<small>→ Cron Triggers / DO alarms</small></div>
+      <div class="chip you">API contract（OpenAPI 政策表）<small>你的版本：contracts 套件＝脊椎</small></div>
+      <div class="chip you">Org/Project 多租戶＋RBAC<small>你的版本再加一層 end_user</small></div>
+    </div>
+  </div>
+
+  <div class="band">
+    <p class="band-title">Omnara 第 2 層 · 執行引擎</p>
+    <div class="chips">
+      <div class="chip gone"><span class="name">worker claim loop＋runtime 租約</span><small>DO 單線程序列化取代 SKIP LOCKED</small></div>
+      <div class="chip gone"><span class="name">手刻 model 層（~4,400 行）</span><small>AI SDK＋AI Gateway</small></div>
+      <div class="chip gone"><span class="name">手刻 MCP client（2,513 行）</span><small>官方 MCP SDK</small></div>
+      <div class="chip cf">durable turn 狀態機<small>→ Think fibers（stash/recover）</small></div>
+      <div class="chip cf">compaction／會話持久化<small>→ Session API（樹狀·可 fork）</small></div>
+      <div class="chip you">工具權限 allow/ask/deny＋durable 審批<small>Omnara 驗證過的設計，照抄形狀</small></div>
+      <div class="chip you">custom 工具（外部補結果）<small>＝你的原生工具橋接，掛點照搬</small></div>
+    </div>
+  </div>
+
+  <div class="band">
+    <p class="band-title">Omnara 第 3 層 · 機器層（整層消失）</p>
+    <div class="chips">
+      <div class="chip gone"><span class="name">omnarad daemon＋自我更新</span><small>不需要裝任何東西到任何機器</small></div>
+      <div class="chip gone"><span class="name">daemon WS hub＋offer/accept 協議</span><small>DO hibernation 連線即定址</small></div>
+      <div class="chip gone"><span class="name">runner 子程序＋SQLite outbox</span><small>Sandbox API 直接給結果</small></div>
+      <div class="chip gone"><span class="name">machinepool＋3 家供應商對帳</span><small>平台自己管機器生命週期</small></div>
+      <div class="chip cf">執行環境<small>→ @cloudflare/computer（isolate/container/browser 一個 exec()）</small></div>
+      <div class="chip cf">瀏覽器能力<small>→ Browser Run＋playwright-mcp（a11y tree，Omnara 沒有）</small></div>
+    </div>
+  </div>
+
+  <div class="band">
+    <p class="band-title">Omnara 第 4 層 · 產品表面</p>
+    <div class="chips">
+      <div class="chip gone"><span class="name">SSRF 防禦工程大半</span><small>isolate 出生無網路，capability 白名單</small></div>
+      <div class="chip you">Console 前端<small>你現在動工中</small></div>
+      <div class="chip you">SDK（server＋client 兩隻）<small>Omnara 只有 codegen 副產品，你做成產品</small></div>
+      <div class="chip you">Secrets 注入（不經過模型）<small>縮小版：綁 CF Secrets Store</small></div>
+      <div class="chip you">Slack 等整合<small>後置，不進 MVP</small></div>
+    </div>
+  </div>
+
+  <div class="band">
+    <p class="band-title">第 5 層 · Omnara 沒有的（你的護城河）</p>
+    <div class="chips">
+      <div class="chip you"><span class="star">★</span> per-end-user 計費＋美元硬上限<small>爆額度可終止跑中 run——代理型工具做不到</small></div>
+      <div class="chip you"><span class="star">★</span> per-end-user 憑證隔離（鑰匙櫃）<small>org key 永不進前端，end-user 短效 token</small></div>
+      <div class="chip you"><span class="star">★</span> per-end-user 網控（egress allowlist）<small>宣告格式一次定好，先在應用層強制</small></div>
+      <div class="chip you"><span class="star">★</span> end-user SDK（嵌進客戶的產品）<small>整個定位的核心介面</small></div>
+    </div>
+  </div>
+</section>
+
+<section id="deleted">
+  <p class="tag">What You Skip</p>
+  <h2>省下了什麼：量化對照</h2>
+  <p>這張表是「不用做清單」。每一列都是 Omnara 實際寫了、而你一行都不用寫的子系統。</p>
+  <div class="tbl-scroll"><table>
+    <thead><tr><th>Omnara 花掉的</th><th>規模感</th><th>你改用</th></tr></thead>
+    <tbody>
+      <tr><td class="k">機器層全套（omnarad·machinedaemon·machinepool·daemonprotocol）</td><td>它最難的分散式工程：runner 子程序、lock-fd 存活證明、本地 outbox、PTY 跨平台、3 家供應商對帳</td><td class="cfv">@cloudflare/computer ＋ Sandbox ＋ Browser Run</td></tr>
+      <tr><td class="k">工作認領（SKIP LOCKED·租約·收屍）</td><td>worker/maintenance 兩個服務的存在理由</td><td class="cfv">DO 單線程序列化＋alarms（平台保證）</td></tr>
+      <tr><td class="k">WebSocket 所有權（hub·presence·Lua CAS）</td><td>多副本連線路由的整套舞蹈</td><td class="cfv">DO 可定址＋WebSocket hibernation</td></tr>
+      <tr><td class="k">model＋MCP 手刻層</td><td>~7,000 行，還要自己追協定演進</td><td class="cfv">AI SDK＋官方 MCP SDK＋AI Gateway</td></tr>
+      <tr><td class="k">turn 狀態機＋崩潰恢復</td><td>kernel 的核心複雜度</td><td class="cfv">Think fibers（stash / onFiberRecovered）</td></tr>
+      <tr><td class="k">基礎設施運維（PG·Redis·MinIO·nginx·migrate）</td><td>compose 六個服務＋24 個 migrations</td><td class="cfv">wrangler deploy（唯一要管的 schema 是 DO 裡你自己的表）</td></tr>
+    </tbody>
+  </table></div>
+  <p>代價同樣寫明：<strong>放棄 `docker compose up` 式自架</strong>（self-host 重新定義為 deploy-to-your-CF-account）、放棄 BYO machine、承受 computer 的 early-preview API 變動。這些已在 8/22 決策時接受。</p>
+</section>
+
+<section id="build">
+  <p class="tag">What You Build</p>
+  <h2>你真正要蓋的五樣東西</h2>
+  <ul class="tight">
+    <li><strong>Contracts（脊椎）</strong>：`packages/contracts` 升格為正式 wire spec。每個資源帶 <code>end_user</code> 維度、每個 run 帶預算欄位——這是日後最難補的，day one 進去。CF 的型別不得滲入。</li>
+    <li><strong>Console（動工中）</strong>：end-user 清單與用量、run 時間軸（SSE）、審批收件匣、額度與硬上限設定、憑證管理。先打 mock。</li>
+    <li><strong>Runtime（`apps/runtime`，一個 wrangler 專案）</strong>：每個 (end_user, session) 一個 DO；裡面 Think＋computer Workspace＋工具集；每次模型/工具呼叫過你的「三道閘」——電表（計費）、門禁（權限）、鑰匙櫃（憑證）——然後才放行。爆額度＝DO 內直接終止 run，這是你跟所有代理型工具的分界線。</li>
+    <li><strong>End-user SDK 兩隻</strong>：Server SDK（org key，開 session、發 token）＋ Client SDK（end-user 短效 token，org key 永不進前端）。從 contracts 生成再手工打磨 DX。</li>
+    <li><strong>原生工具橋接</strong>：照抄 Omnara custom-tool 形狀——工具標 ready、外部經 <code>SubmitToolCallResult</code> 補結果，讓客戶把自己產品的功能註冊成 agent 工具。</li>
+  </ul>
+</section>
+
+<section id="phases">
+  <p class="tag">Sequence</p>
+  <h2>建議動工順序</h2>
+  <p>每一階都有一句話驗收，過了才進下一階。時程不寫死——你是一個人，順序比日期重要。</p>
+  <div class="phases">
+    <div class="phase now">
+      <span class="no">P0</span>
+      <h4>Contracts 定形＋mock server<span class="badge">先做這個</span></h4>
+      <p>把 end_user、session、run、budget、credential、tool-policy 六個資源的 contract 用 zod/OpenAPI 定下來；一個 in-memory Hono server 照 contract 回假資料。</p>
+      <p class="accept"><b>驗收：</b>console 和未來的 runtime 都只 import contracts，換 base URL 即切換 mock/真後端。</p>
+    </div>
+    <div class="phase now">
+      <span class="no">P1</span>
+      <h4>Console 前端邏輯<span class="badge">你的現任務</span></h4>
+      <p>對著 mock 做四個核心畫面：run 時間軸（SSE）、end-user 用量與硬上限、審批收件匣（allow/ask/deny）、憑證管理。這同時是產品驗證素材。</p>
+      <p class="accept"><b>驗收：</b>用 mock 資料能完整走一遍「end user 發起 → 燒錢 → 碰上限 → 審批」的故事。</p>
+    </div>
+    <div class="phase">
+      <span class="no">P2</span>
+      <h4>Runtime 最小可跑</h4>
+      <p>`apps/runtime`：一個 DO agent＋computer Workspace＋兩三個工具（exec、web）＋SSE 回 console。電表先做「計數＋超額即停」最粗版。</p>
+      <p class="accept"><b>驗收：</b>console 換掉 mock 後不改一行；跑中 run 燒爆假額度時被當場終止。</p>
+    </div>
+    <div class="phase">
+      <span class="no">P3</span>
+      <h4>三道閘做實</h4>
+      <p>權限 ask → durable 審批（人隔天批、run 原地續）；per-end-user 憑證注入（不經過模型）；egress allowlist v0（應用層強制，宣告格式定好）。</p>
+      <p class="accept"><b>驗收：</b>一個未授權工具呼叫會停在收件匣，批准後從斷點繼續。</p>
+    </div>
+    <div class="phase">
+      <span class="no">P4</span>
+      <h4>SDK＋開源故事</h4>
+      <p>兩隻 SDK 打包、一個嵌入範例（假的客戶 app）、README＋deploy-to-your-CF-account 指南。這時才算「可被整合」。</p>
+      <p class="accept"><b>驗收：</b>陌生開發者照 README 三十分鐘內在自己的 app 跑起第一個 end-user agent。</p>
+    </div>
+  </div>
+</section>
+
+<section id="guardrails">
+  <p class="tag">Guardrails</p>
+  <h2>護欄與不做清單</h2>
+  <div class="guard"><b>computer 是 early preview。</b>它的 API 只出現在 `apps/runtime` 內部，永不出現在 contracts——它變版時你只改一個資料夾。</div>
+  <div class="guard"><b>CF 正在往上爬</b>（Flue 只是第一個房客）。你的防禦是速度＋end-user 原語深度，不是功能廣度——P0–P4 以外的每件事都是干擾。</div>
+  <div class="guard"><b>不做：</b>泛用管理面（AI Gateway 的地盤）、桌面 GUI computer-use（spec 本來就 beta flag）、Slack 等整合、harness marketplace（Phase 2 後置）、BYO machine。</div>
+</section>
+
+<footer>
+  <p>依據文件：〈<a href="https://claude.ai/code/artifact/e83fa955-1a29-4d77-a2fe-8dfe428a67f7">Omnara 架構解剖</a>〉·〈<a href="https://claude.ai/code/artifact/a3f2a171-106c-4f0c-8042-0d734d069afc">Cloudflare 的電腦計畫</a>〉·〈<a href="https://claude.ai/code/artifact/9dba35b4-1c41-491d-b256-746ca2102dbf">Isolate 小隔間</a>〉。決策紀錄：2026-08-22 CF-first＋前端先行＋contracts-first。本檔在 docs/product/，屬內部產品文件。</p>
+</footer>
+
+</div>

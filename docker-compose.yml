@@ -2,15 +2,15 @@ services:
   postgres:
     image: postgres:17-alpine
     environment:
-      POSTGRES_USER: loopbox
-      POSTGRES_PASSWORD: loopbox
-      POSTGRES_DB: loopbox
+      POSTGRES_USER: nimplex
+      POSTGRES_PASSWORD: nimplex
+      POSTGRES_DB: nimplex
     ports:
       - "5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U loopbox"]
+      test: ["CMD-SHELL", "pg_isready -U nimplex"]
       interval: 2s
       timeout: 2s
       retries: 20

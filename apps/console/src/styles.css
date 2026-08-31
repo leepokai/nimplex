@@ -1,0 +1,824 @@
+:root {
+  /* 跟 apps/site 同一套 token。改官網的時候這裡要一起改。 */
+  --bg: #0a0a0a;
+  --text: #ffffff;
+  --text-2: rgba(255, 255, 255, 0.62);
+  --text-3: rgba(255, 255, 255, 0.4);
+  --text-4: rgba(255, 255, 255, 0.22);
+  /* 格線比邊框更淡：格線是氛圍，邊框是結構 */
+  --grid: rgba(255, 255, 255, 0.055);
+  --line: rgba(255, 255, 255, 0.13);
+  --line-2: rgba(255, 255, 255, 0.28);
+  --sans: "Geist", system-ui, -apple-system, sans-serif;
+  --mono: "Geist Mono", ui-monospace, SFMono-Regular, monospace;
+  --cell: 68px;
+  --r: 8px;
+
+  /* console 專屬：面板刻意接近透明，讓底下的格線透出來（跟官網的硬格線卡片同一個作法） */
+  --surface: #101010;
+  --raised: #131313;
+  --border: var(--line);
+  --border-strong: var(--line-2);
+  --accent: var(--text);
+  --accent-dim: rgba(255, 255, 255, 0.1);
+  --danger: var(--text);
+  --danger-dim: rgba(255, 255, 255, 0.14);
+  --warn: var(--text-2);
+  --warn-dim: rgba(255, 255, 255, 0.08);
+  --info: var(--text);
+  --info-dim: rgba(255, 255, 255, 0.1);
+  --sidebar-bg: transparent;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  font-family: var(--sans);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.55;
+}
+code {
+  font-family: var(--mono);
+  font-size: 0.92em;
+}
+
+/* ---------- app shell（Insforge 版型：頂欄 + icon 側欄）---------- */
+.app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+.topbar {
+  height: 52px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 18px;
+  border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  z-index: 60;
+  background: var(--bg);
+}
+.topbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+.topbar-org {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-2);
+  padding-left: 14px;
+  border-left: 1px solid var(--line);
+}
+.plan {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  color: var(--text-2);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r);
+  padding: 1px 7px;
+}
+.topbar-status {
+  font-size: 11.5px;
+  color: var(--text-4);
+}
+.topbar-link {
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+.topbar-link:hover {
+  color: var(--text);
+}
+.spacer {
+  flex: 1;
+}
+
+.shell {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.sidebar {
+  width: 208px;
+  flex-shrink: 0;
+  padding: 12px 10px;
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  position: sticky;
+  top: 52px;
+  height: calc(100vh - 52px);
+}
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--r);
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 13.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.nav-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+}
+.nav-item.active {
+  background: rgba(255, 255, 255, 0.09);
+  color: var(--text);
+}
+.nav-icon {
+  display: grid;
+  place-items: center;
+  color: var(--text-3);
+}
+.nav-item.active .nav-icon {
+  color: var(--text);
+}
+
+/* ---------- 連接程式碼代理浮卡 ---------- */
+.agentcard {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  width: min(680px, calc(100vw - 40px));
+  z-index: 70;
+  background: var(--raised);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+}
+.agentcard-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+}
+.agentcard-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 13.5px;
+  font-weight: 500;
+}
+.agentcard-glyph {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-3);
+}
+.agentcard-code {
+  margin: 0 14px;
+  padding: 12px 14px;
+  max-height: 130px;
+  overflow: auto;
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.7;
+  color: var(--text-2);
+  white-space: pre;
+}
+.agentcard-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 11px 14px;
+  font-size: 12px;
+}
+
+/* ---------- main ---------- */
+.main {
+  flex: 1;
+  min-width: 0;
+  padding: 30px 40px 220px;
+  max-width: 1080px;
+}
+h1 {
+  font-size: 23px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  margin: 0 0 8px;
+}
+h2 {
+  font-size: 14.5px;
+  font-weight: 600;
+  margin: 0;
+}
+.lede {
+  color: var(--text-2);
+  max-width: 74ch;
+  margin: 0 0 26px;
+}
+.lede.small {
+  font-size: 13px;
+  margin-bottom: 14px;
+}
+.lede strong {
+  color: var(--text);
+}
+.dim {
+  color: var(--text-3);
+}
+.mono {
+  font-family: var(--mono);
+}
+.strong {
+  font-weight: 600;
+}
+.spacer {
+  flex: 1;
+}
+
+/* ---------- panel ---------- */
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  margin-bottom: 20px;
+  overflow: hidden;
+}
+.panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.panel-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-shrink: 0;
+}
+.hint {
+  margin: 3px 0 0;
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+
+/* ---------- rows ---------- */
+.row-group + .row-group {
+  border-top: 1px solid var(--border);
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px 0 0;
+}
+.row-group:only-child .row,
+.panel > .row + .row {
+  border-top: 1px solid var(--border);
+}
+.row-main {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex: 1;
+  min-width: 0;
+  padding: 11px 14px;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.row-main.static {
+  cursor: default;
+}
+.row-main:not(.static):hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+.chev {
+  color: var(--text-3);
+  width: 10px;
+}
+.tag {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-2);
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 6px;
+  white-space: nowrap;
+}
+.row-detail {
+  padding: 0 14px 14px 36px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+/* ---------- badges ---------- */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  font-weight: 500;
+  border-radius: 20px;
+  padding: 1px 9px 1px 7px;
+  white-space: nowrap;
+}
+.badge .dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.b-ok {
+  color: var(--accent);
+  background: var(--accent-dim);
+}
+.b-warn {
+  color: var(--warn);
+  background: var(--warn-dim);
+}
+.b-danger {
+  color: var(--danger);
+  background: var(--danger-dim);
+}
+.b-info {
+  color: var(--info);
+  background: var(--info-dim);
+}
+.b-neutral {
+  color: var(--text-2);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+/* ---------- buttons ---------- */
+.btn {
+  font: inherit;
+  font-size: 13px;
+  border-radius: var(--r);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  padding: 6px 13px;
+  cursor: pointer;
+}
+.btn:hover {
+  border-color: var(--border-strong);
+}
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #000;
+}
+.btn.danger.ghost {
+  border-color: transparent;
+  color: var(--danger);
+  background: transparent;
+}
+.btn.danger.ghost:hover {
+  background: var(--danger-dim);
+}
+.copycall {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--text-2);
+  background: transparent;
+  border: 1px dashed var(--border);
+  border-radius: var(--r);
+  padding: 3px 9px;
+  cursor: pointer;
+}
+.copycall:hover {
+  border-style: solid;
+  color: var(--text);
+}
+.copycall.copied {
+  color: var(--accent);
+  border-color: var(--accent);
+  border-style: solid;
+}
+.copycall .glyph {
+  font-size: 11px;
+}
+
+/* ---------- forms ---------- */
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 14px;
+  padding: 16px;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.field-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+.field-hint {
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+input,
+select,
+textarea {
+  font: inherit;
+  font-size: 13px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface);
+  color: var(--text);
+  width: 100%;
+}
+input:focus,
+select:focus,
+textarea:focus {
+  outline: 2px solid var(--accent-dim);
+  border-color: var(--accent);
+}
+.editor {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  resize: vertical;
+}
+.panel > .field {
+  padding: 16px;
+}
+.form-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 16px 16px;
+}
+
+/* ---------- notes ---------- */
+.empty {
+  padding: 26px 16px;
+  color: var(--text-3);
+  text-align: center;
+}
+.errnote,
+.oknote {
+  margin: 0 16px 12px;
+  padding: 9px 12px;
+  border-radius: var(--r);
+  font-size: 12.5px;
+  font-family: var(--mono);
+  white-space: pre-wrap;
+}
+.errnote {
+  color: var(--danger);
+  background: var(--danger-dim);
+}
+.oknote {
+  color: var(--accent);
+  background: var(--accent-dim);
+}
+.code {
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.65;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 12px 14px;
+  overflow-x: auto;
+  margin: 0;
+  width: 100%;
+}
+.panel > .code {
+  border: 0;
+  border-radius: 0;
+  background: rgba(255, 255, 255, 0.03);
+}
+.tmpl-vars {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 14px 16px 0;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+.tmpl-vars code {
+  background: rgba(255, 255, 255, 0.07);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+/* ---------- cards ---------- */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(228px, 1fr));
+  gap: 12px;
+  padding: 16px;
+}
+.card {
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+.card.off {
+  background: rgba(255, 255, 255, 0.03);
+}
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  justify-content: space-between;
+}
+.card-body {
+  margin: 0;
+  font-size: 12.5px;
+  flex: 1;
+}
+
+/* 有刪除按鈕的列空間較窄，slug 不該被折行 */
+.row-main > .mono {
+  white-space: nowrap;
+}
+
+/* ---------- Modal（Upload harness）---------- */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 48px 20px;
+  overflow-y: auto;
+}
+.modal {
+  width: 100%;
+  max-width: 620px;
+  background: var(--raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r);
+  overflow: hidden;
+}
+.modal-head {
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.modal-head h2 {
+  font-size: 17px;
+  margin: 0 0 4px;
+}
+.modal-head p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-3);
+}
+.modal-x {
+  background: transparent;
+  border: 0;
+  color: var(--text-3);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 5px;
+}
+.modal-x:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.07);
+}
+.modal-body {
+  padding: 20px 24px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.modal-foot {
+  padding: 14px 24px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  align-items: center;
+}
+.modal-foot .spacer {
+  flex: 1;
+}
+
+/* 來源類型：2×2 卡片。選中用白框＋淡填，不用色相 */
+.src-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.src {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 13px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.src:hover {
+  border-color: var(--border-strong);
+}
+.src.on {
+  border-color: var(--text);
+  background: rgba(255, 255, 255, 0.07);
+}
+.src .glyph {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  color: var(--text-2);
+}
+.src.on .glyph {
+  color: var(--text);
+}
+.src > span:last-child {
+  min-width: 0;
+}
+/* 標題與說明各自成行 —— 它們是 span，不設 block 會擠在同一行 */
+.src .t,
+.src .d {
+  display: block;
+}
+.src .t {
+  font-size: 13.5px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+.src .d {
+  font-size: 12px;
+  color: var(--text-3);
+  margin-top: 3px;
+  line-height: 1.45;
+}
+.field-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.optional {
+  font-size: 11.5px;
+  color: var(--text-4);
+}
+
+/* GitHub 連接狀態 */
+.conn {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+}
+.conn .body {
+  flex: 1;
+  min-width: 0;
+}
+.conn .t {
+  font-size: 13.5px;
+  font-weight: 500;
+}
+.conn .d {
+  font-size: 12.5px;
+  color: var(--text-3);
+  margin-top: 3px;
+  line-height: 1.55;
+}
+
+/* ---------- Provider 列（OpenRouter BYOK 頁型）---------- */
+.prow-group + .prow-group {
+  border-top: 1px solid var(--border);
+}
+.prow {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 13px 16px;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.prow:hover {
+  background: rgba(255, 255, 255, 0.035);
+}
+.plogo {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.03);
+}
+.plogo img {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+/* simple-icons 原始 SVG 是黑的，暗底要反白 */
+.plogo img.invert {
+  filter: invert(1);
+}
+.prow .pname {
+  font-size: 14px;
+  font-weight: 500;
+}
+.prow .pdesc {
+  font-size: 12px;
+  color: var(--text-3);
+  margin-top: 1px;
+}
+.prow .pstatus {
+  margin-left: auto;
+  font-size: 12.5px;
+  color: var(--text-3);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  white-space: nowrap;
+}
+.prow .pstatus .chev-r {
+  color: var(--text-4);
+}
+.prow-detail {
+  padding: 4px 16px 14px 66px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.keyline {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  font-size: 13px;
+}
+.keyline .spacer {
+  flex: 1;
+}
+.sec-label {
+  font-size: 11.5px;
+  letter-spacing: 0.02em;
+  color: var(--text-4);
+  margin: 22px 0 8px;
+}

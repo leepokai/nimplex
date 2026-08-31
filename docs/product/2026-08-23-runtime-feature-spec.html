@@ -1,0 +1,375 @@
+<title>nimplex Runtime 規格</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@700;900&family=Noto+Sans+TC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --bg: #F6F8F7;
+    --surface: #FFFFFF;
+    --ink: #22302E;
+    --muted: #5C6B68;
+    --line: #DBE2E0;
+    --you: #0E8074;
+    --you-tint: #E2F2EF;
+    --cf: #D96F0E;
+    --cf-tint: #FBEEDD;
+    --gf: #4F55C7;
+    --gf-tint: #E9EAF9;
+    --warn: #B4483C;
+    --star: #8A5A00;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #12181A;
+      --surface: #1A2225;
+      --ink: #E5ECEA;
+      --muted: #92A3A0;
+      --line: #2B3538;
+      --you: #3CC2B0;
+      --you-tint: #16302C;
+      --cf: #F0973B;
+      --cf-tint: #33261A;
+      --gf: #9BA0F2;
+      --gf-tint: #23264A;
+      --warn: #E58077;
+      --star: #E8B75B;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #12181A;
+    --surface: #1A2225;
+    --ink: #E5ECEA;
+    --muted: #92A3A0;
+    --line: #2B3538;
+    --you: #3CC2B0;
+    --you-tint: #16302C;
+    --cf: #F0973B;
+    --cf-tint: #33261A;
+    --gf: #9BA0F2;
+    --gf-tint: #23264A;
+    --warn: #E58077;
+    --star: #E8B75B;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.85;
+  }
+  .wrap { max-width: 70rem; margin: 0 auto; padding: 0 1.25rem 5rem; }
+
+  header { padding: 3.5rem 0 2rem; border-bottom: 1px solid var(--line); }
+  .eyebrow {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.72rem; letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--you); margin: 0 0 0.75rem;
+  }
+  h1 {
+    font-family: "Noto Serif TC", "Songti TC", serif;
+    font-weight: 900;
+    font-size: clamp(2rem, 5vw, 2.9rem);
+    line-height: 1.28; margin: 0 0 0.75rem; text-wrap: balance;
+  }
+  .standfirst { font-size: 1.02rem; color: var(--muted); max-width: 46rem; margin: 0; }
+  .meta {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.74rem; color: var(--muted); margin-top: 1.1rem;
+  }
+  .legend { display: flex; gap: 0.6rem; flex-wrap: wrap; margin-top: 1.1rem; }
+  .legend span { font-size: 0.8rem; font-weight: 700; padding: 0.26rem 0.75rem; border-radius: 999px; }
+  .legend .gf { background: var(--gf-tint); color: var(--gf); }
+  .legend .cf { background: var(--cf-tint); color: var(--cf); }
+  .legend .you { background: var(--you-tint); color: var(--you); }
+
+  section { padding-top: 3rem; }
+  .tag {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.7rem; letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--you); margin: 0 0 0.4rem;
+  }
+  h2 {
+    font-family: "Noto Serif TC", serif;
+    font-weight: 700; font-size: 1.6rem; line-height: 1.35;
+    margin: 0 0 1rem; text-wrap: balance;
+  }
+  h3 { font-size: 1.08rem; font-weight: 700; margin: 2rem 0 0.5rem; }
+  h3 .mod {
+    font-family: "IBM Plex Mono", monospace; font-weight: 500;
+    color: var(--you); margin-right: 0.5rem;
+  }
+  p { margin: 0 0 1rem; max-width: 46rem; }
+  code {
+    font-family: "IBM Plex Mono", monospace; font-size: 0.85em;
+    background: var(--surface); border: 1px solid var(--line);
+    padding: 0.06em 0.4em; border-radius: 5px;
+  }
+  .parity {
+    font-size: 0.85rem; color: var(--gf); font-weight: 500;
+    margin: -0.3rem 0 0.6rem;
+  }
+
+  figure { margin: 1.75rem 0; }
+  .fig-card {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 10px; padding: 1rem; overflow-x: auto;
+  }
+  .fig-card svg { display: block; min-width: 780px; max-width: 100%; height: auto; color: var(--ink); }
+  figcaption { font-size: 0.82rem; color: var(--muted); margin-top: 0.6rem; max-width: 46rem; }
+
+  svg .t { font-family: "Noto Sans TC", sans-serif; font-size: 12.5px; fill: currentColor; }
+  svg .tb { font-weight: 700; }
+  svg .ts { font-size: 10.5px; fill: var(--muted); font-family: "Noto Sans TC", sans-serif; }
+  svg .lbl {
+    font-family: "Noto Sans TC", sans-serif; font-size: 10.5px; fill: var(--muted); font-weight: 700;
+    paint-order: stroke; stroke: var(--surface); stroke-width: 4px; stroke-linejoin: round;
+  }
+  svg .box { fill: var(--surface); stroke: var(--muted); stroke-width: 1.1; }
+  svg .box-you { fill: var(--you-tint); stroke: var(--you); stroke-width: 1.6; }
+  svg .box-cf { fill: var(--cf-tint); stroke: var(--cf); stroke-width: 1.4; }
+  svg .edge { stroke: var(--muted); stroke-width: 1.2; fill: none; }
+  svg .t-you { fill: var(--you); }
+  svg .t-cf { fill: var(--cf); }
+
+  .tbl-scroll { overflow-x: auto; margin: 0.8rem 0 1.4rem; }
+  table {
+    border-collapse: collapse; width: 100%; max-width: 66rem;
+    font-size: 0.86rem; background: var(--surface);
+    border: 1px solid var(--line); border-radius: 8px;
+  }
+  th, td { text-align: left; padding: 0.5rem 0.85rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  th {
+    font-size: 0.7rem; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--muted); font-weight: 500;
+    font-family: "IBM Plex Mono", monospace;
+    white-space: nowrap;
+  }
+  td.f { font-weight: 700; white-space: nowrap; }
+  td.gfv { color: var(--gf); font-size: 0.8rem; }
+  td.cfv { color: var(--cf); font-size: 0.8rem; white-space: nowrap; }
+  td .star { color: var(--star); font-weight: 700; }
+
+  .guard {
+    border: 1px solid var(--line); border-left: 3px solid var(--star);
+    background: var(--surface); border-radius: 8px;
+    padding: 0.9rem 1.1rem; max-width: 46rem;
+    font-size: 0.9rem; margin: 0.8rem 0;
+  }
+  .guard b { color: var(--star); }
+
+  ul.tight { padding-left: 1.2rem; max-width: 46rem; }
+  ul.tight li { margin-bottom: 0.5rem; }
+  ul.tight li::marker { color: var(--you); }
+
+  footer {
+    margin-top: 4rem; padding-top: 1.4rem;
+    border-top: 1px solid var(--line);
+    font-size: 0.8rem; color: var(--muted); max-width: 46rem;
+  }
+  footer a { color: var(--you); }
+  :focus-visible { outline: 2px solid var(--you); outline-offset: 2px; }
+</style>
+
+<div class="wrap">
+
+<header>
+  <p class="eyebrow">Feature Spec · 內部工作文件</p>
+  <h1>nimplex Runtime 規格</h1>
+  <p class="standfirst">以 GoFreight 的 DIY agent 疊層（Avery＋rhapsody＋sandbox）作為「必須對齊的參照工作負載」，加上 nimplex 的三道閘差異化,逐模組定義在 Cloudflare computer 之上要蓋的完整功能。</p>
+  <p class="meta">2026-08-23 · 參照證據：tool-rhapsody README/CLAUDE.md · poc-ai/solution_router · tool-cc-forge gf-support skills · 三道閘缺席查證</p>
+  <div class="legend">
+    <span class="gf">🟦 GoFreight 現況（parity 基準）</span>
+    <span class="cf">🟠 CF 原語（接上就用）</span>
+    <span class="you">🟢 你要寫的（★＝差異化）</span>
+  </div>
+</header>
+
+<section id="principle">
+  <p class="tag">Design Inputs</p>
+  <h2>兩個輸入，一條鐵律</h2>
+  <p><strong>輸入一（parity 底線）</strong>：rhapsody 已經在生產環境做到的事——tracker 派工、續跑、防呆、監控——nimplex 不能做得比它差，否則沒有退役的理由。<strong>輸入二（差異化）</strong>：三道閘＋網控，全是他們「被迫關掉或沒有」的（<code>--dangerously-skip-permissions</code>、個人憑證、零 egress 控制、零電表）。</p>
+  <p><strong>鐵律</strong>：一切能力經 <code>packages/contracts</code> 暴露；<code>@cloudflare/computer</code>／Think 的型別只准存在於 <code>apps/runtime</code> 內部。</p>
+
+  <figure>
+    <div class="fig-card">
+    <svg viewBox="0 0 960 400" role="img" aria-label="一個 run 的旅程：觸發層進入 Session DO，內有鑰匙櫃注入、迴圈中每步過電表與門禁，經 computer 的三種執行後端幹活，事件日誌流向 console 與 SDK">
+      <defs>
+        <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="var(--muted)"/>
+        </marker>
+      </defs>
+
+      <!-- triggers -->
+      <text class="ts" x="90" y="40" text-anchor="middle">M1 觸發</text>
+      <rect class="box" x="20" y="52" width="140" height="40" rx="8"/>
+      <text class="t" x="90" y="77" text-anchor="middle">Slack @agent</text>
+      <rect class="box" x="20" y="102" width="140" height="40" rx="8"/>
+      <text class="t" x="90" y="127" text-anchor="middle">Jira / GitHub 輪詢</text>
+      <rect class="box" x="20" y="152" width="140" height="40" rx="8"/>
+      <text class="t" x="90" y="177" text-anchor="middle">cron / webhook</text>
+      <rect class="box" x="20" y="202" width="140" height="40" rx="8"/>
+      <text class="t" x="90" y="227" text-anchor="middle">SDK（end user）</text>
+
+      <line class="edge" x1="160" y1="72" x2="216" y2="130" marker-end="url(#ar)"/>
+      <line class="edge" x1="160" y1="122" x2="216" y2="150" marker-end="url(#ar)"/>
+      <line class="edge" x1="160" y1="172" x2="216" y2="175" marker-end="url(#ar)"/>
+      <line class="edge" x1="160" y1="222" x2="216" y2="195" marker-end="url(#ar)"/>
+      <text class="lbl" x="188" y="112" text-anchor="middle">source key</text>
+      <text class="lbl" x="188" y="248" text-anchor="middle">＝DO 定址（天然去重）</text>
+
+      <!-- session DO -->
+      <rect class="box-you" x="220" y="60" width="330" height="270" rx="12"/>
+      <text class="t tb t-you" x="385" y="88" text-anchor="middle">Session DO（每個 actor × 任務一個）M2</text>
+      <rect class="box" x="244" y="104" width="282" height="36" rx="8"/>
+      <text class="t" x="385" y="127" text-anchor="middle">🔑 鑰匙櫃：注入 agent 專屬憑證</text>
+      <rect class="box" x="244" y="150" width="282" height="120" rx="8"/>
+      <text class="t tb" x="385" y="174" text-anchor="middle">agent 迴圈（fibers 續跑）</text>
+      <text class="ts" x="385" y="196" text-anchor="middle">模型呼叫 → ⚡ 電表跳錶（爆上限＝斷電）</text>
+      <text class="ts" x="385" y="216" text-anchor="middle">工具呼叫 → 🚪 門禁 allow / ask / deny</text>
+      <text class="ts" x="385" y="236" text-anchor="middle">ask ＝ durable 審批，批准後斷點續跑</text>
+      <text class="ts" x="385" y="256" text-anchor="middle">stall guard · backoff 重試（alarms）</text>
+      <rect class="box" x="244" y="280" width="282" height="34" rx="8"/>
+      <text class="t" x="385" y="302" text-anchor="middle">📜 事件日誌（DO SQLite·不可變）M5</text>
+
+      <!-- computer -->
+      <line class="edge" x1="550" y1="210" x2="606" y2="210" marker-end="url(#ar)"/>
+      <text class="lbl" x="578" y="200" text-anchor="middle">exec()</text>
+      <rect class="box-cf" x="610" y="88" width="160" height="240" rx="12"/>
+      <text class="t tb t-cf" x="690" y="114" text-anchor="middle">computer</text>
+      <rect class="box" x="626" y="128" width="128" height="40" rx="8"/>
+      <text class="ts" x="690" y="146" text-anchor="middle">isolate（90%）</text>
+      <text class="ts" x="690" y="160" text-anchor="middle">檔案·輕程式</text>
+      <rect class="box" x="626" y="176" width="128" height="48" rx="8"/>
+      <text class="ts" x="690" y="194" text-anchor="middle">Sandbox（container）</text>
+      <text class="ts" x="690" y="210" text-anchor="middle">harness 預裝·git·測試</text>
+      <rect class="box" x="626" y="232" width="128" height="40" rx="8"/>
+      <text class="ts" x="690" y="250" text-anchor="middle">Browser Run</text>
+      <text class="ts" x="690" y="264" text-anchor="middle">a11y tree 瀏覽</text>
+      <rect class="box" x="626" y="280" width="128" height="36" rx="8"/>
+      <text class="ts t-you" x="690" y="302" text-anchor="middle">🌐 egress 政策 M4</text>
+
+      <!-- console/sdk -->
+      <line class="edge" x1="480" y1="330" x2="480" y2="366" marker-end="url(#ar)"/>
+      <rect class="box-you" x="300" y="368" width="360" height="0" rx="0" opacity="0"/>
+      <rect class="box-you" x="340" y="366" width="290" height="0" opacity="0"/>
+      <rect class="box" x="330" y="368" width="0" height="0" opacity="0"/>
+      <rect class="box-you" x="310" y="368" width="340" height="26" rx="8" opacity="0"/>
+      <rect class="box-you" x="290" y="366" width="380 " height="0" opacity="0"/>
+      <rect class="box-you" x="250" y="368" width="470" height="26" rx="8" opacity="0"/>
+      <rect class="box-you" x="220" y="366" width="550" height="30" rx="8"/>
+      <text class="t t-you" x="495" y="386" text-anchor="middle">Console＋SDK：SSE 時間軸 · 審批收件匣 · needs-attention · 帳單（M5/M6）</text>
+
+      <!-- gateway -->
+      <rect class="box-cf" x="810" y="150" width="130" height="70" rx="10"/>
+      <text class="t t-cf" x="875" y="178" text-anchor="middle">AI Gateway</text>
+      <text class="ts" x="875" y="198" text-anchor="middle">模型路由·成本資料</text>
+      <line class="edge" x1="770" y1="185" x2="806" y2="185" marker-end="url(#ar)"/>
+    </svg>
+    </div>
+    <figcaption><b>一個 run 的旅程。</b>觸發源換成 SDK（end user）或 Jira ticket（Avery 場景）都是同一條路——actor 是誰只是參數。source key 決定 DO 定址，天然解掉 rhapsody「同一張 ticket 兩個 agent 互撞」的已知缺陷。</figcaption>
+  </figure>
+</section>
+
+<section id="modules">
+  <p class="tag">Modules</p>
+  <h2>六個模組的完整功能清單</h2>
+
+  <h3><span class="mod">M1</span>觸發與路由</h3>
+  <p class="parity">Parity 對象：rhapsody trackers（JQL gating＋per-ticket cursor、reviewed-at-head＋cooldown）、cron daemon、solution_router Lambda、CI 失敗路由</p>
+  <div class="tbl-scroll"><table>
+    <thead><tr><th>功能</th><th>規格</th><th>CF 原語</th></tr></thead>
+    <tbody>
+      <tr><td class="f">SDK 觸發</td><td>end user 經 Client SDK 開 session／發訊息（org key 永不進前端，短效 token）</td><td class="cfv">Worker route → DO</td></tr>
+      <tr><td class="f">Tracker 輪詢</td><td>Jira（JQL membership＋per-item cursor）、GitHub PR（search query＋reviewed-at-head＋cooldown）；宣告在 agent config</td><td class="cfv">Cron Trigger → 輪詢 Worker</td></tr>
+      <tr><td class="f">Channel 接入</td><td>Slack @mention → thread 綁 session（取代 solution_router）；generic webhook；CI 失敗事件</td><td class="cfv">Worker webhook route</td></tr>
+      <tr><td class="f">排程</td><td>cron jobs（prompt／script 兩種），宣告式、附冪等鍵</td><td class="cfv">Cron Triggers / DO alarms</td></tr>
+      <tr><td class="f">去重 <span class="star">★</span></td><td><code>source_key</code>（tracker＋item id）決定性對映到唯一 Session DO——跨 tracker 同項目不可能被做兩次</td><td class="cfv">DO 決定性命名</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3><span class="mod">M2</span>Session 與執行</h3>
+  <p class="parity">Parity 對象：per-item 派工＋continuation turns＋deterministic resume、max_concurrent＋per-status sub-caps、no-progress／stall guard、capped backoff、workspace 生命週期、claude-pty driver</p>
+  <div class="tbl-scroll"><table>
+    <thead><tr><th>功能</th><th>規格</th><th>CF 原語</th></tr></thead>
+    <tbody>
+      <tr><td class="f">Session DO</td><td>每個 (actor, 任務) 一個；actor 可以是 end user（SDK 場景）或 agent 身分（Avery 場景）——同一套 runtime</td><td class="cfv">DO＋SQLite</td></tr>
+      <tr><td class="f">續跑</td><td>turn 中斷（部署、崩潰、驅逐）自動從 checkpoint 恢復；SSE 客戶端無感重連（序號續傳）</td><td class="cfv">Think fibers（stash/recover）</td></tr>
+      <tr><td class="f">防呆</td><td>no-progress guard（N turns 無新事件）＋wall-clock stall guard＋capped backoff 無限重試；卡死進 needs-attention</td><td class="cfv">DO alarms</td></tr>
+      <tr><td class="f">並發控制</td><td>per-org／per-config／per-status 並發上限（rhapsody 的 max_concurrent 對等物），超額排隊</td><td class="cfv">協調 DO（計數器）</td></tr>
+      <tr><td class="f">Workspace</td><td>宣告式預載（git clone、檔案、skill 掛載），跨 isolate/container/browser 同步</td><td class="cfv">computer Workspace</td></tr>
+      <tr><td class="f">Harness 驅動</td><td>executor 介面兩個實作：(a) Think 原生（輕量）(b) <strong>Claude Code in Sandbox</strong>（claude-pty parity——GoFreight 全綁 CC，這是硬需求）；harness 預裝進 Sandbox image</td><td class="cfv">Think / Sandbox</td></tr>
+      <tr><td class="f">原生工具橋接</td><td>custom 工具標 ready、外部經 <code>SubmitToolCallResult</code> 補結果（Omnara 形狀）——客戶把自家功能註冊成 agent 工具</td><td class="cfv">—（純 contract）</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3><span class="mod">M3</span>三道閘 <span class="star">★★★</span></h3>
+  <p class="parity">GoFreight 現況：權限＝<code>--dangerously-skip-permissions</code> 全開｜憑證＝工程師個人 acli/gh 登入｜電表＝不存在</p>
+  <div class="tbl-scroll"><table>
+    <thead><tr><th>閘</th><th>規格</th><th>CF 原語</th></tr></thead>
+    <tbody>
+      <tr><td class="f">⚡ 電表</td><td>每 actor 一個錶：模型（AI Gateway 成本）＋工具＋sandbox 時間全記；美元硬上限（org→config→actor 三級）；<strong>爆表＝DO 內當場終止 run</strong>；成本歸因報表＋可轉售帳單匯出</td><td class="cfv">DO 內攔截＋AI Gateway</td></tr>
+      <tr><td class="f">🚪 門禁</td><td>工具政策 allow/ask/deny 宣告在 contract、平台強制（不是 harness 旗標）；ask → durable 審批（console／Slack 按鈕），人批後斷點續跑；審批紀錄入事件日誌。<strong>賣點句：把 dangerously-skip 換成敢開權限的 headless</strong></td><td class="cfv">DO 狀態＋fibers</td></tr>
+      <tr><td class="f">🔑 鑰匙櫃</td><td>agent 專屬身分（GitHub App installation token、Jira service account、Slack bot）＋per-end-user OAuth（broker）；scoped、短效、<strong>注入 sandbox env／bindings，永不進 prompt</strong>；audit 可分辨 agent vs 人</td><td class="cfv">Secrets Store＋Workers bindings</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3><span class="mod">M4</span>網控 <span class="star">★</span></h3>
+  <p class="parity">GoFreight 現況：零（全 org 搜不到 egress／allowlist／firewall）</p>
+  <div class="tbl-scroll"><table>
+    <thead><tr><th>功能</th><th>規格</th><th>CF 原語</th></tr></thead>
+    <tbody>
+      <tr><td class="f">Egress allowlist</td><td>per agent-config 宣告允許網域；<strong>宣告格式 day one 定稿</strong>（之後換執行層不換格式）；v0 在應用層強制：Sandbox 內 proxy env＋工具層檢查；isolate 天生 <code>globalOutbound: null</code> 白名單</td><td class="cfv">isolate capability＋proxy</td></tr>
+      <tr><td class="f">MCP allowlist</td><td>可連的 MCP server 白名單＋每連線 auth 綁 secret 引用</td><td class="cfv">—</td></tr>
+      <tr><td class="f">流量稽核</td><td>所有 egress（誰、去哪、多少）入事件日誌，per-actor rate limit</td><td class="cfv">DO 計數器</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3><span class="mod">M5</span>觀測與營運</h3>
+  <p class="parity">Parity 對象：events.jsonl＋History、web monitor＋needs-attention、supervisor 心跳、doctor、status/history CLI、telemetry secret 遮罩</p>
+  <div class="tbl-scroll"><table>
+    <thead><tr><th>功能</th><th>規格</th><th>CF 原語</th></tr></thead>
+    <tbody>
+      <tr><td class="f">事件日誌</td><td>append-only、嚴格排序、per-session（the log is the agent）；歸檔到 R2；秘密遮罩在寫入層</td><td class="cfv">DO SQLite＋R2</td></tr>
+      <tr><td class="f">即時時間軸</td><td>SSE 串流（可續傳序號）給 console 與 Client SDK</td><td class="cfv">DO WS/SSE</td></tr>
+      <tr><td class="f">Needs-attention</td><td>卡在同狀態過久的 session／審批逾期／連續失敗——rhapsody web monitor 的對等物，做進 console</td><td class="cfv">alarms＋查詢</td></tr>
+      <tr><td class="f">狀態 API</td><td><code>status</code>／<code>history</code> 的機器可讀投影（rhapsody CLI 的對等物）＝ Server SDK 的查詢面</td><td class="cfv">—（contract）</td></tr>
+      <tr><td class="f">健康檢查</td><td>doctor 的對等物：連線、憑證、額度餘量的自檢頁</td><td class="cfv">—</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3><span class="mod">M6</span>設定與技能</h3>
+  <p class="parity">Parity 對象：conf.yaml＋git repo 線上設定熱載入、config show 遮罩、tool-cc-forge plugin marketplace、skill 掛載</p>
+  <div class="tbl-scroll"><table>
+    <thead><tr><th>功能</th><th>規格</th><th>CF 原語</th></tr></thead>
+    <tbody>
+      <tr><td class="f">Agent config</td><td>typed（contracts）、<strong>immutable 版本鏈＋內容雜湊</strong>（Omnara 形狀：審計與回滾免費）；console 編輯即發新版</td><td class="cfv">DO/D1</td></tr>
+      <tr><td class="f">Skill 掛載</td><td>宣告 skill 來源（git／registry），佈建時 prime 進 Workspace；<strong>相容 Claude Code plugin marketplace</strong>（tool-cc-forge 不用改就能掛）</td><td class="cfv">computer FS priming</td></tr>
+      <tr><td class="f">秘密引用</td><td>config 只存 <code>sec_…</code> 引用永不存值（rhapsody 的 <code>{exec:...}</code> 對等物，但平台代管）</td><td class="cfv">Secrets Store</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="phasing">
+  <p class="tag">Phasing</p>
+  <h2>掛回 P0–P4</h2>
+  <div class="tbl-scroll"><table>
+    <thead><tr><th>Phase</th><th>本規格落地的部分</th></tr></thead>
+    <tbody>
+      <tr><td class="f">P0 contracts</td><td>M1 SDK 觸發、M3 三道閘、M5 狀態 API、M6 config 的 wire 形狀全部進 contract（含 <code>end_user</code>／actor、budget、tool-policy、egress 宣告格式）</td></tr>
+      <tr><td class="f">P1 console</td><td>M5 時間軸＋needs-attention、M3 審批收件匣＋額度畫面（對 mock）</td></tr>
+      <tr><td class="f">P2 runtime 最小可跑</td><td>M2 Session DO＋fibers＋computer、M1 SDK 觸發＋cron、M3 電表粗版（計數＋超額即停）</td></tr>
+      <tr><td class="f">P3 三道閘做實</td><td>M3 門禁 durable 審批＋鑰匙櫃注入、M4 egress v0、M5 遮罩</td></tr>
+      <tr><td class="f">P4 SDK＋開源</td><td>M2 原生工具橋接、M5 狀態 API、M6 CC plugin 相容；<strong>之後</strong>才做 M1 tracker 輪詢＋Slack channel（GoFreight parity 的最後一塊，也是內部 fleet 銷售的敲門磚）</td></tr>
+    </tbody>
+  </table></div>
+  <div class="guard"><b>兩個 demo 順序不要反。</b>Demo 1＝電表斷電（跑中 run 爆假額度被當場終止）——全生態沒人做得到；Demo 2＝「把 <code>--dangerously-skip-permissions</code> 換掉」（危險工具停在收件匣、批准後斷點續跑）——指著 rhapsody 的程式碼賣。兩個 demo 都只需要 P2＋P3。</div>
+  <div class="guard"><b>Harness 現實。</b>Claude Code parity 需要 Sandbox（container）跑 claude-pty——這條路徑的成本比 Think 原生高一個量級，電表因此更重要，也是「container &lt;10%」原則的例外項。定價要反映。</div>
+</section>
+
+<footer>
+  <p>證據與前文：〈<a href="https://claude.ai/code/artifact/d188dc7c-2fb2-46c4-8d83-b6644a90bad4">nimplex 開工計畫</a>〉·〈<a href="https://claude.ai/code/artifact/47434aa1-3528-4600-8c18-3d3415d2f018">一萬台電腦的管家</a>〉·〈<a href="https://claude.ai/code/artifact/e83fa955-1a29-4d77-a2fe-8dfe428a67f7">Omnara 架構解剖</a>〉。GoFreight 細節引自 hardcoretech 私有 repo（tool-rhapsody、poc-ai、tool-cc-forge），僅供內部參考，不對外分發。</p>
+</footer>
+
+</div>

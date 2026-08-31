@@ -1,23 +1,42 @@
 import { randomUUID } from "node:crypto";
-import { checkBudget, isTerminal, settleSpend } from "@loopbox/core";
-import { appendRunEvents, auditEvents, createDb, runs, usageRecords, workItems } from "@loopbox/db";
-import { and, eq } from "drizzle-orm";
+import { checkBudget, isSandboxSessionState, isTerminal, settleSpend } from "@nimplex/core";
+import {
+  appendRunEvents,
+  auditEvents,
+  createDb,
+  killRun,
+  type RunRow,
+  resolveHarness,
+  runs,
+  usageRecords,
+  workItems,
+} from "@nimplex/db";
+import { getSandboxProvider, hasSandboxProvider } from "@nimplex/sandbox";
+import { and, eq, isNotNull, sql } from "drizzle-orm";
+import { executeHarnessRun } from "./harness-executor.ts";
 import { stubExecutor } from "./stub-executor.ts";
 
 const { db, client } = createDb();
 const workerId = `worker-${process.pid}-${randomUUID().slice(0, 8)}`;
 const LEASE_SECONDS = 60;
 const POLL_MS = 300;
+const REAP_INTERVAL_MS = 10_000;
 
 interface ClaimedItem {
   id: string;
   run_id: string;
-  kind: "model" | "tool";
+  kind: "model" | "tool" | "harness";
   payload: unknown;
   fence: number;
 }
 
-console.log(`loopbox worker ${workerId} started`);
+console.log(`nimplex worker ${workerId} started`);
+
+// 硬殺的收尾：被砍掉的 run 若還留著沙箱，任何一個 worker 讀 sandbox_state 都能接回去銷毀。
+const reaper = setInterval(() => {
+  void reapOrphanSandboxes().catch((err) => console.error("[worker] reaper 失敗", err));
+}, REAP_INTERVAL_MS);
+reaper.unref();
 
 for (;;) {
   const item = await claimNext();
@@ -55,9 +74,26 @@ async function claimNext(): Promise<ClaimedItem | null> {
   return row ? (row as unknown as ClaimedItem) : null;
 }
 
+/** 長時間執行的 harness 要一直續租，否則 60 秒後會被別的 worker 搶走。 */
+async function renewLease(item: ClaimedItem): Promise<boolean> {
+  const updated = await db
+    .update(workItems)
+    .set({ leaseExpiresAt: new Date(Date.now() + LEASE_SECONDS * 1000) })
+    .where(
+      and(
+        eq(workItems.id, item.id),
+        eq(workItems.leaseOwner, workerId),
+        eq(workItems.fence, item.fence),
+      ),
+    )
+    .returning({ id: workItems.id });
+  return updated.length > 0;
+}
+
 async function processItem(item: ClaimedItem) {
   const run = await db.query.runs.findFirst({ where: eq(runs.id, item.run_id) });
   if (!run || isTerminal(run.status)) {
+    if (run) await destroySandbox(run);
     await finishItem(item, "done");
     return;
   }
@@ -72,12 +108,78 @@ async function processItem(item: ClaimedItem) {
     });
   }
 
-  // W2：美元硬上限——執行前先查帳，超額即殺，不再發出任何工作。
-  if (checkBudget(run.spentUsd, run.budgetUsd).exceeded) {
-    await killRun(run.id, run.orgId, run.endUserId, run.spentUsd, run.budgetUsd, item);
+  // 美元硬上限——執行前先查帳，超額即殺，不再發出任何工作。
+  if (run.metering === "exact" && run.budgetUsd !== null) {
+    if (checkBudget(run.spentUsd, run.budgetUsd).exceeded) {
+      await killRun(db, run, "budget_exceeded", "worker");
+      await destroySandbox(run);
+      await finishItem(item, "done");
+      return;
+    }
+  }
+
+  if (item.kind === "harness") {
+    await processHarnessItem(item, run);
+    return;
+  }
+  await processBuiltinItem(item, run);
+}
+
+/** 插槽合體的那條路徑：任意 harness × 任意 sandbox × 使用者自己的 LLM 額度。 */
+async function processHarnessItem(item: ClaimedItem, run: RunRow) {
+  const harness = await resolveHarness(db, run.orgId, run.harness);
+  if (!harness) {
+    await failRun(run, `harness "${run.harness}" 已從註冊表消失`);
+    await finishItem(item, "done");
+    return;
+  }
+  if (!hasSandboxProvider(run.sandbox.provider)) {
+    await failRun(run, `sandbox provider "${run.sandbox.provider}" 尚未註冊`);
+    await finishItem(item, "done");
     return;
   }
 
+  const result = await executeHarnessRun(
+    { db, renewLease: () => renewLease(item) },
+    run,
+    harness.manifest,
+  );
+
+  const fresh = await db.query.runs.findFirst({ where: eq(runs.id, run.id) });
+  const alreadyTerminal = fresh ? isTerminal(fresh.status) : false;
+
+  if (!alreadyTerminal) {
+    if (result.status === "completed") {
+      await db.transaction(async (tx) => {
+        await tx
+          .update(runs)
+          .set({ status: "completed", completedAt: new Date(), sandboxState: null })
+          .where(eq(runs.id, run.id));
+        await appendRunEvents(tx, run.id, [
+          { type: "run.completed", payload: { spent_usd: fresh?.spentUsd ?? run.spentUsd } },
+        ]);
+        await tx.insert(auditEvents).values({
+          orgId: run.orgId,
+          endUserId: run.endUserId,
+          runId: run.id,
+          actor: "worker",
+          action: "run.completed",
+          meta: { harness: run.harness, spent_usd: fresh?.spentUsd ?? run.spentUsd },
+        });
+      });
+    } else {
+      await failRun(run, result.error ?? "harness 執行失敗");
+    }
+  } else {
+    // 已經被閘道或 API 軟殺了，這裡只負責把沙箱狀態清乾淨
+    await db.update(runs).set({ sandboxState: null }).where(eq(runs.id, run.id));
+  }
+
+  await finishItem(item, "done");
+}
+
+/** 零設定的內建 loop：不開沙箱、不需要 BYOK，用來驗證計量與 kill-switch。 */
+async function processBuiltinItem(item: ClaimedItem, run: RunRow) {
   const result = await stubExecutor.step(
     {
       id: run.id,
@@ -85,13 +187,16 @@ async function processItem(item: ClaimedItem) {
       endUserId: run.endUserId,
       config: run.config,
       spentUsd: run.spentUsd,
-      budgetUsd: run.budgetUsd,
+      budgetUsd: run.budgetUsd ?? Number.POSITIVE_INFINITY,
     },
-    { id: item.id, kind: item.kind, payload: item.payload },
+    { id: item.id, kind: item.kind === "harness" ? "model" : item.kind, payload: item.payload },
   );
 
   const newSpent = settleSpend(run.spentUsd, result.costUsd);
-  const exceeded = checkBudget(newSpent, run.budgetUsd).exceeded;
+  const exceeded =
+    run.metering === "exact" &&
+    run.budgetUsd !== null &&
+    checkBudget(newSpent, run.budgetUsd).exceeded;
 
   await db.transaction(async (tx) => {
     // fence：確認租約仍屬於本 worker，否則整筆放棄（防止卡住又醒來的雙寫）
@@ -110,7 +215,7 @@ async function processItem(item: ClaimedItem) {
 
     await appendRunEvents(tx, run.id, result.events);
 
-    // 每一分錢都掛在 end_user 上（W2：可轉售計量的基礎）
+    // 每一分錢都掛在 end_user 上
     await tx.insert(usageRecords).values({
       orgId: run.orgId,
       endUserId: run.endUserId,
@@ -170,38 +275,57 @@ async function processItem(item: ClaimedItem) {
   });
 }
 
-async function killRun(
-  runId: string,
-  orgId: string,
-  endUserId: string,
-  spentUsd: number,
-  budgetUsd: number,
-  item: ClaimedItem,
-) {
+async function failRun(run: RunRow, error: string) {
   await db.transaction(async (tx) => {
-    await tx
+    const [updated] = await tx
       .update(runs)
-      .set({ status: "killed", error: "budget_exceeded", completedAt: new Date() })
-      .where(eq(runs.id, runId));
-    await appendRunEvents(tx, runId, [
-      {
-        type: "run.killed",
-        payload: { reason: "budget_exceeded", spent_usd: spentUsd, budget_usd: budgetUsd },
-      },
-    ]);
+      .set({ status: "failed", error, completedAt: new Date(), sandboxState: null })
+      .where(
+        sql`${runs.id} = ${run.id} and ${runs.status} not in ('completed','failed','killed','canceled')`,
+      )
+      .returning({ id: runs.id });
+    if (!updated) return;
+    await appendRunEvents(tx, run.id, [{ type: "run.failed", payload: { error } }]);
     await tx.insert(auditEvents).values({
-      orgId,
-      endUserId,
-      runId,
+      orgId: run.orgId,
+      endUserId: run.endUserId,
+      runId: run.id,
       actor: "worker",
-      action: "run.killed",
-      meta: { spent_usd: spentUsd, budget_usd: budgetUsd },
+      action: "run.failed",
+      meta: { error },
     });
-    await tx
-      .update(workItems)
-      .set({ status: "done", completedAt: new Date() })
-      .where(eq(workItems.id, item.id));
   });
+}
+
+async function destroySandbox(run: Pick<RunRow, "id" | "sandboxState">) {
+  const state = run.sandboxState;
+  if (!isSandboxSessionState(state)) return;
+  if (!hasSandboxProvider(state.backendId)) return;
+  try {
+    await getSandboxProvider(state.backendId).delete(state);
+    await appendRunEvents(db, run.id, [
+      { type: "sandbox.destroyed", payload: { provider: state.backendId, reason: "run_terminal" } },
+    ]);
+  } catch (err) {
+    console.error(`[worker] 銷毀 run ${run.id} 的沙箱失敗`, err);
+  } finally {
+    await db.update(runs).set({ sandboxState: null }).where(eq(runs.id, run.id));
+  }
+}
+
+/** 終態但沙箱還在的 run —— 通常是被閘道軟殺後、原本的 worker 掛掉了。 */
+async function reapOrphanSandboxes() {
+  const orphans = await db
+    .select({ id: runs.id, sandboxState: runs.sandboxState })
+    .from(runs)
+    .where(
+      and(
+        isNotNull(runs.sandboxState),
+        sql`${runs.status} in ('completed','failed','killed','canceled')`,
+      ),
+    )
+    .limit(20);
+  for (const orphan of orphans) await destroySandbox(orphan);
 }
 
 async function finishItem(item: ClaimedItem, status: "done" | "failed") {

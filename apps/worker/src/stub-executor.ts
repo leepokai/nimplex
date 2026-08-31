@@ -1,4 +1,4 @@
-import type { RunExecutor } from "@loopbox/core";
+import type { RunExecutor } from "@nimplex/core";
 import { z } from "zod";
 
 const stepPayload = z.object({ step: z.number().int().min(1) });

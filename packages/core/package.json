@@ -1,5 +1,5 @@
 {
-  "name": "@loopbox/core",
+  "name": "@nimplex/core",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -10,7 +10,7 @@
     "check": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@loopbox/contracts": "workspace:*"
+    "@nimplex/contracts": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",

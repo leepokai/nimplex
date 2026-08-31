@@ -1,5 +1,5 @@
 {
-  "name": "@loopbox/api",
+  "name": "@nimplex/api",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -10,13 +10,15 @@
   },
   "dependencies": {
     "@hono/node-server": "^2.1.1",
-    "@loopbox/contracts": "workspace:*",
-    "@loopbox/core": "workspace:*",
-    "@loopbox/db": "workspace:*",
+    "@nimplex/contracts": "workspace:*",
+    "@nimplex/core": "workspace:*",
+    "@nimplex/db": "workspace:*",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.13.3",
     "postgres": "^3.4.9",
-    "zod": "^4.4.3"
+    "zod": "^4.4.3",
+    "@nimplex/gateway": "workspace:*",
+    "@nimplex/sandbox": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",

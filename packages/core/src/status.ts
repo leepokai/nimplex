@@ -1,4 +1,4 @@
-import type { RunStatus } from "@loopbox/contracts";
+import type { RunStatus } from "@nimplex/contracts";
 
 export const TERMINAL_STATUSES: ReadonlySet<RunStatus> = new Set([
   "completed",

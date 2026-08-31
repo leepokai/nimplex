@@ -1,5 +1,9 @@
 # Scraped competitor research — do not commit
 docs/competitor-analyze/
+competitor-analyze/
+
+# Scratch space for trying out third-party tools/frameworks — never commit
+sandbox/
 
 node_modules/
 dist/
@@ -7,3 +11,10 @@ dist/
 coverage/
 .env
 *.log
+.dev.vars
+
+# Local tooling state — not project source
+.playwright-mcp/
+.claude/
+.agents/
+skills-lock.json

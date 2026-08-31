@@ -1,0 +1,311 @@
+<title>一萬台電腦的管家</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600&family=Noto+Sans+TC:wght@400;700;900&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --bg: #F6F8FA;
+    --surface: #FFFFFF;
+    --ink: #243038;
+    --muted: #64737C;
+    --line: #DDE4E9;
+    --cf: #E97711;
+    --cf-tint: #FDEFDF;
+    --you: #0E8074;
+    --you-tint: #E2F2EF;
+    --warn: #B4483C;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #131A1F;
+      --surface: #1C242B;
+      --ink: #E9EEF1;
+      --muted: #93A2AB;
+      --line: #2C363E;
+      --cf: #FF9A3D;
+      --cf-tint: #33261A;
+      --you: #3CC2B0;
+      --you-tint: #16302C;
+      --warn: #E58077;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #131A1F;
+    --surface: #1C242B;
+    --ink: #E9EEF1;
+    --muted: #93A2AB;
+    --line: #2C363E;
+    --cf: #FF9A3D;
+    --cf-tint: #33261A;
+    --you: #3CC2B0;
+    --you-tint: #16302C;
+    --warn: #E58077;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+    font-size: 17.5px;
+    line-height: 1.9;
+  }
+  .wrap { max-width: 52rem; margin: 0 auto; padding: 0 1.25rem 5rem; }
+
+  header { padding: 3.5rem 0 1rem; }
+  .eyebrow {
+    font-family: "Fredoka", "Noto Sans TC", sans-serif;
+    font-weight: 600; font-size: 0.8rem;
+    letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--you); margin: 0 0 0.6rem;
+  }
+  h1 {
+    font-weight: 900;
+    font-size: clamp(2rem, 5.5vw, 2.9rem);
+    line-height: 1.3; margin: 0 0 0.8rem; text-wrap: balance;
+  }
+  .standfirst { font-size: 1.1rem; color: var(--muted); margin: 0 0 1.2rem; max-width: 40rem; }
+  .standfirst b { color: var(--ink); }
+  .legend { display: flex; gap: 0.6rem; flex-wrap: wrap; }
+  .legend span { font-size: 0.85rem; font-weight: 700; padding: 0.3rem 0.85rem; border-radius: 999px; }
+  .legend .cf { background: var(--cf-tint); color: var(--cf); }
+  .legend .you { background: var(--you-tint); color: var(--you); }
+
+  section { padding-top: 3.2rem; }
+  .step-no {
+    font-family: "Fredoka", sans-serif; font-weight: 600;
+    font-size: 0.95rem; color: var(--muted); margin: 0 0 0.2rem;
+  }
+  h2 { font-weight: 900; font-size: 1.55rem; line-height: 1.4; margin: 0 0 0.8rem; text-wrap: balance; }
+  p { margin: 0 0 0.9rem; max-width: 40rem; }
+  .you-word { color: var(--you); font-weight: 700; }
+  .cf-word { color: var(--cf); font-weight: 700; }
+  code {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.85em;
+    background: var(--surface); border: 1px solid var(--line);
+    padding: 0.08em 0.4em; border-radius: 6px;
+  }
+
+  figure { margin: 1.4rem 0 0.6rem; }
+  .fig-card {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 16px; padding: 1.1rem; overflow-x: auto;
+  }
+  .fig-card svg { display: block; min-width: 620px; max-width: 100%; height: auto; color: var(--ink); }
+  figcaption { font-size: 0.85rem; color: var(--muted); margin-top: 0.6rem; }
+
+  svg .t  { font-family: "Noto Sans TC", sans-serif; font-size: 14px; fill: currentColor; font-weight: 700; }
+  svg .ts { font-family: "Noto Sans TC", sans-serif; font-size: 11.5px; fill: var(--muted); }
+  svg .tf { font-family: "Fredoka", sans-serif; font-weight: 600; }
+  svg .lbl {
+    font-family: "Noto Sans TC", sans-serif; font-size: 11.5px; fill: var(--muted); font-weight: 700;
+    paint-order: stroke; stroke: var(--surface); stroke-width: 4px; stroke-linejoin: round;
+  }
+  svg .box     { fill: var(--surface); stroke: var(--ink); stroke-width: 1.6; }
+  svg .box-cf  { fill: var(--cf-tint); stroke: var(--cf); stroke-width: 2; }
+  svg .box-you { fill: var(--you-tint); stroke: var(--you); stroke-width: 2; }
+  svg .box-dim { fill: var(--bg); stroke: var(--line); stroke-width: 1.4; }
+  svg .edge { stroke: var(--ink); stroke-width: 1.8; fill: none; }
+  svg .edge-soft { stroke: var(--muted); stroke-width: 1.4; fill: none; }
+  svg .t-cf { fill: var(--cf); }
+  svg .t-you { fill: var(--you); }
+  svg .t-warn { fill: var(--warn); }
+
+  .punchline {
+    margin-top: 1.6rem;
+    background: var(--surface);
+    border: 2px solid var(--you);
+    border-radius: 16px;
+    padding: 1.3rem 1.5rem;
+    font-size: 1.15rem; font-weight: 700; line-height: 1.9;
+    max-width: 42rem;
+  }
+  .punchline .sub { font-weight: 400; font-size: 0.95rem; color: var(--muted); }
+
+  footer {
+    margin-top: 4rem; padding-top: 1.4rem;
+    border-top: 1px solid var(--line);
+    font-size: 0.82rem; color: var(--muted);
+  }
+  footer a { color: var(--you); }
+  :focus-visible { outline: 2px solid var(--you); outline-offset: 2px; }
+</style>
+
+<div class="wrap">
+
+<header>
+  <p class="eyebrow">ELI5 · 講到五歲小孩都懂</p>
+  <h1>一萬台電腦的管家</h1>
+  <p class="standfirst">你要做的「management layer」到底是什麼？一句話：<b>當一個 App 的一萬個使用者，每人都有一個 AI 小幫手在幫他們幹活時——替 App 的老闆管好這一萬台電腦的管家。</b></p>
+  <div class="legend">
+    <span class="cf">🟠 橘色＝Cloudflare（電腦工廠）</span>
+    <span class="you">🟢 綠色＝你（管家）</span>
+  </div>
+</header>
+
+<section>
+  <p class="step-no">第 1 頁</p>
+  <h2>世界上有兩種人</h2>
+  <p>左邊是<strong>工程師</strong>：想自己動手蓋 agent，<span class="cf-word">Cloudflare 服務他們</span>（賣零件、賣電腦）。右邊是<strong>做產品的人</strong>：想讓自己的 App 裡「長出」agent 給使用者用,但不想蓋、也蓋不動底層。<span class="you-word">右邊這群人，現在沒有人服務。</span></p>
+  <figure>
+    <div class="fig-card">
+    <svg viewBox="0 0 700 250" role="img" aria-label="兩種人：工程師由 Cloudflare 服務；做產品的人想要現成的 agent 能力，目前沒人服務——那是你的客戶">
+      <rect class="box-cf" x="40" y="50" width="280" height="150" rx="12"/>
+      <text class="tf" x="180" y="95" text-anchor="middle" font-size="26">🧑‍🔧</text>
+      <text class="t" x="180" y="128" text-anchor="middle">工程師：「我要自己蓋」</text>
+      <text class="ts" x="180" y="152" text-anchor="middle">買零件、租電腦、寫程式</text>
+      <text class="ts t-cf" x="180" y="176" text-anchor="middle" font-weight="700">→ Cloudflare 服務他</text>
+
+      <rect class="box-you" x="380" y="50" width="280" height="150" rx="12"/>
+      <text class="tf" x="520" y="95" text-anchor="middle" font-size="26">🧑‍💼</text>
+      <text class="t" x="520" y="128" text-anchor="middle">做產品的人：「我要現成的」</text>
+      <text class="ts" x="520" y="152" text-anchor="middle">想讓 App 的每個使用者都有 agent</text>
+      <text class="ts t-you" x="520" y="176" text-anchor="middle" font-weight="700">→ 你服務他</text>
+    </svg>
+    </div>
+  </figure>
+</section>
+
+<section>
+  <p class="step-no">第 2 頁</p>
+  <h2>麻煩的規模：不是一台，是一萬台</h2>
+  <p>做產品的人接上 agent 的那一刻，問題就變形了：他的 App 有一萬個使用者，等於<strong>一萬個小幫手、一萬台電腦同時在燒他的錢、拿著使用者的鑰匙</strong>。誰在看著？出事誰擋？錢燒爆誰停？</p>
+  <figure>
+    <div class="fig-card">
+    <svg viewBox="0 0 700 270" role="img" aria-label="一個 App 下面一萬個使用者，每人一個 agent 房間，同時燒錢、持有鑰匙——沒人看著就是災難">
+      <rect class="box" x="270" y="30" width="160" height="52" rx="10"/>
+      <text class="t" x="350" y="52" text-anchor="middle">客戶的 App</text>
+      <text class="ts" x="350" y="70" text-anchor="middle">10,000 個使用者</text>
+
+      <line class="edge-soft" x1="310" y1="82" x2="150" y2="120"/>
+      <line class="edge-soft" x1="350" y1="82" x2="350" y2="120"/>
+      <line class="edge-soft" x1="390" y1="82" x2="550" y2="120"/>
+
+      <rect class="box-dim" x="80" y="124" width="140" height="70" rx="10"/>
+      <text class="ts" x="150" y="150" text-anchor="middle">使用者 A 的房間</text>
+      <text class="ts t-warn" x="150" y="172" text-anchor="middle">💸 正在燒錢</text>
+      <rect class="box-dim" x="280" y="124" width="140" height="70" rx="10"/>
+      <text class="ts" x="350" y="150" text-anchor="middle">使用者 B 的房間</text>
+      <text class="ts t-warn" x="350" y="172" text-anchor="middle">🔑 拿著 B 的鑰匙</text>
+      <rect class="box-dim" x="480" y="124" width="140" height="70" rx="10"/>
+      <text class="ts" x="550" y="150" text-anchor="middle">使用者 C 的房間</text>
+      <text class="ts t-warn" x="550" y="172" text-anchor="middle">🔨 正在動手做事</text>
+
+      <text class="ts" x="350" y="222" text-anchor="middle">…… ×10,000</text>
+      <text class="t t-warn" x="350" y="250" text-anchor="middle">沒人看著＝老闆的惡夢</text>
+    </svg>
+    </div>
+    <figcaption>一個 agent 是玩具；一萬個 agent 是「必須被管理」的基礎設施。管理這件事，就是你的產品。</figcaption>
+  </figure>
+</section>
+
+<section>
+  <p class="step-no">第 3 頁</p>
+  <h2>管家做三件事</h2>
+  <p>每個房間門口都站著<span class="you-word">你的管家</span>。任何小幫手要花錢、拿鑰匙、動工具——都要先過管家這一關。</p>
+  <figure>
+    <div class="fig-card">
+    <svg viewBox="0 0 700 280" role="img" aria-label="管理層的三道閘：每人電表管錢、鑰匙櫃管憑證、門禁管工具權限">
+      <rect class="box-you" x="40" y="45" width="190" height="190" rx="12"/>
+      <text class="tf" x="135" y="95" text-anchor="middle" font-size="30">⚡</text>
+      <text class="t t-you" x="135" y="130" text-anchor="middle">電表</text>
+      <text class="ts" x="135" y="156" text-anchor="middle">每個使用者自己的電表</text>
+      <text class="ts" x="135" y="176" text-anchor="middle">花多少記多少</text>
+      <text class="ts" x="135" y="196" text-anchor="middle">設好上限，到頂就停</text>
+
+      <rect class="box-you" x="255" y="45" width="190" height="190" rx="12"/>
+      <text class="tf" x="350" y="95" text-anchor="middle" font-size="30">🔑</text>
+      <text class="t t-you" x="350" y="130" text-anchor="middle">鑰匙櫃</text>
+      <text class="ts" x="350" y="156" text-anchor="middle">A 的鑰匙開不了 B 的門</text>
+      <text class="ts" x="350" y="176" text-anchor="middle">鑰匙不經過 AI 的手</text>
+      <text class="ts" x="350" y="196" text-anchor="middle">（不會出現在對話裡）</text>
+
+      <rect class="box-you" x="470" y="45" width="190" height="190" rx="12"/>
+      <text class="tf" x="565" y="95" text-anchor="middle" font-size="30">🚪</text>
+      <text class="t t-you" x="565" y="130" text-anchor="middle">門禁</text>
+      <text class="ts" x="565" y="156" text-anchor="middle">這個工具：隨便用</text>
+      <text class="ts" x="565" y="176" text-anchor="middle">那個工具：先問人</text>
+      <text class="ts" x="565" y="196" text-anchor="middle">危險的：不准</text>
+
+      <text class="ts" x="350" y="262" text-anchor="middle">＝ 計費硬上限 · 憑證隔離 · 權限審批（allow / ask / deny）</text>
+    </svg>
+    </div>
+  </figure>
+</section>
+
+<section>
+  <p class="step-no">第 4 頁</p>
+  <h2>電表的殺手鐧：跑到一半也能斷電</h2>
+  <p>市面上的管理工具都像<strong>門口警衛</strong>：只能在請求進門時擋。但 agent 是進了門才開始連續燒錢的——警衛擋不了已經在屋裡的人。<span class="you-word">你的管家住在房間裡</span>，錶跳到上限，<strong>當場拉閘</strong>，就算工作做到一半。</p>
+  <figure>
+    <div class="fig-card">
+    <svg viewBox="0 0 700 250" role="img" aria-label="門口警衛只能在進門時攔截；你的斷路器在房間裡，額度用完當場斷電，即使工作進行到一半">
+      <rect class="box-dim" x="40" y="50" width="280" height="150" rx="12"/>
+      <text class="t" x="180" y="86" text-anchor="middle">別人：門口警衛</text>
+      <text class="ts" x="180" y="112" text-anchor="middle">進門時檢查一次</text>
+      <text class="ts" x="180" y="134" text-anchor="middle">進去之後就管不到了</text>
+      <text class="ts t-warn" x="180" y="164" text-anchor="middle">跑了 3 小時才發現燒爆 💸</text>
+
+      <rect class="box-you" x="380" y="50" width="280" height="150" rx="12"/>
+      <text class="t t-you" x="520" y="86" text-anchor="middle">你：房間裡的斷路器</text>
+      <text class="ts" x="520" y="112" text-anchor="middle">每一步都在跳錶</text>
+      <text class="ts" x="520" y="134" text-anchor="middle">$10.00 / 上限 $10 →</text>
+      <text class="t t-you" x="520" y="166" text-anchor="middle">⚡啪。當場停。</text>
+    </svg>
+    </div>
+    <figcaption>做得到的原因：你的管理層和執行的房間是同一個東西（同一個 Durable Object）——不是站在外面的代理。</figcaption>
+  </figure>
+</section>
+
+<section>
+  <p class="step-no">第 5 頁</p>
+  <h2>對客戶來說：只是幾行程式碼</h2>
+  <p>做產品的人不用懂上面任何一頁。他裝上<span class="you-word">你的 SDK</span>,他的使用者按一個鈕——剩下的整條鏈路都是你的。</p>
+  <figure>
+    <div class="fig-card">
+    <svg viewBox="0 0 700 220" role="img" aria-label="使用者在客戶 App 按鈕，經你的 SDK 進入管家三道閘，再到 Cloudflare 的電腦房間幹活，結果流回 App">
+      <rect class="box" x="30" y="70" width="130" height="70" rx="10"/>
+      <text class="t" x="95" y="98" text-anchor="middle">客戶的 App</text>
+      <text class="ts" x="95" y="120" text-anchor="middle">使用者按一個鈕</text>
+
+      <line class="edge" x1="160" y1="105" x2="196" y2="105"/>
+      <rect class="box-you" x="200" y="70" width="110" height="70" rx="10"/>
+      <text class="t t-you" x="255" y="98" text-anchor="middle">你的 SDK</text>
+      <text class="ts" x="255" y="120" text-anchor="middle">幾行程式碼</text>
+
+      <line class="edge" x1="310" y1="105" x2="346" y2="105"/>
+      <rect class="box-you" x="350" y="70" width="150" height="70" rx="10"/>
+      <text class="t t-you" x="425" y="94" text-anchor="middle">管家</text>
+      <text class="ts" x="425" y="114" text-anchor="middle">⚡ 🔑 🚪 三道閘</text>
+      <text class="ts" x="425" y="130" text-anchor="middle">全過才放行</text>
+
+      <line class="edge" x1="500" y1="105" x2="536" y2="105"/>
+      <rect class="box-cf" x="540" y="70" width="130" height="70" rx="10"/>
+      <text class="t t-cf" x="605" y="94" text-anchor="middle">CF 的房間</text>
+      <text class="ts" x="605" y="114" text-anchor="middle">檔案·程式·瀏覽器</text>
+      <text class="ts" x="605" y="130" text-anchor="middle">真的動手幹活</text>
+
+      <path class="edge-soft" d="M605 144 Q605 190 350 190 Q100 190 95 148" fill="none" stroke-dasharray="5 4"/>
+      <text class="lbl" x="350" y="182" text-anchor="middle">結果一路流回 App（即時串流）</text>
+    </svg>
+    </div>
+    <figcaption>你的定價也在這條鏈上：向客戶收管理費，電費（CF 的成本）透明轉售、逐使用者歸因。</figcaption>
+  </figure>
+</section>
+
+<section>
+  <p class="step-no">最後一頁</p>
+  <h2>一句話總結</h2>
+  <div class="punchline">
+    <span class="cf-word">Cloudflare 出租電腦給工程師</span>；<br>
+    <span class="you-word">你替做產品的人，管好他們一萬個使用者的一萬台電腦</span>——<br>
+    每台都有電表、鑰匙櫃、門禁。
+    <div class="sub" style="margin-top:0.5rem;">工廠不做管家的生意：他們的客戶是蓋房子的人，你的客戶是開店的人。這層樓目前是空的——這就是 nimplex。</div>
+  </div>
+</section>
+
+<footer>
+  <p>系列前篇：〈<a href="https://claude.ai/code/artifact/a3f2a171-106c-4f0c-8042-0d734d069afc">Cloudflare 的電腦計畫</a>〉·〈<a href="https://claude.ai/code/artifact/9dba35b4-1c41-491d-b256-746ca2102dbf">Isolate 小隔間</a>〉。動工細節見〈<a href="https://claude.ai/code/artifact/d188dc7c-2fb2-46c4-8d83-b6644a90bad4">nimplex 開工計畫</a>〉。</p>
+</footer>
+
+</div>

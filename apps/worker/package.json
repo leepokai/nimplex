@@ -1,5 +1,5 @@
 {
-  "name": "@loopbox/worker",
+  "name": "@nimplex/worker",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -9,12 +9,13 @@
     "check": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@loopbox/contracts": "workspace:*",
-    "@loopbox/core": "workspace:*",
-    "@loopbox/db": "workspace:*",
+    "@nimplex/contracts": "workspace:*",
+    "@nimplex/core": "workspace:*",
+    "@nimplex/db": "workspace:*",
     "drizzle-orm": "^0.45.2",
     "postgres": "^3.4.9",
-    "zod": "^4.4.3"
+    "zod": "^4.4.3",
+    "@nimplex/sandbox": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",

@@ -1,0 +1,740 @@
+<title>nimplex 產品藍圖</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+TC:wght@400;500;700;900&display=swap">
+
+<style>
+  :root {
+    --ground: #F7F8F7;
+    --panel: #FFFFFF;
+    --sunk: #F0F2F1;
+    --ink: #14181A;
+    --muted: #626C71;
+    --line: #DBE0DF;
+    --plane: #0E6E6B;
+    --edge: #9E5F16;
+    --stop: #AC332B;
+    --f-display: "Archivo", "Noto Sans TC", ui-sans-serif, system-ui, sans-serif;
+    --f-body: "Noto Sans TC", "Archivo", ui-sans-serif, system-ui, sans-serif;
+    --f-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0E1113;
+      --panel: #171B1D;
+      --sunk: #121618;
+      --ink: #ECEFF0;
+      --muted: #97A0A5;
+      --line: #262D30;
+      --plane: #4CBDB4;
+      --edge: #E0A055;
+      --stop: #E2685E;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground: #0E1113;
+    --panel: #171B1D;
+    --sunk: #121618;
+    --ink: #ECEFF0;
+    --muted: #97A0A5;
+    --line: #262D30;
+    --plane: #4CBDB4;
+    --edge: #E0A055;
+    --stop: #E2685E;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--f-body);
+    font-size: 16.5px;
+    line-height: 1.75;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: clamp(44px, 7vw, 88px) clamp(18px, 4vw, 44px) 120px;
+    display: flex;
+    flex-direction: column;
+    gap: clamp(56px, 7vw, 92px);
+  }
+
+  .eyebrow {
+    font-family: var(--f-mono);
+    font-size: 12.5px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 14px;
+  }
+
+  h1 {
+    font-family: var(--f-display);
+    font-size: clamp(32px, 5.4vw, 52px);
+    line-height: 1.18;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+    margin: 0 0 18px;
+  }
+
+  h2 {
+    font-family: var(--f-display);
+    font-size: clamp(22px, 3.2vw, 31px);
+    line-height: 1.3;
+    font-weight: 700;
+    letter-spacing: -0.015em;
+    text-wrap: balance;
+    margin: 0;
+  }
+
+  h3 {
+    font-family: var(--f-display);
+    font-size: 19px;
+    line-height: 1.4;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    margin: 0;
+  }
+
+  .lede { font-size: clamp(18px, 2.2vw, 20.5px); color: var(--muted); max-width: 40em; margin: 0; }
+  p { margin: 0; max-width: 44em; }
+  section { display: flex; flex-direction: column; gap: 26px; }
+  .hero { border-bottom: 1px solid var(--line); padding-bottom: clamp(34px, 5vw, 52px); }
+  .sec-h { display: flex; flex-direction: column; gap: 10px; }
+
+  code, .mono { font-family: var(--f-mono); font-size: 0.88em; }
+  code { background: var(--sunk); padding: 1px 5px; border-radius: 3px; }
+
+  /* ---------- figures ---------- */
+  figure { margin: 0; display: flex; flex-direction: column; gap: 14px; }
+  .canvas {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: clamp(12px, 2.2vw, 24px);
+    overflow-x: auto;
+  }
+  .canvas svg {
+    display: block;
+    width: 100%;
+    min-width: 680px;
+    height: auto;
+    font-family: var(--f-body);
+    color: var(--ink);
+  }
+  .canvas svg .m { font-family: var(--f-mono); }
+  figcaption { font-size: 15px; color: var(--muted); max-width: 44em; }
+
+  .c-plane { color: var(--plane); }
+  .c-edge { color: var(--edge); }
+  .c-stop { color: var(--stop); }
+  .c-dim { color: var(--muted); }
+
+  /* ---------- journey ---------- */
+  .journey { display: flex; flex-direction: column; gap: 0; border-top: 1px solid var(--line); }
+  .jstep {
+    display: grid;
+    grid-template-columns: 54px 1fr;
+    gap: 18px;
+    padding: 16px 0;
+    border-bottom: 1px solid var(--line);
+    align-items: baseline;
+  }
+  .jnum { font-family: var(--f-mono); font-size: 13px; color: var(--plane); letter-spacing: 0.04em; }
+  .jstep p { margin: 4px 0 0; font-size: 15.5px; color: var(--muted); }
+  .jstep strong { font-family: var(--f-display); font-weight: 700; font-size: 17px; color: var(--ink); }
+
+  /* ---------- point cards ---------- */
+  .points { display: flex; flex-direction: column; gap: 18px; }
+  .pt {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--plane);
+    border-radius: 3px;
+    padding: 22px clamp(18px, 2.6vw, 28px);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .pt.warn { border-left-color: var(--stop); }
+  .pt-h { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+  .tag {
+    font-family: var(--f-mono);
+    font-size: 12px;
+    color: var(--plane);
+    border: 1px solid var(--line);
+    border-radius: 2px;
+    padding: 1px 7px;
+    flex: none;
+  }
+  .pt.warn .tag { color: var(--stop); }
+  .said {
+    font-size: 14.5px;
+    color: var(--muted);
+    border-left: 2px solid var(--line);
+    padding-left: 14px;
+    margin: 0;
+  }
+  .pt p { font-size: 15.5px; }
+  .rec { font-size: 15.5px; }
+  .rec b { color: var(--plane); font-family: var(--f-display); letter-spacing: 0.01em; }
+  .pt.warn .rec b { color: var(--stop); }
+
+  ul { margin: 0; padding-left: 1.15em; display: flex; flex-direction: column; gap: 6px; }
+  li { font-size: 15.5px; }
+  li::marker { color: var(--muted); }
+
+  /* ---------- mvp table ---------- */
+  .tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 3px; background: var(--panel); }
+  table { border-collapse: collapse; width: 100%; min-width: 560px; }
+  th, td { text-align: left; padding: 12px 16px; border-bottom: 1px solid var(--line); font-size: 15px; vertical-align: top; }
+  th { font-family: var(--f-display); font-weight: 700; font-size: 14px; letter-spacing: 0.01em; }
+  tbody tr:last-child td { border-bottom: none; }
+  td.phase { font-family: var(--f-mono); font-size: 13px; white-space: nowrap; }
+  .p1 { color: var(--plane); }
+  .p2 { color: var(--muted); }
+
+  .closing { border-top: 1px solid var(--line); padding-top: clamp(32px, 4.5vw, 48px); }
+  .kicker { font-family: var(--f-display); font-size: clamp(20px, 2.7vw, 26px); font-weight: 700; line-height: 1.5; max-width: 24em; text-wrap: balance; letter-spacing: -0.01em; }
+</style>
+
+<div class="wrap">
+
+  <header class="hero">
+    <p class="eyebrow">2026-08-24 · 產品藍圖</p>
+    <h1>你的十點，整理成一張圖</h1>
+    <p class="lede">形狀已經很清楚了 —— 這是「Vercel for agents」。下面把每點細化，並標出三個你還沒處理的矛盾。</p>
+  </header>
+
+  <!-- ============ 架構 ============ -->
+  <section>
+    <div class="sec-h">
+      <p class="eyebrow">整體架構</p>
+      <h2>SDK 做「做得到的事」，Console 做「說了算的事」</h2>
+    </div>
+
+    <figure>
+      <div class="canvas">
+        <svg viewBox="0 0 900 460" role="img" aria-label="開發者本機用 CLI 把設定與 skills 推到 nimplex Console。Console 持有預算餘額、政策、secret vault、trace 與 RBAC。客戶應用程式裡的 nimplex SDK 在每個 model call 與 tool call 前跟 Console 做 checkpoint 往返，回報用量並取得繼續或停止的指令，再去執行層建立 sandbox、跑 harness。">
+
+          <!-- 開發者本機 -->
+          <g fill="none" stroke="currentColor" stroke-width="1.5">
+            <rect x="34" y="36" width="212" height="112" rx="4"/>
+          </g>
+          <text x="52" y="64" font-size="16" font-weight="700" fill="currentColor">開發者本機</text>
+          <text x="52" y="90" font-size="13.5" fill="currentColor" class="c-dim m">nimplex.toml</text>
+          <text x="52" y="112" font-size="13.5" fill="currentColor" class="c-dim m">.claude/skills/ · .mcp.json</text>
+          <text x="52" y="134" font-size="13.5" fill="currentColor" class="c-dim m">nimplex dev</text>
+
+          <!-- arrow to console -->
+          <g stroke="currentColor" stroke-width="1.5">
+            <line x1="248" y1="92" x2="292" y2="92"/>
+          </g>
+          <polygon points="292,86 306,92 292,98" fill="currentColor"/>
+          <text x="277" y="78" font-size="13" text-anchor="middle" fill="currentColor" class="c-dim">push / pull</text>
+
+          <!-- console -->
+          <g fill="none" stroke="currentColor" stroke-width="2.5" class="c-plane">
+            <rect x="314" y="26" width="300" height="164" rx="4"/>
+          </g>
+          <text x="336" y="56" font-size="17" font-weight="700" fill="currentColor" class="c-plane">nimplex Console</text>
+          <text x="336" y="76" font-size="12.5" fill="currentColor" class="c-dim m">POLICY DECISION POINT</text>
+          <line x1="336" y1="90" x2="592" y2="90" stroke="currentColor" stroke-width="1" class="c-dim"/>
+          <text x="336" y="112" font-size="13.5" fill="currentColor">預算餘額（per end-user）</text>
+          <text x="336" y="134" font-size="13.5" fill="currentColor">政策：網路白名單 · 權限模式</text>
+          <text x="336" y="156" font-size="13.5" fill="currentColor">Secret Vault · Trace 儲存</text>
+          <text x="336" y="178" font-size="13.5" fill="currentColor">團隊 RBAC · 審批佇列</text>
+
+          <!-- checkpoint arrow (bidirectional) -->
+          <g stroke="currentColor" stroke-width="2" class="c-stop">
+            <line x1="420" y1="196" x2="420" y2="264"/>
+          </g>
+          <polygon points="414,196 420,184 426,196" fill="currentColor" class="c-stop"/>
+          <polygon points="414,264 420,276 426,264" fill="currentColor" class="c-stop"/>
+          <text x="438" y="218" font-size="14" font-weight="700" fill="currentColor" class="c-stop">checkpoint</text>
+          <text x="438" y="238" font-size="13" fill="currentColor" class="c-dim">用量回報 ⇄ 繼續 / 暫停 / 停止</text>
+          <text x="438" y="256" font-size="13" fill="currentColor" class="c-dim">每次 model call、tool call</text>
+
+          <!-- 客戶應用程式 -->
+          <g fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="6 5">
+            <rect x="250" y="284" width="330" height="150" rx="4"/>
+          </g>
+          <text x="272" y="312" font-size="15" fill="currentColor" class="c-dim">你的客戶的應用程式</text>
+
+          <g fill="none" stroke="currentColor" stroke-width="2.5" class="c-edge">
+            <rect x="272" y="330" width="286" height="82" rx="4"/>
+          </g>
+          <text x="292" y="358" font-size="16" font-weight="700" fill="currentColor" class="c-edge">nimplex SDK</text>
+          <text x="292" y="377" font-size="12.5" fill="currentColor" class="c-dim m">POLICY ENFORCEMENT POINT</text>
+          <text x="292" y="399" font-size="13" fill="currentColor" class="c-dim">攔在每個呼叫前面，收到 stop 就 abort</text>
+
+          <!-- arrow to runtime -->
+          <g stroke="currentColor" stroke-width="1.5">
+            <line x1="582" y1="371" x2="638" y2="371"/>
+          </g>
+          <polygon points="638,365 652,371 638,377" fill="currentColor"/>
+          <text x="612" y="357" font-size="13" text-anchor="middle" fill="currentColor" class="c-dim">建立 / 執行</text>
+
+          <!-- 執行層 -->
+          <g fill="none" stroke="currentColor" stroke-width="1.5">
+            <rect x="660" y="252" width="212" height="182" rx="4"/>
+          </g>
+          <text x="678" y="280" font-size="16" font-weight="700" fill="currentColor">執行層</text>
+          <text x="678" y="306" font-size="12.5" fill="currentColor" class="c-dim m">SANDBOX PROVIDER</text>
+          <text x="678" y="326" font-size="13.5" fill="currentColor">Vercel · Cloudflare · E2B</text>
+          <text x="678" y="346" font-size="13.5" fill="currentColor">Docker（本機）</text>
+          <text x="678" y="376" font-size="12.5" fill="currentColor" class="c-dim m">HARNESS</text>
+          <text x="678" y="396" font-size="13.5" fill="currentColor">Claude Code · Codex · Pi</text>
+          <text x="678" y="416" font-size="13.5" fill="currentColor" class="c-dim">（可切換）</text>
+        </svg>
+      </div>
+      <figcaption>紅色那條上下往返的箭頭是整個產品的心臟。它同時做三件事：回報用量、扣預算、下達 kill 指令 —— 而且是 SDK 主動問，所以穿得過 NAT 和客戶防火牆。</figcaption>
+    </figure>
+  </section>
+
+  <!-- ============ 旅程 ============ -->
+  <section>
+    <div class="sec-h">
+      <p class="eyebrow">使用者旅程</p>
+      <h2>從安裝到管起來</h2>
+      <p>注意第 1、2 步的順序 —— <strong>能跑起來在前，註冊在後</strong>。</p>
+    </div>
+
+    <div class="journey">
+      <div class="jstep"><span class="jnum">01</span><div><strong>npx nimplex init</strong><p>產生 <code>nimplex.toml</code>。不需要帳號。</p></div></div>
+      <div class="jstep"><span class="jnum">02</span><div><strong>nimplex dev</strong><p>本機 Docker 當 sandbox、SQLite 當預算計數器、trace 寫本機檔。功能完整，只是不共享。</p></div></div>
+      <div class="jstep"><span class="jnum">03</span><div><strong>登入 console</strong><p>發生在他需要「多人共享」或「上線」的時候，不是第一天。</p></div></div>
+      <div class="jstep"><span class="jnum">04</span><div><strong>建立 App</strong><p>一個 App = 一組 agent 設定的家。綁一個 git repo。</p></div></div>
+      <div class="jstep"><span class="jnum">05</span><div><strong>nimplex push</strong><p>把 skills、MCP 設定、secret 推上去。設定走 git，secret 走 vault。</p></div></div>
+      <div class="jstep"><span class="jnum">06</span><div><strong>開 branch → 自動長出 preview</strong><p>每條 branch 一個獨立環境：獨立設定、獨立 secret scope、獨立預算。</p></div></div>
+      <div class="jstep"><span class="jnum">07</span><div><strong>接 trigger</strong><p>cron、webhook、或你的應用程式直接呼叫 SDK。</p></div></div>
+      <div class="jstep"><span class="jnum">08</span><div><strong>在 Trace tab 看、在 Console 管</strong><p>看軌跡與花費；超標自動停、也能手動按紅色按鈕殺掉跑到一半的 run。</p></div></div>
+    </div>
+  </section>
+
+  <!-- ============ 逐項細化 ============ -->
+  <section>
+    <div class="sec-h">
+      <p class="eyebrow">你的十點 · 逐項細化</p>
+      <h2>哪些直接做，哪些要先改一下</h2>
+    </div>
+
+    <div class="points">
+
+      <article class="pt">
+        <div class="pt-h"><span class="tag">#1 #2</span><h3>先 configure，再登入</h3></div>
+        <p class="said">你說的：使用 SDK configure 好之後，登入到 console</p>
+        <p>順序要反過來想：<strong>登入不能是入口，只能是升級</strong>。開發者 <code>npm install</code> 之後如果第一件事是註冊拿 key，採用率會直接歸零。</p>
+        <p class="rec"><b>建議</b> 同一組介面、兩種後端：<code>localGovernor()</code> 讀設定檔、記憶體計數；<code>hostedGovernor()</code> 指向你的服務。功能一模一樣，差別只在「共不共享」。LiteLLM、Langfuse、Sentry 全是這個形狀。</p>
+      </article>
+
+      <article class="pt">
+        <div class="pt-h"><span class="tag">#3</span><h3>App、preview URL、worktree branching</h3></div>
+        <p class="said">你說的：sandbox service 對應一個 URL，可以 branch 出很多不同的 sandbox configure version</p>
+        <p>直覺是對的，但要先釘死一件事：<strong>preview 對應的是「一組 agent 設定」，不是「一份程式碼」</strong>。你要 branch 的是 harness 選擇、sandbox provider、skills、政策 —— 不是應用程式原始碼。</p>
+        <p class="rec"><b>建議</b> 把 <code>nimplex.toml</code> 放進 git，branching 就自動成立，不用另外設計一套版本機制。git branch ↔ preview 環境 ↔ 本機 worktree，三者一一對應，心智模型跟 Vercel 完全一致，使用者不用學新東西。</p>
+      </article>
+
+      <article class="pt">
+        <div class="pt-h"><span class="tag">#4</span><h3>TOML 同步設定與 secret</h3></div>
+        <p class="said">你說的：需要一個 toml 檔案同步雲端設定和雲端 env secret</p>
+        <p>這裡最容易出事的是 <strong>source of truth 不明</strong> —— 兩邊都能改就會 config drift。</p>
+        <ul>
+          <li><code>nimplex.toml</code> 進版控，是宣告式的、唯一的設定來源</li>
+          <li>secret <strong>只留引用</strong>（<code>{{ secret.OPENAI_KEY }}</code>），值存在雲端 vault，永遠不進 git</li>
+          <li>Console 只能改「不該進版控的東西」：secret 值、預算、RBAC</li>
+        </ul>
+        <p class="rec"><b>建議</b> 設定歸 git，secret 歸 vault，界線畫死。Console 上的設定頁改成唯讀＋「這是從 <code>main</code> 分支讀來的」。</p>
+      </article>
+
+      <article class="pt">
+        <div class="pt-h"><span class="tag">#5</span><h3>RBAC、匿名 user、每人用量</h3></div>
+        <p class="said">你說的：RBAC 設定、匿名 user 設定、每個 user 對應多少 token 使用量</p>
+        <p>你把三種不同的東西混在一起了，它們的難度和價值差很多：</p>
+        <ul>
+          <li><strong>團隊 RBAC</strong>（你客戶的員工誰能改設定）—— 零差異化，<strong>別自建</strong>，用 Clerk / WorkOS</li>
+          <li><strong>End-user 額度</strong>（你客戶的使用者，每人多少 $）—— <strong>這才是護城河</strong>，全力做</li>
+          <li><strong>匿名 user</strong>（未登入的 end-user）—— 用 device / IP 雜湊當身分，給極小固定額度，本質是防濫用</li>
+        </ul>
+        <p class="rec"><b>MVP</b> 只做 end-user 額度，團隊權限先給 owner / member 兩級。「搭配 DB 給不同 user 不同用量」先抽象成幾個固定 plan，別一開始就做任意規則引擎。</p>
+      </article>
+
+      <article class="pt">
+        <div class="pt-h"><span class="tag">#6</span><h3>CLI push skills、agents、MCP</h3></div>
+        <p class="said">你說的：user 在 local 自定義完，透過 CLI push 上來</p>
+        <p>這點很好，但有個決定會影響採用率：<strong>不要自創格式</strong>。</p>
+        <ul>
+          <li><code>.claude/skills/*/SKILL.md</code> —— Claude Code 現有格式</li>
+          <li><code>AGENTS.md</code> —— Codex 現有格式</li>
+          <li><code>.mcp.json</code> —— MCP server 設定</li>
+        </ul>
+        <p class="rec"><b>建議</b> <code>nimplex push</code> 直接掃這些既有目錄打包上傳。使用者手上的 skills 零遷移成本就能用 —— 這會是很強的採用理由。另外 skills 要跟著 branch 走，preview 的 skills 不能污染 production。</p>
+      </article>
+
+      <article class="pt">
+        <div class="pt-h"><span class="tag">#7</span><h3>本機可跑，用 Docker</h3></div>
+        <p class="said">你說的：agent SDK 要在 local 可跑，可能有 docker 處理</p>
+        <p>這跟 #1 是同一件事的兩面。關鍵是 <strong>dev / prod parity</strong>：本機和雲端讀<em>同一份</em> TOML，只是 provider 不同。</p>
+        <p class="rec"><b>建議</b> <code>nimplex dev</code> 起完整本機環境：sandbox 走 Docker provider、governor 走 SQLite、trace 走本機檔＋本機 UI。使用者換到雲端時一行設定都不用改。</p>
+      </article>
+
+      <article class="pt">
+        <div class="pt-h"><span class="tag">#8</span><h3>Trace tab 與分析對話</h3></div>
+        <p class="said">你說的：每個 agent 的運行軌跡和統計數字，提供使用者做分析對話</p>
+        <p>「分析對話」是好點子，但它是查詢介面 —— <strong>資料結構做對了它才有東西可查</strong>。一條 trace 是一棵樹：</p>
+        <p class="mono" style="color:var(--muted)">run → step( model call | tool call | sandbox exec )</p>
+        <p>每個節點都要帶 <code>cost</code>、<code>tokens</code>、<code>duration</code>、<code>end_user_id</code>、<code>outcome</code>。少了 <code>end_user_id</code>，「誰花最多錢」就永遠查不出來。</p>
+        <p class="rec"><b>建議</b> 直接用 OpenTelemetry 的 GenAI semantic conventions，別自創欄位。好處是使用者可以同時把 trace 匯出到 Langfuse / Datadog —— 「不綁架你的資料」本身就是賣點。</p>
+      </article>
+
+      <article class="pt">
+        <div class="pt-h"><span class="tag">#9</span><h3>Cron、webhook 觸發</h3></div>
+        <p class="said">你說的：提供 cron、webhook 等 trigger agent 的方式</p>
+        <p>這裡藏著一個會<strong>打破你整個預算模型</strong>的問題：cron 觸發的 run，算在誰頭上？它沒有 end-user。</p>
+        <p class="rec"><b>建議</b> 早點引入 <strong>service identity（系統身分）</strong> 的概念 —— 它也是一個 principal，有自己的預算和 kill-switch。webhook 則必須能從 payload 映射出 <code>end_user_id</code>，否則多租戶的成本歸因會整段斷掉。這個決定越晚做越痛。</p>
+      </article>
+
+      <article class="pt warn">
+        <div class="pt-h"><span class="tag">#10</span><h3>讓 user 用自己的 Claude Code / Codex OAuth token</h3></div>
+        <p class="said">你說的：讓 user 能夠登入 codex 或 claude code，使用 oauth token 來 serve user</p>
+        <p>價值很高：使用者用自己的訂閱，<strong>你完全不承擔 token 成本</strong> —— 這解掉 agent 產品最大的一塊成本。但有三件事必須先面對：</p>
+        <ul>
+          <li><strong>ToS 風險</strong> —— 拿訂閱制的 OAuth token 跑伺服器端自動化，是否違反供應商條款，要去查清楚，不能假設沒事</li>
+          <li><strong>你會持有高價值憑證</strong> —— 需要 vault 等級保護、可撤銷、可稽核。這是你整個系統最值得被攻擊的地方</li>
+          <li><strong>它跟 #5 直接衝突</strong> —— 見下一節</li>
+        </ul>
+        <p class="rec"><b>建議</b> 做成兩種 credential 模式並存，並在 UI 上明講差別，不要讓使用者以為兩邊一樣。</p>
+      </article>
+
+    </div>
+  </section>
+
+  <!-- ============ 矛盾 ============ -->
+  <section>
+    <div class="sec-h">
+      <p class="eyebrow">必須面對的矛盾</p>
+      <h2>#10 會讓 #5 失效</h2>
+      <p>你最想做的特色，和你唯一的護城河，走在同一條路上會撞車。</p>
+    </div>
+
+    <figure>
+      <div class="canvas">
+        <svg viewBox="0 0 900 296" role="img" aria-label="上方通道：使用者自己的訂閱 OAuth token 直接進 harness 再到模型，中間的預算閘門是虛線代表失效，因為訂閱沒有用量 API，你看不到花了多少。下方通道：API key 經過你的 gateway 再到模型，預算閘門是實線，每次呼叫都可計量、可攔截。">
+
+          <!-- lane A -->
+          <text x="34" y="34" font-size="14" font-weight="700" fill="currentColor" class="c-stop">模式 A · 使用者自己的訂閱</text>
+
+          <g fill="none" stroke="currentColor" stroke-width="1.5">
+            <rect x="34" y="52" width="168" height="60" rx="4"/>
+          </g>
+          <text x="118" y="78" font-size="13.5" text-anchor="middle" fill="currentColor">Claude / Codex 訂閱</text>
+          <text x="118" y="98" font-size="12.5" text-anchor="middle" fill="currentColor" class="c-dim m">OAuth token</text>
+
+          <g stroke="currentColor" stroke-width="1.5"><line x1="204" y1="82" x2="286" y2="82"/></g>
+          <polygon points="286,76 300,82 286,88" fill="currentColor"/>
+
+          <!-- broken gate -->
+          <g fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="5 5" class="c-dim">
+            <rect x="310" y="52" width="150" height="60" rx="4"/>
+          </g>
+          <text x="385" y="78" font-size="13.5" text-anchor="middle" fill="currentColor" class="c-dim">預算閘門</text>
+          <text x="385" y="98" font-size="12.5" text-anchor="middle" fill="currentColor" class="c-stop">失效</text>
+
+          <g stroke="currentColor" stroke-width="1.5" stroke-dasharray="5 5" class="c-dim"><line x1="462" y1="82" x2="544" y2="82"/></g>
+          <polygon points="544,76 558,82 544,88" fill="currentColor" class="c-dim"/>
+
+          <g fill="none" stroke="currentColor" stroke-width="1.5">
+            <rect x="568" y="52" width="130" height="60" rx="4"/>
+          </g>
+          <text x="633" y="88" font-size="13.5" text-anchor="middle" fill="currentColor">模型</text>
+
+          <text x="716" y="72" font-size="13" fill="currentColor" class="c-stop">沒有用量 API</text>
+          <text x="716" y="92" font-size="13" fill="currentColor" class="c-dim">你看不到花了多少</text>
+
+          <!-- divider -->
+          <line x1="34" y1="146" x2="866" y2="146" stroke="currentColor" stroke-width="1" stroke-dasharray="3 6" class="c-dim"/>
+
+          <!-- lane B -->
+          <text x="34" y="184" font-size="14" font-weight="700" fill="currentColor" class="c-plane">模式 B · API key 走你的 gateway</text>
+
+          <g fill="none" stroke="currentColor" stroke-width="1.5">
+            <rect x="34" y="202" width="168" height="60" rx="4"/>
+          </g>
+          <text x="118" y="228" font-size="13.5" text-anchor="middle" fill="currentColor">客戶的 API key</text>
+          <text x="118" y="248" font-size="12.5" text-anchor="middle" fill="currentColor" class="c-dim m">或你的 BYOK</text>
+
+          <g stroke="currentColor" stroke-width="1.5"><line x1="204" y1="232" x2="286" y2="232"/></g>
+          <polygon points="286,226 300,232 286,238" fill="currentColor"/>
+
+          <g fill="none" stroke="currentColor" stroke-width="2.5" class="c-plane">
+            <rect x="310" y="202" width="150" height="60" rx="4"/>
+          </g>
+          <text x="385" y="228" font-size="13.5" text-anchor="middle" fill="currentColor" class="c-plane">預算閘門</text>
+          <text x="385" y="248" font-size="12.5" text-anchor="middle" fill="currentColor" class="c-plane">可計量 · 可攔</text>
+
+          <g stroke="currentColor" stroke-width="1.5"><line x1="462" y1="232" x2="544" y2="232"/></g>
+          <polygon points="544,226 558,232 544,238" fill="currentColor"/>
+
+          <g fill="none" stroke="currentColor" stroke-width="1.5">
+            <rect x="568" y="202" width="130" height="60" rx="4"/>
+          </g>
+          <text x="633" y="238" font-size="13.5" text-anchor="middle" fill="currentColor">模型</text>
+
+          <text x="716" y="222" font-size="13" fill="currentColor" class="c-plane">每次呼叫可計量</text>
+          <text x="716" y="242" font-size="13" fill="currentColor" class="c-dim">預算與 kill-switch 成立</text>
+        </svg>
+      </div>
+      <figcaption>模式 A 讓使用者省錢，但你的預算功能對它完全失效。兩個都要做，但要在產品裡誠實標示：選 A 就沒有 $ 上限，只剩「跑了幾次 / 跑多久」這種粗粒度的限制。</figcaption>
+    </figure>
+  </section>
+
+  <!-- ============ preview branching ============ -->
+  <section>
+    <div class="sec-h">
+      <p class="eyebrow">#3 的機制</p>
+      <h2>branch 進來，preview 出去</h2>
+    </div>
+
+    <figure>
+      <div class="canvas">
+        <svg viewBox="0 0 900 300" role="img" aria-label="git 的三條 branch 各自帶著自己的 nimplex.toml，nimplex 依 branch 長出三個獨立的 preview 環境，每個環境各自擁有獨立的 secret scope、預算與 trace 流。">
+
+          <text x="34" y="34" font-size="12.5" fill="currentColor" class="c-dim m">GIT</text>
+          <text x="330" y="34" font-size="12.5" fill="currentColor" class="c-dim m">NIMPLEX</text>
+          <text x="700" y="34" font-size="12.5" fill="currentColor" class="c-dim m">各自獨立</text>
+
+          <!-- main -->
+          <circle cx="48" cy="82" r="6" fill="currentColor" class="c-plane"/>
+          <text x="68" y="87" font-size="14.5" fill="currentColor" class="m">main</text>
+          <g stroke="currentColor" stroke-width="1.5"><line x1="130" y1="82" x2="192" y2="82"/></g>
+          <polygon points="192,76 206,82 192,88" fill="currentColor"/>
+          <text x="222" y="87" font-size="13" fill="currentColor" class="c-dim m">nimplex.toml</text>
+          <g stroke="currentColor" stroke-width="1.5"><line x1="336" y1="82" x2="398" y2="82"/></g>
+          <polygon points="398,76 412,82 398,88" fill="currentColor"/>
+          <g fill="none" stroke="currentColor" stroke-width="2.5" class="c-plane">
+            <rect x="424" y="58" width="238" height="48" rx="4"/>
+          </g>
+          <text x="444" y="88" font-size="13.5" fill="currentColor" class="c-plane m">app.nimplex.dev</text>
+
+          <!-- feat/a -->
+          <circle cx="48" cy="164" r="6" fill="currentColor" class="c-dim"/>
+          <text x="68" y="169" font-size="14.5" fill="currentColor" class="m">feat/a</text>
+          <g stroke="currentColor" stroke-width="1.5" class="c-dim"><line x1="130" y1="164" x2="192" y2="164"/></g>
+          <polygon points="192,158 206,164 192,170" fill="currentColor" class="c-dim"/>
+          <text x="222" y="169" font-size="13" fill="currentColor" class="c-dim m">nimplex.toml</text>
+          <g stroke="currentColor" stroke-width="1.5" class="c-dim"><line x1="336" y1="164" x2="398" y2="164"/></g>
+          <polygon points="398,158 412,164 398,170" fill="currentColor" class="c-dim"/>
+          <g fill="none" stroke="currentColor" stroke-width="1.5">
+            <rect x="424" y="140" width="238" height="48" rx="4"/>
+          </g>
+          <text x="444" y="170" font-size="13.5" fill="currentColor" class="m">feat-a.app.nimplex.dev</text>
+
+          <!-- feat/b -->
+          <circle cx="48" cy="246" r="6" fill="currentColor" class="c-dim"/>
+          <text x="68" y="251" font-size="14.5" fill="currentColor" class="m">feat/b</text>
+          <g stroke="currentColor" stroke-width="1.5" class="c-dim"><line x1="130" y1="246" x2="192" y2="246"/></g>
+          <polygon points="192,240 206,246 192,252" fill="currentColor" class="c-dim"/>
+          <text x="222" y="251" font-size="13" fill="currentColor" class="c-dim m">nimplex.toml</text>
+          <g stroke="currentColor" stroke-width="1.5" class="c-dim"><line x1="336" y1="246" x2="398" y2="246"/></g>
+          <polygon points="398,240 412,246 398,252" fill="currentColor" class="c-dim"/>
+          <g fill="none" stroke="currentColor" stroke-width="1.5">
+            <rect x="424" y="222" width="238" height="48" rx="4"/>
+          </g>
+          <text x="444" y="252" font-size="13.5" fill="currentColor" class="m">feat-b.app.nimplex.dev</text>
+
+          <!-- brace / notes -->
+          <path d="M 682 62 q 10 0 10 10 L 692 154 q 0 10 10 10 q -10 0 -10 10 L 692 256 q 0 10 -10 10" fill="none" stroke="currentColor" stroke-width="1.5" class="c-dim"/>
+          <text x="716" y="130" font-size="13.5" fill="currentColor">secret scope</text>
+          <text x="716" y="154" font-size="13.5" fill="currentColor">預算額度</text>
+          <text x="716" y="178" font-size="13.5" fill="currentColor">trace 流</text>
+          <text x="716" y="202" font-size="13.5" fill="currentColor">skills 版本</text>
+        </svg>
+      </div>
+      <figcaption>設定進 git 之後，branching 是「免費」得到的 —— 你不用另外設計版本機制。本機的 worktree 跟遠端的 preview 一一對應，開發者的心智模型跟 Vercel 完全一樣。</figcaption>
+    </figure>
+  </section>
+
+  <!-- ============ 生命週期 ============ -->
+  <section>
+    <div class="sec-h">
+      <p class="eyebrow">#11 · 後來補的</p>
+      <h2>暫停與重啟</h2>
+      <p>這條表面上是便利功能，實際上是<strong>你護城河的更好版本</strong>。</p>
+    </div>
+
+    <figure>
+      <div class="canvas">
+        <svg viewBox="0 0 900 336" role="img" aria-label="sandbox 的四個狀態。running 因為預算用完或人工暫停而進入 paused，加值或手動續跑後回到 running。running 跑完或被 kill 進入 stopped。paused 的 TTL 到期、stopped 的保留期滿，都會進入 destroyed。paused 保住檔案與 agent 對話狀態，丟掉跑到一半的 shell 程序。">
+
+          <!-- running -->
+          <g fill="none" stroke="currentColor" stroke-width="2.5" class="c-plane">
+            <rect x="50" y="130" width="160" height="76" rx="4"/>
+          </g>
+          <text x="130" y="164" font-size="16" font-weight="700" text-anchor="middle" fill="currentColor" class="c-plane m">running</text>
+          <text x="130" y="186" font-size="12.5" text-anchor="middle" fill="currentColor" class="c-dim">燒 compute</text>
+
+          <!-- paused -->
+          <g fill="none" stroke="currentColor" stroke-width="2.5" class="c-edge">
+            <rect x="330" y="130" width="160" height="76" rx="4"/>
+          </g>
+          <text x="410" y="164" font-size="16" font-weight="700" text-anchor="middle" fill="currentColor" class="c-edge m">paused</text>
+          <text x="410" y="186" font-size="12.5" text-anchor="middle" fill="currentColor" class="c-dim">只剩儲存費</text>
+
+          <!-- running -> paused -->
+          <g stroke="currentColor" stroke-width="1.5" class="c-edge"><line x1="214" y1="152" x2="308" y2="152"/></g>
+          <polygon points="308,146 322,152 308,158" fill="currentColor" class="c-edge"/>
+          <text x="264" y="140" font-size="12.5" text-anchor="middle" fill="currentColor" class="c-edge">預算用完 · 人工暫停</text>
+
+          <!-- paused -> running -->
+          <g stroke="currentColor" stroke-width="1.5" class="c-plane"><line x1="326" y1="188" x2="232" y2="188"/></g>
+          <polygon points="232,182 218,188 232,194" fill="currentColor" class="c-plane"/>
+          <text x="272" y="208" font-size="12.5" text-anchor="middle" fill="currentColor" class="c-plane">加值 · 手動續跑</text>
+
+          <!-- running -> stopped -->
+          <g fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="130,128 130,80 618,80"/></g>
+          <polygon points="618,74 632,80 618,86" fill="currentColor"/>
+          <text x="374" y="68" font-size="12.5" text-anchor="middle" fill="currentColor" class="c-dim">跑完 · 被 kill</text>
+
+          <!-- stopped -->
+          <g fill="none" stroke="currentColor" stroke-width="1.5">
+            <rect x="640" y="48" width="170" height="66" rx="4"/>
+          </g>
+          <text x="725" y="78" font-size="15" font-weight="700" text-anchor="middle" fill="currentColor" class="m">stopped</text>
+          <text x="725" y="99" font-size="12.5" text-anchor="middle" fill="currentColor" class="c-dim">檔案留著，run 沒了</text>
+
+          <!-- paused -> destroyed -->
+          <g fill="none" stroke="currentColor" stroke-width="1.5" class="c-dim"><polyline points="410,210 410,252 618,252"/></g>
+          <polygon points="618,246 632,252 618,258" fill="currentColor" class="c-dim"/>
+          <text x="516" y="242" font-size="12.5" text-anchor="middle" fill="currentColor" class="c-dim">TTL 到期</text>
+
+          <!-- stopped -> destroyed -->
+          <g stroke="currentColor" stroke-width="1.5" class="c-dim"><line x1="725" y1="118" x2="725" y2="196"/></g>
+          <polygon points="719,196 725,210 731,196" fill="currentColor" class="c-dim"/>
+          <text x="740" y="162" font-size="12.5" fill="currentColor" class="c-dim">保留期滿</text>
+
+          <!-- destroyed -->
+          <g fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="5 5" class="c-dim">
+            <rect x="640" y="212" width="170" height="66" rx="4"/>
+          </g>
+          <text x="725" y="242" font-size="15" font-weight="700" text-anchor="middle" fill="currentColor" class="c-dim m">destroyed</text>
+          <text x="725" y="263" font-size="12.5" text-anchor="middle" fill="currentColor" class="c-dim">全部清掉</text>
+
+          <!-- legend -->
+          <text x="50" y="286" font-size="13" fill="currentColor" class="c-plane">paused 保住：workspace 檔案 · agent 的對話狀態</text>
+          <text x="50" y="308" font-size="13" fill="currentColor" class="c-edge">paused 丟掉：跑到一半的 shell 程序</text>
+        </svg>
+      </div>
+      <figcaption>四個狀態要分乾淨。最常見的 bug 是把 <code>paused</code> 和 <code>stopped</code> 混成一個「停止」—— 前者可以從斷點續跑，後者只能重來。</figcaption>
+    </figure>
+
+    <div class="points">
+      <article class="pt">
+        <div class="pt-h"><span class="tag">為什麼重要</span><h3>把「預算超標」從破壞性事件變成商業事件</h3></div>
+        <p>你現在的 kill-switch 是二選一：讓它跑，或殺掉。<strong>殺掉會丟掉所有進度</strong> —— 對使用者是純粹的損失，對你是純粹的客訴。</p>
+        <p>暫停給了第三個選項：<strong>預算用完時暫停，使用者加值後從斷點續跑。</strong></p>
+        <p class="rec"><b>結果</b> 同一個機制，從「懲罰」變成「收錢的時機」。這比 kill-switch 好得多，而且是同一套 checkpoint 通道就能做到的。</p>
+      </article>
+
+      <article class="pt">
+        <div class="pt-h"><span class="tag">怎麼做</span><h3>不需要新的子系統，只要把 checkpoint 的回應從布林改成 enum</h3></div>
+        <p class="mono" style="color:var(--muted)">{ action: 'continue' | 'pause' | 'stop' | 'await_approval' }</p>
+        <p>SDK 收到 <code>pause</code> 之後的動作序列：</p>
+        <ul>
+          <li>呼叫 harness 的 <code>doSuspendTurn()</code>，拿到 <code>ContinueTurnState</code>（規格保證每個 adapter 都有）</li>
+          <li>把那份 state 存進 Console</li>
+          <li>叫 provider 對 sandbox 做 pause 或 snapshot</li>
+        </ul>
+        <p>續跑就是反過來：<code>resumeSession()</code> 還原 sandbox → <code>doStart({ resumeFrom })</code> 重連 → <code>doContinueTurn()</code> 從斷點跑下去。</p>
+        <p class="rec"><b>好處</b> pause、stop、審批全部共用同一條往返，不用為每個功能各拉一套機制。</p>
+      </article>
+
+      <article class="pt warn">
+        <div class="pt-h"><span class="tag">難處</span><h3>provider 支援度不一，而且沒有規格可靠</h3></div>
+        <p>規格層的 <code>HarnessV1SandboxProvider</code> 只有 <code>createSession</code> 和可選的 <code>resumeSession?</code> —— <strong>沒有 pause 動詞</strong>。你等於要自己定義第三個動詞，並且做能力協商。</p>
+        <ul>
+          <li>底層原生支援（Cloudflare DO 本來就會 hibernate、E2B 有 pause）→ 真暫停，幾乎免費</li>
+          <li>不支援 → 降級：存下 workspace 檔案 → 銷毀 sandbox → 續跑時重建並還原</li>
+        </ul>
+        <p><strong>降級版的物理極限：檔案可以搬，跑到一半的 process 不能搬。</strong> 所以正在跑的 <code>npm install</code> 會消失，但檔案和 agent 的對話狀態都保得住（後者存在 harness 的 <code>ContinueTurnState</code> 裡，跟 sandbox 無關）。</p>
+        <p class="rec"><b>要守的底線</b> UI 上的暫停鍵，絕對不能在不支援的 provider 上悄悄變成殺掉。能力不足就明講「這個 provider 只能停止並重來」。</p>
+      </article>
+
+      <article class="pt">
+        <div class="pt-h"><span class="tag">別忘了</span><h3>暫停不等於零成本</h3></div>
+        <p>snapshot 佔儲存空間，多數 provider 照收。使用者會以為「我暫停了就不用付錢」，然後在帳單上被嚇到。</p>
+        <p class="rec"><b>建議</b> Console 上把 paused 的儲存費用單獨列出來，並且給每個 paused sandbox 一個 TTL 加到期通知 —— 否則你會養出一堆沒人記得的殭屍 sandbox，成本慢慢流血。</p>
+      </article>
+    </div>
+  </section>
+
+  <!-- ============ 漏掉的 ============ -->
+  <section>
+    <div class="sec-h">
+      <p class="eyebrow">你的十點裡沒有</p>
+      <h2>四件該補進去的事</h2>
+    </div>
+
+    <div class="points">
+      <article class="pt">
+        <div class="pt-h"><span class="tag">補 A</span><h3>Kill-switch：殺掉跑到一半的 run</h3></div>
+        <p>Console 上要有一顆紅色按鈕，而且它必須真的能中止已經在跑的 agent。<strong>這是你相對於 LiteLLM 唯一沒被做掉的差異</strong> —— LiteLLM 只能擋「下一次 model 呼叫」，因為它只在 gateway 那層；你的 SDK 在 harness 迴圈裡面，每個 tool call 都是一個檢查點，停止粒度是次秒級。</p>
+        <p class="rec"><b>但</b> 殺掉只是粗糙版本，<strong>暫停才是你真正要賣的東西</strong> —— 見上一節。</p>
+      </article>
+
+      <article class="pt">
+        <div class="pt-h"><span class="tag">補 B</span><h3>審批佇列（pending approvals）</h3></div>
+        <p>「這個 agent 想執行 <code>rm -rf</code> / 想寄這封信 / 想付這筆錢 —— 准不准？」Vercel 的 <code>HarnessV1PendingToolApproval</code> 規格裡已經有這個概念，你的 Console 只要提供收件匣。這是企業客戶的剛需，也是很自然的付費理由。</p>
+      </article>
+
+      <article class="pt">
+        <div class="pt-h"><span class="tag">補 C</span><h3>Egress 政策的設定介面</h3></div>
+        <p>網路白名單要有地方設。規格層（<code>HarnessV1NetworkPolicy</code>）已經定義好 <code>allow-all / deny-all / custom</code> 三種模式加上 host 與 CIDR 清單 —— 你只要做 UI 和存放，不用自己設計。</p>
+      </article>
+
+      <article class="pt">
+        <div class="pt-h"><span class="tag">補 D</span><h3>成本歸因報表</h3></div>
+        <p>Trace 是「一條一條看」，報表是「加總起來看」。per-app、per-end-user、per-tool 的花費排行 —— 這是客戶真正會每週打開的那一頁，也是續訂的理由。</p>
+      </article>
+    </div>
+  </section>
+
+  <!-- ============ MVP ============ -->
+  <section>
+    <div class="sec-h">
+      <p class="eyebrow">切線建議</p>
+      <h2>MVP 該包含什麼</h2>
+      <p>判準只有一條：<strong>先做沒人做過的，後做別人也有的。</strong></p>
+    </div>
+
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr><th>階段</th><th>做什麼</th><th>為什麼</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="phase p1">MVP</td><td>TOML + CLI push + <code>nimplex dev</code></td><td>沒有本機體驗就沒有採用</td></tr>
+          <tr><td class="phase p1">MVP</td><td><strong>單一</strong> sandbox provider + <strong>單一</strong> harness</td><td>多 provider 是加法題，晚點做不影響架構</td></tr>
+          <tr><td class="phase p1">MVP</td><td><strong>per-end-user 預算 + checkpoint + kill-switch</strong></td><td>唯一沒人做的東西，你的全部理由</td></tr>
+          <tr><td class="phase p1">MVP</td><td><strong>pause / resume</strong>（先做一個原生支援的 provider）</td><td>「暫停後加值續跑」比「殺掉」好賣太多</td></tr>
+          <tr><td class="phase p1">MVP</td><td>基本 trace（樹狀 + 成本欄位）</td><td>資料結構錯了以後改不動</td></tr>
+          <tr><td class="phase p2">下一步</td><td>preview branching · 審批佇列 · egress UI</td><td>形狀好但不緊急</td></tr>
+          <tr><td class="phase p2">下一步</td><td>RBAC · 匿名 user · cron / webhook</td><td>有現成方案可接</td></tr>
+          <tr><td class="phase p2">再下一步</td><td>多 provider · 分析對話 · BYO 訂閱 OAuth</td><td>OAuth 那條要先把 ToS 查清楚</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="closing">
+    <p class="kicker">你列的功能，別人大多都有。<br>「對跑到一半的 run 有控制權」—— 繼續、暫停、殺掉 —— 別人沒有。<br>MVP 應該長得像那一件事，其餘全部是它的配套。</p>
+  </section>
+
+</div>

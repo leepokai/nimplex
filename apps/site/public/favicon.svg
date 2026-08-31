@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="32" height="32" role="img">
+  <title>Nimplex</title>
+  <rect width="1024" height="1024" rx="192" fill="#0a0a0a"/>
+  <defs>
+    <linearGradient id="g" gradientUnits="userSpaceOnUse" x1="168" y1="0" x2="856" y2="0">
+      <stop offset="0" stop-color="#ffffff" stop-opacity=".38"/>
+      <stop offset=".6" stop-color="#ffffff" stop-opacity=".82"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="1"/>
+    </linearGradient>
+  </defs>
+  <path d="M168 232C380 232 400 470 556 512M168 512H856M168 792C380 792 400 554 556 512" fill="none" stroke="url(#g)" stroke-width="76"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
