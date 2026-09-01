@@ -1,3 +1,4 @@
+export * from "./auth-schema.ts";
 export * from "./bootstrap.ts";
 export * from "./client.ts";
 export * from "./crypto.ts";

@@ -1,11 +1,17 @@
 /**
  * 三個插槽走一遍：任意 harness（含自己上傳的）× 自帶 LLM token × 自選 sandbox。
  *
- *   pnpm --filter @nimplex/example-quickstart start
+ *   NIMPLEX_API_KEY=nmx_live_... pnpm --filter @nimplex/example-quickstart start
+ *
+ * key 從 console（:5173）的「API keys」頁發；/v1/* 沒帶身分一律 401。
  */
 
 import { defineHarness, Nimplex } from "@nimplex/sdk";
 
+if (!process.env.NIMPLEX_API_KEY) {
+  console.error("缺 NIMPLEX_API_KEY：先在 console（http://localhost:5173）發一把 org API key。");
+  process.exit(1);
+}
 const nimplex = new Nimplex({ baseUrl: process.env.NIMPLEX_BASE_URL });
 
 // ── 插槽 3：先看有哪些 sandbox provider 可用 ────────────────────────────────

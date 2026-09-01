@@ -59,6 +59,27 @@ export const endUsers = pgTable(
   (t) => [uniqueIndex("end_users_org_external").on(t.orgId, t.externalId)],
 );
 
+// 程式化身分：org API key（SDK / CI / 客戶後端用）。
+// 明文只在建立當下回傳一次，落地只有 sha256——DB 外洩不足以冒用任何 key（不變式 I3 同款）。
+// 未來的花費控制掛點是 per-key limit（OpenRouter 模式），欄位先不建、掛點留在這張表。
+export const apiKeys = pgTable(
+  "api_keys",
+  {
+    id: id(),
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    keyHash: text("key_hash").notNull(),
+    last4: text("last4").notNull(),
+    createdAt: createdAt(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    /** 撤銷＝標記不刪列：稽核要能回答「這把 key 曾經存在過」 */
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (t) => [uniqueIndex("api_keys_hash").on(t.keyHash), index("api_keys_org").on(t.orgId)],
+);
+
 // 插槽 2：harness 註冊表。
 // org_id 為 null ＝ 內建（所有 org 共用）；有 org_id ＝ 客戶自己上傳的。
 // 「用網路上的 harness」與「上傳自己的 harness」在這張表裡是同一件事。

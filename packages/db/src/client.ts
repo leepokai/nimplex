@@ -1,6 +1,9 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import * as schema from "./schema.ts";
+import * as authSchema from "./auth-schema.ts";
+import * as appSchema from "./schema.ts";
+
+const schema = { ...appSchema, ...authSchema };
 
 export const DEFAULT_DATABASE_URL = "postgres://nimplex:nimplex@localhost:5433/nimplex";
 

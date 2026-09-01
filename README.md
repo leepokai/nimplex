@@ -48,18 +48,29 @@ docker compose up -d        # Postgres on :5433
 pnpm db:migrate && pnpm db:seed
 pnpm --filter @nimplex/api start &
 pnpm --filter @nimplex/worker start &
+pnpm --filter @nimplex/console dev &   # console on :5173
 ```
 
+**先拿一把 org API key**：開 <http://localhost:5173> 用 GitHub 或 Google 登入
+（Better Auth；OAuth 憑證填在根目錄 `.env`，步驟見 `.env.example`；首次登入即自動擁有一個
+organization）→「API keys」頁建立一把 `nmx_live_…`。開發期沒有 OAuth 憑證時，
+可先設 `NIMPLEX_DEV_EMAIL_AUTH=1` 走 email 註冊（e2e 冒煙腳本也走這條）。
+`/v1/*` 全部要帶身分——console 用 session cookie，程式用 Bearer key，兩者打的是同一組 endpoint。
+
 ```bash
+export NIMPLEX_API_KEY=nmx_live_...
+
 # 插槽 1：放進你自己的 LLM token（明文只在這一次請求裡出現，落地即加密）
-curl -X PUT localhost:8787/v1/provider-keys -H 'content-type: application/json' \
+curl -X PUT localhost:8787/v1/provider-keys \
+  -H "authorization: Bearer $NIMPLEX_API_KEY" -H 'content-type: application/json' \
   -d '{"provider":"anthropic","api_key":"sk-ant-...","scope":"org"}'
 
 # 插槽 3：看有哪些 sandbox provider 可用
-curl -s localhost:8787/v1/sandbox-providers
+curl -s -H "authorization: Bearer $NIMPLEX_API_KEY" localhost:8787/v1/sandbox-providers
 
 # 插槽 2：用網路上現成的 harness 跑一次，上限 $0.50
-curl -X POST localhost:8787/v1/runs -H 'content-type: application/json' -d '{
+curl -X POST localhost:8787/v1/runs \
+  -H "authorization: Bearer $NIMPLEX_API_KEY" -H 'content-type: application/json' -d '{
   "harness":"claude-code",
   "model":{"provider":"anthropic","id":"claude-sonnet-5"},
   "sandbox":{"provider":"docker"},
@@ -67,13 +78,14 @@ curl -X POST localhost:8787/v1/runs -H 'content-type: application/json' -d '{
   "budget_usd":0.5
 }'
 
-curl -N localhost:8787/v1/runs/<run_id>/events
+curl -N -H "authorization: Bearer $NIMPLEX_API_KEY" localhost:8787/v1/runs/<run_id>/events
 ```
 
-SDK 版本見 `examples/quickstart`：
+SDK 版本見 `examples/quickstart`（讀 `NIMPLEX_API_KEY`）：
 
 ```bash
-pnpm --filter @nimplex/example-quickstart start
+pnpm --filter @nimplex/example-quickstart start        # 三插槽走一遍
+pnpm --filter @nimplex/example-quickstart exec tsx src/e2e.ts   # e2e 冒煙（含註冊、預算殺、租戶隔離）
 ```
 
 ## 上傳自己的 harness

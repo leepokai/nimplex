@@ -15,6 +15,13 @@
       "when": 1788167443760,
       "tag": "0001_hesitant_charles_xavier",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788250432716,
+      "tag": "0002_yielding_mandrill",
+      "breakpoints": true
     }
   ]
 }

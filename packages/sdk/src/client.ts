@@ -1,6 +1,11 @@
 import type {
+  ApiKeyResponse,
+  CreateApiKeyResponse,
   HarnessManifest,
+  MemberResponse,
   ModelProvider,
+  OrgResponse,
+  OrgRole,
   ProviderKeyResponse,
   PutProviderKeyRequest,
   RunEvent,
@@ -47,6 +52,45 @@ export class Nimplex {
   agent(settings: AgentSettings): CloudAgent {
     return new CloudAgent(this.transport, settings);
   }
+
+  readonly orgs = {
+    list: (): Promise<OrgResponse[]> =>
+      this.transport.request<{ orgs: OrgResponse[] }>("GET", "/v1/orgs").then((r) => r.orgs),
+
+    create: (name: string): Promise<OrgResponse> =>
+      this.transport.request<OrgResponse>("POST", "/v1/orgs", { body: { name } }),
+  };
+
+  readonly apiKeys = {
+    list: (): Promise<ApiKeyResponse[]> =>
+      this.transport
+        .request<{ api_keys: ApiKeyResponse[] }>("GET", "/v1/api-keys")
+        .then((r) => r.api_keys),
+
+    /** 明文 key 只在回應出現一次（response.key）——存好再丟。 */
+    create: (name: string): Promise<CreateApiKeyResponse> =>
+      this.transport.request<CreateApiKeyResponse>("POST", "/v1/api-keys", { body: { name } }),
+
+    /** 撤銷立即生效：這把 key 的下一個請求就是 401。 */
+    revoke: (id: string): Promise<void> =>
+      this.transport.request<void>("DELETE", `/v1/api-keys/${id}`),
+  };
+
+  readonly members = {
+    list: (): Promise<MemberResponse[]> =>
+      this.transport
+        .request<{ members: MemberResponse[] }>("GET", "/v1/members")
+        .then((r) => r.members),
+
+    add: (email: string, role: OrgRole = "member"): Promise<MemberResponse> =>
+      this.transport.request<MemberResponse>("POST", "/v1/members", { body: { email, role } }),
+
+    setRole: (id: string, role: OrgRole): Promise<MemberResponse> =>
+      this.transport.request<MemberResponse>("PATCH", `/v1/members/${id}`, { body: { role } }),
+
+    remove: (id: string): Promise<void> =>
+      this.transport.request<void>("DELETE", `/v1/members/${id}`),
+  };
 
   readonly harness = {
     list: (): Promise<HarnessSummary[]> =>

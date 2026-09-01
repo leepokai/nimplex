@@ -13,14 +13,15 @@
     "seed": "tsx src/seed.ts"
   },
   "dependencies": {
-    "drizzle-orm": "^0.45.2",
-    "postgres": "^3.4.9",
     "@nimplex/contracts": "workspace:*",
-    "@nimplex/core": "workspace:*"
+    "@nimplex/core": "workspace:*",
+    "drizzle-orm": "^0.45.2",
+    "postgres": "^3.4.9"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",
     "drizzle-kit": "^0.31.10",
+    "kysely": "^0.29.5",
     "tsx": "^4.23.12",
     "typescript": "^7.0.2"
   }

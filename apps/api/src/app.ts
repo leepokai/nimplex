@@ -1,20 +1,28 @@
 import {
+  addMemberRequest,
+  createApiKeyRequest,
+  createOrgRequest,
   createRunRequest,
   type MeteringMode,
   type ModelProvider,
   putProviderKeyRequest,
+  updateMemberRequest,
 } from "@nimplex/contracts";
 import { BUILTIN_LOOP_COMMAND, isTerminal, listPricedModels } from "@nimplex/core";
 import {
+  apiKeys,
   appendRunEvents,
   auditEvents,
   type Db,
   endUsers,
   events,
+  generateApiKey,
   generateRunToken,
   hashToken,
   killRun,
   last4,
+  orgMembers,
+  orgs,
   providerKeys,
   type RunRow,
   runs,
@@ -26,6 +34,7 @@ import { getSandboxProvider, hasSandboxProvider, listSandboxProviders } from "@n
 import { and, asc, desc, eq, gt } from "drizzle-orm";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
+import { type Auth, authProviderStatus } from "./auth.ts";
 import {
   BUILTIN_SLUGS,
   deleteOrgHarness,
@@ -36,23 +45,258 @@ import {
   upsertOrgHarness,
 } from "./harnesses.ts";
 
-// TODO(auth)：MVP 尚未有 API key／org 驗證，只供本機開發。
-export function createApp(db: Db, orgId: string) {
-  const app = new Hono();
+/** 兩種程式化身分：org API key（SDK / CI）與 console session（Better Auth cookie）。 */
+type Identity =
+  | { kind: "api_key"; orgId: string; keyId: string }
+  | { kind: "session"; userId: string; email: string };
+
+export function createApp(db: Db, auth: Auth) {
+  const app = new Hono<{ Variables: { orgId: string; identity: Identity } }>();
 
   app.get("/health", (c) => c.json({ ok: true }));
 
-  // 沙箱裡的 harness 打回來的那條線。掛在公開 API 面上，不是 /internal。
+  // 沙箱裡的 harness 打回來的那條線。認的是 run token，不是 org key——掛在 /v1 認證之前。
   app.route("/gw", createGateway(db));
+
+  // Better Auth：console 登入／註冊／session 全走這裡。
+  app.on(["POST", "GET"], "/api/auth/*", (c) => auth.handler(c.req.raw));
+
+  // 公開端點：哪些登入方式已設定（AuthScreen 據此渲染按鈕，不用寫死）。
+  app.get("/api/auth-providers", (c) => c.json(authProviderStatus()));
+
+  // ---- 認證：/v1/* 一律要有身分 ----
+  // Bearer nmx_live_…（org API key）或 Better Auth session cookie。
+  // Console 能做的事 = SDK 能做的事（不變式 I5）——兩種身分打的是同一組 endpoint。
+  app.use("/v1/*", async (c, next) => {
+    const header = c.req.header("authorization");
+    if (header?.startsWith("Bearer ")) {
+      const token = header.slice(7).trim();
+      const row = await db.query.apiKeys.findFirst({
+        where: eq(apiKeys.keyHash, hashToken(token)),
+      });
+      if (!row || row.revokedAt) {
+        return c.json({ error: "invalid_api_key", detail: "API key 不存在或已撤銷" }, 401);
+      }
+      c.set("identity", { kind: "api_key", orgId: row.orgId, keyId: row.id });
+      // 熱路徑外的順手帳：更新失敗不影響請求
+      void db
+        .update(apiKeys)
+        .set({ lastUsedAt: new Date() })
+        .where(eq(apiKeys.id, row.id))
+        .catch(() => {});
+      return next();
+    }
+    const session = await auth.api.getSession({ headers: c.req.raw.headers });
+    if (session) {
+      c.set("identity", {
+        kind: "session",
+        userId: session.user.id,
+        email: session.user.email,
+      });
+      return next();
+    }
+    return c.json(
+      {
+        error: "unauthorized",
+        detail: "帶 org API key（Authorization: Bearer nmx_live_…）或先登入 console",
+      },
+      401,
+    );
+  });
+
+  // ---- organizations ----
+  // 註冊在 org 上下文 middleware 之前：就算 header 指到進不去的 org，
+  // console 也還列得出清單、自救得回來。
+  app.get("/v1/orgs", async (c) => {
+    const identity = c.get("identity");
+    if (identity.kind === "api_key") {
+      const org = await db.query.orgs.findFirst({ where: eq(orgs.id, identity.orgId) });
+      return c.json({ orgs: org ? [toOrgResponse(org)] : [] });
+    }
+    const rows = await memberOrgs(db, identity.email);
+    return c.json({ orgs: rows.map(toOrgResponse) });
+  });
+
+  app.post("/v1/orgs", async (c) => {
+    const identity = c.get("identity");
+    if (identity.kind !== "session") {
+      return c.json({ error: "session_required", detail: "建立 org 請從 console 登入後操作" }, 403);
+    }
+    const parsed = createOrgRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      return c.json({ error: "invalid_request", issues: parsed.error.issues }, 400);
+    }
+    const row = await db.transaction(async (tx) => {
+      const [org] = await tx.insert(orgs).values({ name: parsed.data.name }).returning();
+      if (!org) throw new Error("org insert failed");
+      await tx.insert(orgMembers).values({ orgId: org.id, email: identity.email, role: "owner" });
+      return org;
+    });
+    return c.json(toOrgResponse(row), 201);
+  });
+
+  // org 上下文：API key 綁死自己的 org；session 依成員資格解析，
+  // x-nimplex-org header 只在使用者是該 org 成員時生效。
+  app.use("/v1/*", async (c, next) => {
+    const identity = c.get("identity");
+    if (identity.kind === "api_key") {
+      c.set("orgId", identity.orgId);
+      return next();
+    }
+    const memberships = await memberOrgs(db, identity.email);
+    if (memberships.length === 0) {
+      return c.json({ error: "no_org", detail: "這個帳號不屬於任何 organization" }, 403);
+    }
+    const requested = c.req.header("x-nimplex-org");
+    if (requested) {
+      if (!UUID_RE.test(requested)) return c.json({ error: "unknown_org" }, 404);
+      const hit = memberships.find((o) => o.id === requested);
+      if (!hit) return c.json({ error: "unknown_org" }, 404);
+      c.set("orgId", hit.id);
+    } else {
+      const first = memberships[0];
+      if (!first) return c.json({ error: "no_org" }, 403);
+      c.set("orgId", first.id);
+    }
+    await next();
+  });
+
+  // ---- org API keys（程式化身分）----
+
+  app.get("/v1/api-keys", async (c) => {
+    const orgId = c.get("orgId");
+    const rows = await db.query.apiKeys.findMany({
+      where: eq(apiKeys.orgId, orgId),
+      orderBy: asc(apiKeys.createdAt),
+    });
+    return c.json({ api_keys: rows.map(toApiKeyResponse) });
+  });
+
+  /** 明文 key 只在這個回應出現一次；落地只有 sha256。 */
+  app.post("/v1/api-keys", async (c) => {
+    const orgId = c.get("orgId");
+    const parsed = createApiKeyRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      return c.json({ error: "invalid_request", issues: parsed.error.issues }, 400);
+    }
+    const key = generateApiKey();
+    const [row] = await db
+      .insert(apiKeys)
+      .values({ orgId, name: parsed.data.name, keyHash: hashToken(key), last4: last4(key) })
+      .returning();
+    if (!row) throw new Error("api key insert failed");
+    await db.insert(auditEvents).values({
+      orgId,
+      actor: actorOf(c.get("identity")),
+      action: "api_key.created",
+      meta: { name: row.name, last4: row.last4 },
+    });
+    return c.json({ ...toApiKeyResponse(row), key }, 201);
+  });
+
+  /** 撤銷＝標記不刪列；被撤銷的 key 當下起全部 401。 */
+  app.delete("/v1/api-keys/:id", async (c) => {
+    const orgId = c.get("orgId");
+    const [row] = await db
+      .update(apiKeys)
+      .set({ revokedAt: new Date() })
+      .where(and(eq(apiKeys.orgId, orgId), eq(apiKeys.id, c.req.param("id"))))
+      .returning();
+    if (!row) return c.json({ error: "not_found" }, 404);
+    await db.insert(auditEvents).values({
+      orgId,
+      actor: actorOf(c.get("identity")),
+      action: "api_key.revoked",
+      meta: { name: row.name, last4: row.last4 },
+    });
+    return c.body(null, 204);
+  });
+
+  // ---- org members（登入 console 的「人」）----
+
+  app.get("/v1/members", async (c) => {
+    const orgId = c.get("orgId");
+    const rows = await db.query.orgMembers.findMany({
+      where: eq(orgMembers.orgId, orgId),
+      orderBy: asc(orgMembers.createdAt),
+    });
+    return c.json({ members: rows.map(toMemberResponse) });
+  });
+
+  app.post("/v1/members", async (c) => {
+    const orgId = c.get("orgId");
+    const parsed = addMemberRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      return c.json({ error: "invalid_request", issues: parsed.error.issues }, 400);
+    }
+    try {
+      const [row] = await db
+        .insert(orgMembers)
+        .values({ orgId, email: parsed.data.email, role: parsed.data.role })
+        .returning();
+      if (!row) throw new Error("member insert failed");
+      return c.json(toMemberResponse(row), 201);
+    } catch (err) {
+      if (isUniqueViolation(err)) return c.json({ error: "already_member" }, 409);
+      throw err;
+    }
+  });
+
+  app.patch("/v1/members/:id", async (c) => {
+    const orgId = c.get("orgId");
+    const parsed = updateMemberRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      return c.json({ error: "invalid_request", issues: parsed.error.issues }, 400);
+    }
+    const target = await db.query.orgMembers.findFirst({
+      where: and(eq(orgMembers.orgId, orgId), eq(orgMembers.id, c.req.param("id"))),
+    });
+    if (!target) return c.json({ error: "not_found" }, 404);
+    if (target.role === "owner" && parsed.data.role !== "owner") {
+      const owners = await db.query.orgMembers.findMany({
+        where: and(eq(orgMembers.orgId, orgId), eq(orgMembers.role, "owner")),
+      });
+      if (owners.length <= 1) {
+        return c.json({ error: "last_owner", detail: "org 至少要留一個 owner" }, 400);
+      }
+    }
+    const [row] = await db
+      .update(orgMembers)
+      .set({ role: parsed.data.role })
+      .where(eq(orgMembers.id, target.id))
+      .returning();
+    if (!row) throw new Error("member update failed");
+    return c.json(toMemberResponse(row));
+  });
+
+  app.delete("/v1/members/:id", async (c) => {
+    const orgId = c.get("orgId");
+    const target = await db.query.orgMembers.findFirst({
+      where: and(eq(orgMembers.orgId, orgId), eq(orgMembers.id, c.req.param("id"))),
+    });
+    if (!target) return c.json({ error: "not_found" }, 404);
+    if (target.role === "owner") {
+      const owners = await db.query.orgMembers.findMany({
+        where: and(eq(orgMembers.orgId, orgId), eq(orgMembers.role, "owner")),
+      });
+      if (owners.length <= 1) {
+        return c.json({ error: "last_owner", detail: "org 至少要留一個 owner" }, 400);
+      }
+    }
+    await db.delete(orgMembers).where(eq(orgMembers.id, target.id));
+    return c.body(null, 204);
+  });
 
   // ---- 插槽 2：harness 註冊表 ----
 
   app.get("/v1/harnesses", async (c) => {
+    const orgId = c.get("orgId");
     const rows = await listHarnesses(db, orgId);
     return c.json({ harnesses: rows.map(toHarnessResponse) });
   });
 
   app.get("/v1/harnesses/:slug", async (c) => {
+    const orgId = c.get("orgId");
     const found = await resolveHarness(db, orgId, c.req.param("slug"));
     if (!found) return c.json({ error: "not_found" }, 404);
     return c.json(toHarnessResponse(found));
@@ -60,6 +304,7 @@ export function createApp(db: Db, orgId: string) {
 
   /** 上傳自己的 harness。同名會覆寫內建版本（只在這個 org 生效）。 */
   app.put("/v1/harnesses/:slug", async (c) => {
+    const orgId = c.get("orgId");
     const slug = c.req.param("slug");
     const parsed = parseManifest(slug, await c.req.json().catch(() => null));
     if (!parsed.ok) return c.json(parsed.problem, 400);
@@ -74,6 +319,7 @@ export function createApp(db: Db, orgId: string) {
   });
 
   app.delete("/v1/harnesses/:slug", async (c) => {
+    const orgId = c.get("orgId");
     const removed = await deleteOrgHarness(db, orgId, c.req.param("slug"));
     if (!removed) return c.json({ error: "not_found" }, 404);
     return c.body(null, 204);
@@ -95,6 +341,7 @@ export function createApp(db: Db, orgId: string) {
   // ---- 插槽 1：BYOK ----
 
   app.get("/v1/provider-keys", async (c) => {
+    const orgId = c.get("orgId");
     const rows = await listProviderKeys(db, orgId);
     return c.json({
       provider_keys: rows
@@ -112,6 +359,7 @@ export function createApp(db: Db, orgId: string) {
 
   /** 明文只在這個請求裡出現，落地即 AES-256-GCM 加密，之後只讀得到 last4。 */
   app.put("/v1/provider-keys", async (c) => {
+    const orgId = c.get("orgId");
     const parsed = putProviderKeyRequest.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) {
       return c.json({ error: "invalid_request", issues: parsed.error.issues }, 400);
@@ -155,6 +403,7 @@ export function createApp(db: Db, orgId: string) {
   });
 
   app.delete("/v1/provider-keys/:id", async (c) => {
+    const orgId = c.get("orgId");
     const deleted = await db
       .delete(providerKeys)
       .where(and(eq(providerKeys.orgId, orgId), eq(providerKeys.id, c.req.param("id"))))
@@ -178,6 +427,7 @@ export function createApp(db: Db, orgId: string) {
   // ---- runs ----
 
   app.post("/v1/runs", async (c) => {
+    const orgId = c.get("orgId");
     const parsed = createRunRequest.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) {
       return c.json({ error: "invalid_request", issues: parsed.error.issues }, 400);
@@ -306,6 +556,7 @@ export function createApp(db: Db, orgId: string) {
   });
 
   app.get("/v1/runs", async (c) => {
+    const orgId = c.get("orgId");
     const limitRaw = Number(c.req.query("limit") ?? 50);
     const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(1, Math.trunc(limitRaw)), 200) : 50;
     const endUserExt = c.req.query("external_user_id");
@@ -324,13 +575,13 @@ export function createApp(db: Db, orgId: string) {
   });
 
   app.get("/v1/runs/:id", async (c) => {
-    const found = await findRunWithEndUser(db, c.req.param("id"));
+    const found = await findRunWithEndUser(db, c.get("orgId"), c.req.param("id"));
     if (!found) return c.json({ error: "not_found" }, 404);
     return c.json(toRunResponse(found.run, found.endUserExternalId));
   });
 
   app.post("/v1/runs/:id/cancel", async (c) => {
-    const found = await findRunWithEndUser(db, c.req.param("id"));
+    const found = await findRunWithEndUser(db, c.get("orgId"), c.req.param("id"));
     if (!found) return c.json({ error: "not_found" }, 404);
     const { run, endUserExternalId } = found;
     if (isTerminal(run.status)) return c.json(toRunResponse(run, endUserExternalId));
@@ -357,18 +608,18 @@ export function createApp(db: Db, orgId: string) {
 
   /** 立刻軟殺；沙箱由 worker 看到狀態改變後硬殺（destroy）。 */
   app.post("/v1/runs/:id/kill", async (c) => {
-    const found = await findRunWithEndUser(db, c.req.param("id"));
+    const found = await findRunWithEndUser(db, c.get("orgId"), c.req.param("id"));
     if (!found) return c.json({ error: "not_found" }, 404);
     const reason = c.req.query("reason") ?? "manual_kill";
     await killRun(db, found.run, reason, "api");
-    const after = await findRunWithEndUser(db, found.run.id);
+    const after = await findRunWithEndUser(db, c.get("orgId"), found.run.id);
     return c.json(toRunResponse(after?.run ?? found.run, found.endUserExternalId));
   });
 
   app.get("/v1/runs/:id/events", async (c) => {
     const id = c.req.param("id");
-    const run = await db.query.runs.findFirst({ where: eq(runs.id, id) });
-    if (!run) return c.json({ error: "not_found" }, 404);
+    const found = await findRunWithEndUser(db, c.get("orgId"), id);
+    if (!found) return c.json({ error: "not_found" }, 404);
 
     const raw = c.req.header("Last-Event-ID") ?? c.req.query("after");
     let after = raw === undefined ? -1 : Number(raw);
@@ -425,11 +676,54 @@ async function getOrCreateEndUser(db: Db, orgId: string, externalId: string) {
   return again;
 }
 
-async function findRunWithEndUser(db: Db, id: string) {
-  const run = await db.query.runs.findFirst({ where: eq(runs.id, id) });
+/** 一律帶 orgId 過濾：跨租戶的 run 就當不存在（404，不是 403——不洩漏存在性）。 */
+async function findRunWithEndUser(db: Db, orgId: string, id: string) {
+  if (!UUID_RE.test(id)) return null;
+  const run = await db.query.runs.findFirst({ where: and(eq(runs.id, id), eq(runs.orgId, orgId)) });
   if (!run) return null;
   const endUser = await db.query.endUsers.findFirst({ where: eq(endUsers.id, run.endUserId) });
   return { run, endUserExternalId: endUser?.externalId ?? run.endUserId };
+}
+
+async function memberOrgs(db: Db, email: string) {
+  const rows = await db
+    .select({ id: orgs.id, name: orgs.name, createdAt: orgs.createdAt })
+    .from(orgMembers)
+    .innerJoin(orgs, eq(orgMembers.orgId, orgs.id))
+    .where(eq(orgMembers.email, email))
+    .orderBy(asc(orgs.createdAt));
+  return rows;
+}
+
+function actorOf(identity: Identity): string {
+  return identity.kind === "api_key" ? `api_key:${identity.keyId}` : `user:${identity.email}`;
+}
+
+function toApiKeyResponse(row: {
+  id: string;
+  name: string;
+  last4: string;
+  createdAt: Date;
+  lastUsedAt: Date | null;
+  revokedAt: Date | null;
+}) {
+  return {
+    id: row.id,
+    name: row.name,
+    last4: row.last4,
+    created_at: row.createdAt.toISOString(),
+    last_used_at: row.lastUsedAt?.toISOString() ?? null,
+    revoked_at: row.revokedAt?.toISOString() ?? null,
+  };
+}
+
+function toMemberResponse(row: { id: string; email: string; role: string; createdAt: Date }) {
+  return {
+    id: row.id,
+    email: row.email,
+    role: row.role,
+    created_at: row.createdAt.toISOString(),
+  };
 }
 
 function toRunResponse(run: RunRow, endUserExternalId: string) {
@@ -449,6 +743,12 @@ function toRunResponse(run: RunRow, endUserExternalId: string) {
     started_at: run.startedAt?.toISOString() ?? null,
     completed_at: run.completedAt?.toISOString() ?? null,
   };
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function toOrgResponse(row: { id: string; name: string; createdAt: Date }) {
+  return { id: row.id, name: row.name, created_at: row.createdAt.toISOString() };
 }
 
 function isUniqueViolation(err: unknown): boolean {

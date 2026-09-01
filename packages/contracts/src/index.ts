@@ -19,6 +19,63 @@ export const MODEL_PROVIDERS = ["anthropic", "openai", "openrouter"] as const;
 export const modelProvider = z.enum(MODEL_PROVIDERS);
 export type ModelProvider = z.infer<typeof modelProvider>;
 
+// ---- organizations ----
+export const createOrgRequest = z.object({ name: z.string().min(1).max(120) });
+export type CreateOrgRequest = z.infer<typeof createOrgRequest>;
+
+export const orgResponse = z.object({
+  id: z.string(),
+  name: z.string(),
+  created_at: z.string(),
+});
+export type OrgResponse = z.infer<typeof orgResponse>;
+
+export const orgListResponse = z.object({ orgs: z.array(orgResponse) });
+export type OrgListResponse = z.infer<typeof orgListResponse>;
+
+// ---- org API keys（程式化身分）----
+// 明文只在建立回應出現一次；之後只讀得到 last4。撤銷＝標記不刪列。
+export const createApiKeyRequest = z.object({ name: z.string().min(1).max(120) });
+export type CreateApiKeyRequest = z.infer<typeof createApiKeyRequest>;
+
+export const apiKeyResponse = z.object({
+  id: z.string(),
+  name: z.string(),
+  last4: z.string(),
+  created_at: z.string(),
+  last_used_at: z.string().nullable(),
+  revoked_at: z.string().nullable(),
+});
+export type ApiKeyResponse = z.infer<typeof apiKeyResponse>;
+
+export const createApiKeyResponse = apiKeyResponse.extend({
+  /** 只在這裡出現一次的明文 key（nmx_live_…），存好再關掉 */
+  key: z.string(),
+});
+export type CreateApiKeyResponse = z.infer<typeof createApiKeyResponse>;
+
+// ---- org members（登入 console 的「人」；你產品的終端使用者不在這層）----
+export const ORG_ROLES = ["owner", "admin", "member"] as const;
+export const orgRole = z.enum(ORG_ROLES);
+export type OrgRole = z.infer<typeof orgRole>;
+
+export const addMemberRequest = z.object({
+  email: z.string().email(),
+  role: orgRole.default("member"),
+});
+export type AddMemberRequest = z.infer<typeof addMemberRequest>;
+
+export const updateMemberRequest = z.object({ role: orgRole });
+export type UpdateMemberRequest = z.infer<typeof updateMemberRequest>;
+
+export const memberResponse = z.object({
+  id: z.string(),
+  email: z.string(),
+  role: orgRole,
+  created_at: z.string(),
+});
+export type MemberResponse = z.infer<typeof memberResponse>;
+
 /** 2026-09-01 起 BYOK 只有 org 一層；per-user 的帳務切分由呼叫端在自己那端處理。 */
 export const CREDENTIAL_SCOPES = ["org"] as const;
 export const credentialScope = z.enum(CREDENTIAL_SCOPES);

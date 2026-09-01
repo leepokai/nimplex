@@ -66,3 +66,8 @@ export function hashToken(token: string): string {
 export function generateRunToken(): string {
   return `nmx_run_${randomBytes(24).toString("base64url")}`;
 }
+
+/** org API key。與 run token 同一套雜湊落地策略：明文只在建立當下回傳一次。 */
+export function generateApiKey(): string {
+  return `nmx_live_${randomBytes(24).toString("base64url")}`;
+}
