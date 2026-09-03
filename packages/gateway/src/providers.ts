@@ -11,6 +11,11 @@ export interface ProviderAdapter {
   authHeaders(apiKey: string): Record<string, string>;
   /** 轉發前改寫請求，確保上游一定回報 usage —— 沒有 usage 就沒有錶 */
   rewriteBody(body: Record<string, unknown>): Record<string, unknown>;
+  /**
+   * 不計量、只換 key 直通的路徑（控制面 API，如 Managed Agents 的 sessions / agents）。
+   * 這些路徑沒有 per-call usage，花費由上游另行回報（metering=provider_reported）。
+   */
+  passthroughPaths?: RegExp[];
 }
 
 const OPENAI_LIKE_REWRITE = (body: Record<string, unknown>): Record<string, unknown> => {
@@ -25,6 +30,8 @@ export const PROVIDER_ADAPTERS: Record<ModelProvider, ProviderAdapter> = {
     defaultBaseUrl: "https://api.anthropic.com",
     authHeaders: (apiKey) => ({ "x-api-key": apiKey, "anthropic-version": "2023-06-01" }),
     rewriteBody: (body) => body,
+    // Claude Managed Agents 控制面：agent loop 在 Anthropic，錶看 session.usage，不在這裡預扣結算
+    passthroughPaths: [/^v1\/(sessions|agents|environments)(\/|$)/],
   },
   openai: {
     id: "openai",

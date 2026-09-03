@@ -1,7 +1,7 @@
 import type { RunEvent, RunResponse } from "@nimplex/sdk";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import { nimplex } from "../client.ts";
+import { nimplex, queryKeys } from "../client.ts";
 import { Badge, CopyCall, Empty, ErrorNote, Panel } from "../ui.tsx";
 
 const TONE: Record<string, "ok" | "warn" | "danger" | "neutral" | "info"> = {
@@ -16,158 +16,12 @@ const TONE: Record<string, "ok" | "warn" | "danger" | "neutral" | "info"> = {
 
 const ACTIVE = new Set(["queued", "running", "awaiting_input"]);
 
-// 本機 DB 還沒有 run 時的示意資料：讓頁面形狀（含撞頂被砍的樣子）先看得見。
-const MOCK_RUNS: RunResponse[] = [
-  {
-    id: "run_mock_a1b2c3d4",
-    status: "running",
-    external_user_id: "team-alpha",
-    harness: "claude-code",
-    model: { provider: "anthropic", id: "claude-sonnet-5" },
-    sandbox: { provider: "e2b" },
-    sandbox_ref: "sbx_9f21",
-    metering: "exact",
-    budget_usd: 1,
-    spent_usd: 0.3182,
-    error: null,
-    created_at: new Date(Date.now() - 4 * 60_000).toISOString(),
-    started_at: new Date(Date.now() - 3.6 * 60_000).toISOString(),
-    completed_at: null,
-  },
-  {
-    id: "run_mock_e5f6a7b8",
-    status: "awaiting_input",
-    external_user_id: "team-alpha",
-    harness: "claude-code",
-    model: { provider: "anthropic", id: "claude-sonnet-5" },
-    sandbox: { provider: "docker" },
-    sandbox_ref: "sbx_11d0",
-    metering: "exact",
-    budget_usd: 0.5,
-    spent_usd: 0.1027,
-    error: null,
-    created_at: new Date(Date.now() - 11 * 60_000).toISOString(),
-    started_at: new Date(Date.now() - 10.5 * 60_000).toISOString(),
-    completed_at: null,
-  },
-  {
-    id: "run_mock_c9d0e1f2",
-    status: "killed",
-    external_user_id: "ci-bot",
-    harness: "codex",
-    model: { provider: "openai", id: "gpt-5" },
-    sandbox: { provider: "e2b" },
-    sandbox_ref: null,
-    metering: "exact",
-    budget_usd: 0.05,
-    spent_usd: 0.0523,
-    error: "budget_exceeded",
-    created_at: new Date(Date.now() - 42 * 60_000).toISOString(),
-    started_at: new Date(Date.now() - 41 * 60_000).toISOString(),
-    completed_at: new Date(Date.now() - 33 * 60_000).toISOString(),
-  },
-  {
-    id: "run_mock_00112233",
-    status: "completed",
-    external_user_id: "default",
-    harness: "builtin",
-    model: { provider: "anthropic", id: "claude-haiku-4-5" },
-    sandbox: { provider: "local" },
-    sandbox_ref: null,
-    metering: "exact",
-    budget_usd: 0.2,
-    spent_usd: 0.0341,
-    error: null,
-    created_at: new Date(Date.now() - 2 * 3600_000).toISOString(),
-    started_at: new Date(Date.now() - 2 * 3600_000).toISOString(),
-    completed_at: new Date(Date.now() - 1.9 * 3600_000).toISOString(),
-  },
-  {
-    id: "run_mock_44556677",
-    status: "failed",
-    external_user_id: "team-beta",
-    harness: "hello-harness",
-    model: { provider: "openrouter", id: "anthropic/claude-sonnet-4.5" },
-    sandbox: { provider: "docker" },
-    sandbox_ref: null,
-    metering: "exact",
-    budget_usd: 0.1,
-    spent_usd: 0.0009,
-    error: "harness exited 1",
-    created_at: new Date(Date.now() - 5 * 3600_000).toISOString(),
-    started_at: new Date(Date.now() - 5 * 3600_000).toISOString(),
-    completed_at: new Date(Date.now() - 4.9 * 3600_000).toISOString(),
-  },
-];
-
-// 示意事件流：順便展示事件 union 的形狀（快照→增量→撞頂→砍）
-const MOCK_EVENTS: Record<string, RunEvent[]> = {
-  run_mock_a1b2c3d4: [
-    {
-      seq: 0,
-      type: "run.created",
-      payload: { harness: "claude-code", budget_usd: 1 },
-      created_at: "",
-    },
-    {
-      seq: 1,
-      type: "run.snapshot",
-      payload: { status: "running", spent_usd: 0.0 },
-      created_at: "",
-    },
-    { seq: 2, type: "message.delta", payload: { text: "先讀一下 repo 結構…" }, created_at: "" },
-    {
-      seq: 3,
-      type: "tool.call",
-      payload: { name: "bash", input: "rg -n 'budget' src/" },
-      created_at: "",
-    },
-    {
-      seq: 4,
-      type: "spend.updated",
-      payload: { spent_usd: 0.1421, burn_per_min: 0.08 },
-      created_at: "",
-    },
-    { seq: 5, type: "tool.result", payload: { name: "bash", exit: 0 }, created_at: "" },
-    {
-      seq: 6,
-      type: "spend.updated",
-      payload: { spent_usd: 0.3182, burn_per_min: 0.09 },
-      created_at: "",
-    },
-  ],
-  run_mock_e5f6a7b8: [
-    { seq: 0, type: "run.created", payload: { harness: "claude-code" }, created_at: "" },
-    {
-      seq: 1,
-      type: "tool.approval_requested",
-      payload: { approvalId: "apr_01", tool: "bash", reason: "rm -rf node_modules" },
-      created_at: "",
-    },
-  ],
-  run_mock_c9d0e1f2: [
-    {
-      seq: 0,
-      type: "run.created",
-      payload: { harness: "codex", budget_usd: 0.05 },
-      created_at: "",
-    },
-    { seq: 1, type: "spend.updated", payload: { spent_usd: 0.0489 }, created_at: "" },
-    {
-      seq: 2,
-      type: "run.status",
-      payload: { status: "killed", stop_reason: "budget_exceeded", overshoot_usd: 0.0023 },
-      created_at: "",
-    },
-  ],
-};
-
 export function RunsPage() {
   const qc = useQueryClient();
   const [expanded, setExpanded] = useState<string | null>(null);
 
   const list = useQuery({
-    queryKey: ["runs"],
+    queryKey: queryKeys.runs,
     queryFn: () => nimplex.runs.list({ limit: 50 }),
     // 有 run 在跑就跟緊一點；全部終態就放慢
     refetchInterval: (q) => (q.state.data?.some((r) => ACTIVE.has(r.status)) ? 2000 : 15000),
@@ -175,28 +29,21 @@ export function RunsPage() {
 
   const kill = useMutation({
     mutationFn: (id: string) => nimplex.runs.kill(id, "console"),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ["runs"] }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: queryKeys.runs }),
   });
   const cancel = useMutation({
     mutationFn: (id: string) => nimplex.runs.cancel(id),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ["runs"] }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: queryKeys.runs }),
   });
 
-  const showMock = !list.isPending && (list.data?.length ?? 0) === 0;
-  const rows = showMock ? MOCK_RUNS : (list.data ?? []);
+  const rows = list.data ?? [];
 
   return (
     <>
-      <h1>Runs {showMock ? <Badge tone="warn">示意資料</Badge> : null}</h1>
+      <h1>Runs</h1>
       <p className="lede">
         每一次執行：哪個 harness、哪個 sandbox、燒了多少錢。跑到一半也砍得掉—— 軟殺（閘道拒發下一個
         call）加硬殺（銷毀沙箱）。
-        {showMock ? (
-          <>
-            {" "}
-            目前還沒有真的 run，先看示意；跑一次 <code>examples/quickstart</code> 就換真。
-          </>
-        ) : null}
       </p>
 
       <Panel
@@ -207,6 +54,12 @@ export function RunsPage() {
       >
         <ErrorNote error={list.error} />
         {list.isPending ? <Empty>載入中…</Empty> : null}
+        {!list.isPending && rows.length === 0 ? (
+          <Empty>
+            還沒有任何 run。用 SDK 開一個（<code>nimplex.agent(…).generate(…)</code>），或跑{" "}
+            <code>examples/quickstart</code> 的冒煙測試。
+          </Empty>
+        ) : null}
 
         {rows.map((run) => (
           <div key={run.id} className="row-group">
@@ -232,7 +85,6 @@ export function RunsPage() {
               <div className="row-detail">
                 <RunDetail
                   run={run}
-                  mock={showMock}
                   onKill={() => kill.mutate(run.id)}
                   onCancel={() => cancel.mutate(run.id)}
                   busy={kill.isPending || cancel.isPending}
@@ -248,21 +100,17 @@ export function RunsPage() {
 
 function RunDetail({
   run,
-  mock,
   onKill,
   onCancel,
   busy,
 }: {
   run: RunResponse;
-  mock: boolean;
   onKill: () => void;
   onCancel: () => void;
   busy: boolean;
 }) {
-  const live = useRunEvents(run.id, !mock);
-  const events = mock ? (MOCK_EVENTS[run.id] ?? []) : live;
+  const events = useRunEvents(run.id);
   const active = ACTIVE.has(run.status);
-  const disabled = busy || mock;
 
   return (
     <div className="rundetail">
@@ -273,22 +121,10 @@ function RunDetail({
         <span className="spacer" />
         {active ? (
           <>
-            <button
-              type="button"
-              className="btn"
-              disabled={disabled}
-              title={mock ? "示意資料" : undefined}
-              onClick={onCancel}
-            >
+            <button type="button" className="btn" disabled={busy} onClick={onCancel}>
               Cancel（優雅收尾）
             </button>
-            <button
-              type="button"
-              className="btn danger"
-              disabled={disabled}
-              title={mock ? "示意資料" : undefined}
-              onClick={onKill}
-            >
+            <button type="button" className="btn danger" disabled={busy} onClick={onKill}>
               Kill（銷毀沙箱）
             </button>
             <CopyCall snippet={`await nimplex.runs.kill("${run.id}")`} label="複製 kill 呼叫" />
@@ -313,14 +149,13 @@ function RunDetail({
 }
 
 /** 可續傳事件流：SSE + Last-Event-ID。斷線由 SDK 內部帶 after 接回。 */
-function useRunEvents(runId: string, enabled: boolean) {
+function useRunEvents(runId: string) {
   const [events, setEvents] = useState<RunEvent[]>([]);
   const seen = useRef(new Set<number>());
 
   useEffect(() => {
     setEvents([]);
     seen.current = new Set();
-    if (!enabled) return;
     const abort = new AbortController();
     void (async () => {
       try {
@@ -334,7 +169,7 @@ function useRunEvents(runId: string, enabled: boolean) {
       }
     })();
     return () => abort.abort();
-  }, [runId, enabled]);
+  }, [runId]);
 
   return events;
 }

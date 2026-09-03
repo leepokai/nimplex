@@ -1,0 +1,91 @@
+# Self-hosted (VPS) compose: postgres + api + worker + caddy.
+#
+#   On the VPS: /opt/nimplex/{docker-compose.yml, Caddyfile, .env}
+#     docker compose pull && docker compose run --rm migrate && docker compose up -d
+#   Local verification: cd deploy && cp .env.example .env (set passwords) && docker compose up --build -d
+#
+# The worker container has no docker daemon: only remote sandbox providers (E2B etc.) work;
+# docker / local report as unavailable.
+# All secrets come from the .env file next to this compose file (gitignored); template in .env.example.
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: nimplex
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: nimplex
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nimplex"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    restart: unless-stopped
+
+  # One-shot: schema migrations + built-in harness seed (idempotent).
+  # Not started by `up`; run with `docker compose run --rm migrate`.
+  migrate:
+    image: ghcr.io/leepokai/nimplex-api:${IMAGE_TAG:-latest}
+    build:
+      context: ..
+      target: api
+    command: ["sh", "-c", "pnpm --filter @nimplex/db migrate && pnpm --filter @nimplex/db seed"]
+    environment:
+      DATABASE_URL: postgres://nimplex:${POSTGRES_PASSWORD}@postgres:5432/nimplex
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles: [ops]
+
+  api:
+    image: ghcr.io/leepokai/nimplex-api:${IMAGE_TAG:-latest}
+    build:
+      context: ..
+      target: api
+    env_file: .env
+    environment:
+      PORT: "8787"
+      DATABASE_URL: postgres://nimplex:${POSTGRES_PASSWORD}@postgres:5432/nimplex
+    expose:
+      - "8787"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    image: ghcr.io/leepokai/nimplex-worker:${IMAGE_TAG:-latest}
+    build:
+      context: ..
+      target: worker
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://nimplex:${POSTGRES_PASSWORD}@postgres:5432/nimplex
+    depends_on:
+      postgres:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

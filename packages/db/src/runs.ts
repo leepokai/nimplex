@@ -17,19 +17,21 @@ export async function killRun(
   actor: string,
 ): Promise<void> {
   await db.transaction(async (tx) => {
+    // The caller's run object is usually a snapshot from claim time and spent_usd has since been
+    // advanced by gateway settlements. Events and audit rows must record the figures at the moment
+    // of the kill, so always take them from UPDATE ... RETURNING.
     const [updated] = await tx
       .update(runs)
       .set({ status: "killed", error: reason, completedAt: new Date() })
       .where(
         sql`${runs.id} = ${run.id} and ${runs.status} in ('queued','running','awaiting_input')`,
       )
-      .returning({ id: runs.id });
+      .returning({ id: runs.id, spentUsd: runs.spentUsd, budgetUsd: runs.budgetUsd });
     if (!updated) return; // 已經是終態，不重複寫事件
+    const spentUsd = updated.spentUsd;
+    const budgetUsd = updated.budgetUsd;
     await appendRunEvents(tx, run.id, [
-      {
-        type: "run.killed",
-        payload: { reason, spent_usd: run.spentUsd, budget_usd: run.budgetUsd },
-      },
+      { type: "run.killed", payload: { reason, spent_usd: spentUsd, budget_usd: budgetUsd } },
     ]);
     await tx.insert(auditEvents).values({
       orgId: run.orgId,
@@ -37,7 +39,7 @@ export async function killRun(
       runId: run.id,
       actor,
       action: "run.killed",
-      meta: { reason, spent_usd: run.spentUsd, budget_usd: run.budgetUsd },
+      meta: { reason, spent_usd: spentUsd, budget_usd: budgetUsd },
     });
   });
 }

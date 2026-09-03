@@ -40,4 +40,8 @@ export const queryKeys = {
   harnesses: ["harnesses"] as const,
   providerKeys: ["provider-keys"] as const,
   sandboxProviders: ["sandbox-providers"] as const,
+  runs: ["runs"] as const,
+  skills: ["skills"] as const,
+  mcpServers: ["mcp-servers"] as const,
+  usage: (groupBy: string, from: string, tz: string) => ["usage", groupBy, from, tz] as const,
 };

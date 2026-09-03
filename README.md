@@ -9,9 +9,9 @@
 
 | 插槽 | 你可以選 | 換掉它要改什麼 |
 | --- | --- | --- |
-| **harness** | 內建的 `claude-code` / `codex` / `opencode`，或**上傳你自己的** | `PUT /v1/harnesses/:slug` 一份 manifest |
+| **harness** | 內建的 `claude-code` / `codex` / `opencode` / `claude-managed-agent`（Anthropic 託管），或**上傳你自己的** | `PUT /v1/harnesses/:slug` 一份 manifest |
 | **LLM provider** | anthropic / openai / openrouter，**你自己的 token** | `PUT /v1/provider-keys` |
-| **sandbox** | `docker`、`local`，或自己接一家雲 | 實作 `SandboxProvider` 後 `registerSandboxProvider()` |
+| **sandbox** | `docker`、`e2b`（直接接）、`daytona` / `vercel`（透過 ComputeSDK adapter）、`local`（dev） | 直接接：實作 `SandboxProvider`；長尾：`new ComputeSdkSandboxProvider({ backendId, backend: () => modal({…}) })` 三行；兩條路都要過 `@nimplex/testkit` 的 conformance kit |
 
 harness 是**資料不是程式碼**：內建的與你上傳的走同一份 manifest、同一條解析路徑。
 同名 slug 會覆寫內建版本（只在你的 org 生效）——上游 CLI 改了旗標，你自己改 manifest 就好，不用等我們發版。
@@ -85,7 +85,7 @@ SDK 版本見 `examples/quickstart`（讀 `NIMPLEX_API_KEY`）：
 
 ```bash
 pnpm --filter @nimplex/example-quickstart start        # 三插槽走一遍
-pnpm --filter @nimplex/example-quickstart exec tsx src/e2e.ts   # e2e 冒煙（含註冊、預算殺、租戶隔離）
+pnpm --filter @nimplex/example-quickstart exec tsx src/e2e.ts   # e2e 冒煙：不需要任何 LLM key（自帶假上游），驗閘道計量、預算殺、Managed Agents、租戶隔離
 ```
 
 ## 上傳自己的 harness
@@ -140,6 +140,7 @@ console.log(await run.wait());
 | 模式 | 條件 | 你拿得到 |
 | --- | --- | --- |
 | `exact`（預設） | model 流量走閘道（BYOK API key） | 美元硬上限、即時花費、mid-run kill、精確帳 |
+| `provider_reported` | 上游自己跑 loop 並回報花費（`claude-managed-agent`） | 上限由上游強制（Anthropic session budget）、花費是**公開價**非合約價、mid-run kill |
 | `none` | 綁訂閱席次，流量不經過我們 | 只有 `max_duration_seconds` + 硬殺沙箱；**美元不可保證** |
 
 `metering: "none"` 的 run **不准**設 `budget_usd`——含糊帶過就是計量出錯的來源。

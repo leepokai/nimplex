@@ -22,6 +22,27 @@
       "when": 1788250432716,
       "tag": "0002_yielding_mandrill",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1788290635381,
+      "tag": "0003_needy_tinkerer",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1788422493339,
+      "tag": "0004_worried_the_watchers",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1788423716001,
+      "tag": "0005_woozy_triathlon",
+      "breakpoints": true
     }
   ]
 }

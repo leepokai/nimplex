@@ -1,7 +1,14 @@
-import type { HarnessManifest, MeteringMode, ModelProvider, SandboxSpec } from "@nimplex/contracts";
+import type {
+  HarnessManifest,
+  McpAuthKind,
+  MeteringMode,
+  ModelProvider,
+  SandboxSpec,
+} from "@nimplex/contracts";
 import type { SandboxSessionState } from "@nimplex/core";
 import { sql } from "drizzle-orm";
 import {
+  boolean,
   index,
   integer,
   jsonb,
@@ -78,6 +85,26 @@ export const apiKeys = pgTable(
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
   },
   (t) => [uniqueIndex("api_keys_hash").on(t.keyHash), index("api_keys_org").on(t.orgId)],
+);
+
+// Claude Managed Agents 的遠端資源對照：Anthropic 要求 agent / environment「建一次、用多次」，
+// 不能每個 run 都建（會把使用者帳號塞滿版本化物件）。key 由 worker 決定：
+//   kind=environment → key="cloud"
+//   kind=agent       → key=`${model}:${sha256(instructions)}`
+export const managedAgentRefs = pgTable(
+  "managed_agent_refs",
+  {
+    id: id(),
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id, { onDelete: "cascade" }),
+    kind: text("kind", { enum: ["environment", "agent"] }).notNull(),
+    key: text("key").notNull(),
+    /** Anthropic 端的 id（env_… / agent_…） */
+    remoteId: text("remote_id").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("managed_agent_refs_org_kind_key").on(t.orgId, t.kind, t.key)],
 );
 
 // 插槽 2：harness 註冊表。
@@ -250,7 +277,11 @@ export const usageRecords = pgTable(
     meta: jsonb("meta"),
     createdAt: createdAt(),
   },
-  (t) => [index("usage_org_end_user_time").on(t.orgId, t.endUserId, t.createdAt)],
+  (t) => [
+    index("usage_org_end_user_time").on(t.orgId, t.endUserId, t.createdAt),
+    /** 帳務 rollup（GET /v1/usage）按 org × 時間窗口掃，不經 end_user */
+    index("usage_org_time").on(t.orgId, t.createdAt),
+  ],
 );
 
 // 只存 broker 引用（如 nango:conn_abc）。
@@ -290,4 +321,45 @@ export const auditEvents = pgTable(
     createdAt: createdAt(),
   },
   (t) => [index("audit_org_time").on(t.orgId, t.createdAt)],
+);
+
+// ---- 工具 registry：agent 用的 skills 與 MCP servers ----
+// 內容由 zod skillManifest / mcpServerRequest 驗過才落地；掛進 run 的沙箱注入路徑尚未接。
+export const skills = pgTable(
+  "skills",
+  {
+    id: id(),
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id, { onDelete: "cascade" }),
+    slug: text("slug").notNull(),
+    name: text("name").notNull(),
+    version: text("version").notNull(),
+    description: text("description").notNull().default(""),
+    enabled: boolean("enabled").notNull().default(true),
+    /** 相對路徑 → 內容；一定含 SKILL.md */
+    files: jsonb("files").$type<Record<string, string>>().notNull(),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("skills_org_slug").on(t.orgId, t.slug)],
+);
+
+export const mcpServers = pgTable(
+  "mcp_servers",
+  {
+    id: id(),
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id, { onDelete: "cascade" }),
+    slug: text("slug").notNull(),
+    url: text("url").notNull(),
+    auth: text("auth").$type<McpAuthKind>().notNull().default("none"),
+    /** 只存 broker 引用（如 nango:conn_abc），這欄永遠沒有明文 token */
+    credentialRef: text("credential_ref"),
+    enabled: boolean("enabled").notNull().default(true),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("mcp_servers_org_slug").on(t.orgId, t.slug)],
 );

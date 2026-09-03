@@ -2,6 +2,7 @@ import { type HarnessManifest, harnessManifest } from "@nimplex/contracts";
 import { BUILTIN_HARNESSES, collectUnknownVariables } from "@nimplex/core";
 import { type Db, harnesses, type ResolvedHarness } from "@nimplex/db";
 import { and, eq } from "drizzle-orm";
+import { parseWithSlug } from "./registries.ts";
 
 export { listHarnesses, resolveHarness } from "@nimplex/db";
 
@@ -10,21 +11,16 @@ export interface HarnessValidationError {
   detail: unknown;
 }
 
-/** 上傳自己的 harness：驗 manifest 形狀，再驗它引用的模板變數存不存在。 */
+/** 上傳自己的 harness：驗 manifest 形狀（slug 以 URL 為準），再驗它引用的模板變數存不存在。 */
 export function parseManifest(
   slug: string,
   body: unknown,
 ): { ok: true; manifest: HarnessManifest } | { ok: false; problem: HarnessValidationError } {
-  const withSlug = typeof body === "object" && body !== null ? { slug, ...(body as object) } : body;
-  const parsed = harnessManifest.safeParse(withSlug);
-  if (!parsed.success) {
-    return { ok: false, problem: { error: "invalid_manifest", detail: parsed.error.issues } };
-  }
-  if (parsed.data.slug !== slug) {
-    return {
-      ok: false,
-      problem: { error: "slug_mismatch", detail: { url: slug, body: parsed.data.slug } },
-    };
+  const parsed = parseWithSlug(harnessManifest, slug, body);
+  if (!parsed.ok) {
+    const error =
+      parsed.problem.error === "invalid_request" ? "invalid_manifest" : parsed.problem.error;
+    return { ok: false, problem: { error, detail: parsed.problem.detail } };
   }
   const unknown = collectUnknownVariables(parsed.data);
   if (unknown.length > 0) {

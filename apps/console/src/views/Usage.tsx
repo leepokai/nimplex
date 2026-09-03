@@ -1,109 +1,163 @@
-import { Badge, Empty, Panel } from "../ui.tsx";
+import { useQuery } from "@tanstack/react-query";
+import { useMemo } from "react";
+import { nimplex, queryKeys } from "../client.ts";
+import { CopyCall, Empty, ErrorNote, Panel } from "../ui.tsx";
+import {
+  addDays,
+  browserTimeZone,
+  dayKey,
+  fillDays,
+  startOfDay,
+  startOfMonth,
+} from "../usage-window.ts";
+
+const DAYS = 7;
+// 帳務不是即時儀表：30 秒一輪就夠，分頁不在前景時 TanStack 會自動暫停
+const REFRESH_MS = 30_000;
 
 /**
- * 帳務 rollup（目前為示意資料）。
- * 真資料來源已存在：usage_events 每筆花費都記了 run／provider／external_user_id，
- * 缺的只是 rollup endpoint（GET /v1/usage?group_by=…），接上後這頁換真。
+ * 帳務 rollup：資料來自 GET /v1/usage（usage_records 逐筆記帳的分桶加總）。
+ * 今日／本月／近 7 天的邊界用瀏覽器時區算，同一個 tz 交給 API 做 day 分桶。
  */
-const MOCK = {
-  today: 3.42,
-  month: 61.87,
-  byHarness: [
-    { key: "claude-code", usd: 41.2 },
-    { key: "builtin", usd: 12.35 },
-    { key: "hello-harness", usd: 8.32 },
-  ],
-  byLabel: [
-    { key: "team-alpha", usd: 24.8, runs: 61 },
-    { key: "default", usd: 20.1, runs: 118 },
-    { key: "team-beta", usd: 12.4, runs: 33 },
-    { key: "ci-bot", usd: 4.57, runs: 210 },
-  ],
-  last7d: [
-    { day: "08-26", usd: 6.1 },
-    { day: "08-27", usd: 9.8 },
-    { day: "08-28", usd: 4.2 },
-    { day: "08-29", usd: 12.6 },
-    { day: "08-30", usd: 8.9 },
-    { day: "08-31", usd: 11.3 },
-    { day: "09-01", usd: 3.42 },
-  ],
-};
-
 export function UsagePage() {
-  const maxH = Math.max(...MOCK.byHarness.map((h) => h.usd));
+  // 邊界以進頁面那一刻為準：query key 只到日期粒度，同一天內不會一直換 key 重抓
+  const window = useMemo(() => {
+    const now = new Date();
+    const today = startOfDay(now);
+    return {
+      tz: browserTimeZone(),
+      today,
+      todayKey: dayKey(now),
+      weekFrom: addDays(today, 1 - DAYS).toISOString(),
+      monthFrom: startOfMonth(now).toISOString(),
+    };
+  }, []);
+
+  const days = useQuery({
+    queryKey: queryKeys.usage("day", window.weekFrom, window.tz),
+    queryFn: () => nimplex.usage.summary({ from: window.weekFrom, groupBy: "day", tz: window.tz }),
+    refetchInterval: REFRESH_MS,
+  });
+  const byHarness = useQuery({
+    queryKey: queryKeys.usage("harness", window.monthFrom, window.tz),
+    queryFn: () => nimplex.usage.summary({ from: window.monthFrom, groupBy: "harness" }),
+    refetchInterval: REFRESH_MS,
+  });
+  const byUser = useQuery({
+    queryKey: queryKeys.usage("external_user_id", window.monthFrom, window.tz),
+    queryFn: () => nimplex.usage.summary({ from: window.monthFrom, groupBy: "external_user_id" }),
+    refetchInterval: REFRESH_MS,
+  });
+
+  const today = days.data?.buckets.find((b) => b.key === window.todayKey)?.usd ?? 0;
+  const month = byHarness.data?.total_usd ?? 0;
+  const monthRuns = byHarness.data?.runs ?? 0;
+  const bars = fillDays(days.data?.buckets ?? [], window.today, DAYS);
+  const maxBar = Math.max(0, ...bars.map((b) => b.usd));
+  const harnessBuckets = byHarness.data?.buckets ?? [];
+  const maxHarness = Math.max(0, ...harnessBuckets.map((b) => b.usd));
+  const userBuckets = byUser.data?.buckets ?? [];
+
+  const pending = days.isPending || byHarness.isPending || byUser.isPending;
+  const error = days.error ?? byHarness.error ?? byUser.error;
+
   return (
     <>
-      <h1>
-        Usage <Badge tone="warn">示意資料</Badge>
-      </h1>
+      <h1>Usage</h1>
       <p className="lede">
-        錢燒去哪了。每一筆花費在 <code>usage_events</code> 都掛著 run、provider 與{" "}
+        錢燒去哪了。每一筆花費在 <code>usage_records</code> 都掛著 run、model 與{" "}
         <code>external_user_id</code> 歸因標籤——你要 per-user 對帳，就在建 run 時帶標籤， 這裡直接
-        rollup 給你。
+        rollup 給你。時區：<span className="mono">{window.tz}</span>。
       </p>
+
+      <ErrorNote error={error} />
 
       <div className="statgrid">
         <div className="stat">
           <span className="stat-label">今日</span>
-          <span className="stat-num mono">${MOCK.today.toFixed(2)}</span>
+          <span className="stat-num mono">{pending ? "…" : usd(today)}</span>
         </div>
         <div className="stat">
           <span className="stat-label">本月</span>
-          <span className="stat-num mono">${MOCK.month.toFixed(2)}</span>
+          <span className="stat-num mono">{pending ? "…" : usd(month)}</span>
         </div>
         <div className="stat">
-          <span className="stat-label">計量模式</span>
-          <span className="stat-num mono">exact</span>
+          <span className="stat-label">本月 runs</span>
+          <span className="stat-num mono">{pending ? "…" : monthRuns}</span>
         </div>
       </div>
 
-      <Panel title="近 7 天" hint="每一根都對得回 usage_events 的逐筆記帳">
+      <Panel
+        title={`近 ${DAYS} 天`}
+        hint="每一根都對得回 usage_records 的逐筆記帳"
+        actions={
+          <CopyCall
+            snippet={`await nimplex.usage.summary({ from: "${window.weekFrom}", groupBy: "day", tz: "${window.tz}" })`}
+            label="複製 summary 呼叫"
+          />
+        }
+      >
         <div className="daybars">
-          {MOCK.last7d.map((d) => {
-            const max = Math.max(...MOCK.last7d.map((x) => x.usd));
-            return (
-              <div key={d.day} className="daybar">
-                <span className="daybar-amt mono">${d.usd.toFixed(0)}</span>
-                <span
-                  className="daybar-fill"
-                  style={{ height: `${Math.max(8, (d.usd / max) * 90)}px` }}
-                />
-                <span className="daybar-label mono">{d.day.slice(3)}</span>
-              </div>
-            );
-          })}
-        </div>
-      </Panel>
-
-      <Panel title="按 harness" hint="錶與 harness 無關——換 harness，錶照轉">
-        <div className="estlist">
-          {MOCK.byHarness.map((h) => (
-            <div key={h.key} className="estrow">
-              <span className="mono strong">{h.key}</span>
-              <span className="spacer" />
-              <span className="mono">${h.usd.toFixed(2)}</span>
-              <span className="estbar" style={{ width: `${(h.usd / maxH) * 120}px` }} />
+          {bars.map((d) => (
+            <div key={d.key} className="daybar" title={`${d.key} · ${d.runs} runs`}>
+              <span className="daybar-amt mono">{usd(d.usd)}</span>
+              <span
+                className="daybar-fill"
+                style={{ height: `${maxBar > 0 ? Math.max(4, (d.usd / maxBar) * 90) : 4}px` }}
+              />
+              <span className="daybar-label mono">{d.key.slice(5)}</span>
             </div>
           ))}
         </div>
+        {!pending && maxBar === 0 ? <Empty>近 {DAYS} 天還沒有花費紀錄。</Empty> : null}
       </Panel>
 
-      <Panel title="按 external_user_id 標籤" hint="標籤由你在建 run 時帶進來；不帶就進 default 桶">
+      <Panel title="本月 · 按 harness" hint="錶與 harness 無關——換 harness，錶照轉">
         <div className="estlist">
-          {MOCK.byLabel.map((l) => (
+          {harnessBuckets.map((h) => (
+            <div key={h.key} className="estrow">
+              <span className="mono strong">{h.key}</span>
+              <span className="dim">{h.runs} runs</span>
+              <span className="spacer" />
+              <span className="mono">{usd(h.usd)}</span>
+              <span
+                className="estbar"
+                style={{ width: `${maxHarness > 0 ? (h.usd / maxHarness) * 120 : 0}px` }}
+              />
+            </div>
+          ))}
+        </div>
+        {!pending && harnessBuckets.length === 0 ? (
+          <Empty>這個月還沒有任何 run 花過錢；跑一次就會出現在這裡。</Empty>
+        ) : null}
+      </Panel>
+
+      <Panel
+        title="本月 · 按 external_user_id 標籤"
+        hint="標籤由你在建 run 時帶進來；不帶就進 default 桶"
+        actions={
+          <CopyCall
+            snippet={`await nimplex.usage.summary({ from: "${window.monthFrom}", groupBy: "external_user_id" })`}
+            label="複製 summary 呼叫"
+          />
+        }
+      >
+        <div className="estlist">
+          {userBuckets.map((l) => (
             <div key={l.key} className="estrow">
               <span className="tag mono">{l.key}</span>
               <span className="dim">{l.runs} runs</span>
               <span className="spacer" />
-              <span className="mono strong">${l.usd.toFixed(2)}</span>
+              <span className="mono strong">{usd(l.usd)}</span>
             </div>
           ))}
         </div>
-        <Empty>
-          rollup API（<code>GET /v1/usage</code>）尚未實作——這頁目前是形狀示意，資料層已就緒。
-        </Empty>
+        {!pending && userBuckets.length === 0 ? <Empty>這個月還沒有花費紀錄。</Empty> : null}
       </Panel>
     </>
   );
+}
+
+function usd(n: number): string {
+  return `$${n.toFixed(n >= 100 ? 0 : 2)}`;
 }

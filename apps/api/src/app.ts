@@ -5,10 +5,13 @@ import {
   createRunRequest,
   type MeteringMode,
   type ModelProvider,
+  mcpServerRequest,
   putProviderKeyRequest,
+  skillManifest,
   updateMemberRequest,
+  usageQuery,
 } from "@nimplex/contracts";
-import { BUILTIN_LOOP_COMMAND, isTerminal, listPricedModels } from "@nimplex/core";
+import { executionKind, isTerminal, listPricedModels } from "@nimplex/core";
 import {
   apiKeys,
   appendRunEvents,
@@ -44,6 +47,21 @@ import {
   toHarnessResponse,
   upsertOrgHarness,
 } from "./harnesses.ts";
+import { PG_UNIQUE_VIOLATION, pgErrorCode } from "./pg-errors.ts";
+import {
+  deleteMcpServer,
+  deleteSkill,
+  findMcpServer,
+  findSkill,
+  listMcpServers,
+  listSkills,
+  parseWithSlug,
+  toMcpServerResponse,
+  toSkillResponse,
+  upsertMcpServer,
+  upsertSkill,
+} from "./registries.ts";
+import { rollupUsage, UsageQueryError } from "./usage.ts";
 
 /** 兩種程式化身分：org API key（SDK / CI）與 console session（Better Auth cookie）。 */
 type Identity =
@@ -325,6 +343,90 @@ export function createApp(db: Db, auth: Auth) {
     return c.body(null, 204);
   });
 
+  // ---- 工具 registry：agent 用的 skills 與 MCP servers ----
+  // 兩者都是 org 層資料、(org_id, slug) 唯一、PUT 冪等覆寫。
+
+  app.get("/v1/skills", async (c) => {
+    const rows = await listSkills(db, c.get("orgId"));
+    return c.json({ skills: rows.map(toSkillResponse) });
+  });
+
+  app.get("/v1/skills/:slug", async (c) => {
+    const found = await findSkill(db, c.get("orgId"), c.req.param("slug"));
+    if (!found) return c.json({ error: "not_found" }, 404);
+    return c.json(toSkillResponse(found));
+  });
+
+  app.put("/v1/skills/:slug", async (c) => {
+    const orgId = c.get("orgId");
+    const slug = c.req.param("slug");
+    const parsed = parseWithSlug(skillManifest, slug, await c.req.json().catch(() => null));
+    if (!parsed.ok) return c.json(parsed.problem, 400);
+    const saved = await upsertSkill(db, orgId, parsed.data);
+    await db.insert(auditEvents).values({
+      orgId,
+      actor: actorOf(c.get("identity")),
+      action: "skill.upserted",
+      meta: { slug, version: saved.version, enabled: saved.enabled },
+    });
+    return c.json(toSkillResponse(saved), 200);
+  });
+
+  app.delete("/v1/skills/:slug", async (c) => {
+    const orgId = c.get("orgId");
+    const slug = c.req.param("slug");
+    const removed = await deleteSkill(db, orgId, slug);
+    if (!removed) return c.json({ error: "not_found" }, 404);
+    await db.insert(auditEvents).values({
+      orgId,
+      actor: actorOf(c.get("identity")),
+      action: "skill.deleted",
+      meta: { slug },
+    });
+    return c.body(null, 204);
+  });
+
+  app.get("/v1/mcp-servers", async (c) => {
+    const rows = await listMcpServers(db, c.get("orgId"));
+    return c.json({ mcp_servers: rows.map(toMcpServerResponse) });
+  });
+
+  app.get("/v1/mcp-servers/:slug", async (c) => {
+    const found = await findMcpServer(db, c.get("orgId"), c.req.param("slug"));
+    if (!found) return c.json({ error: "not_found" }, 404);
+    return c.json(toMcpServerResponse(found));
+  });
+
+  /** auth 只收 broker 引用：contracts 層就擋掉沒有 broker 前綴的字串，明文 token 到不了這裡。 */
+  app.put("/v1/mcp-servers/:slug", async (c) => {
+    const orgId = c.get("orgId");
+    const slug = c.req.param("slug");
+    const parsed = parseWithSlug(mcpServerRequest, slug, await c.req.json().catch(() => null));
+    if (!parsed.ok) return c.json(parsed.problem, 400);
+    const saved = await upsertMcpServer(db, orgId, parsed.data);
+    await db.insert(auditEvents).values({
+      orgId,
+      actor: actorOf(c.get("identity")),
+      action: "mcp_server.upserted",
+      meta: { slug, auth: saved.auth, enabled: saved.enabled },
+    });
+    return c.json(toMcpServerResponse(saved), 200);
+  });
+
+  app.delete("/v1/mcp-servers/:slug", async (c) => {
+    const orgId = c.get("orgId");
+    const slug = c.req.param("slug");
+    const removed = await deleteMcpServer(db, orgId, slug);
+    if (!removed) return c.json({ error: "not_found" }, 404);
+    await db.insert(auditEvents).values({
+      orgId,
+      actor: actorOf(c.get("identity")),
+      action: "mcp_server.deleted",
+      meta: { slug },
+    });
+    return c.body(null, 204);
+  });
+
   // ---- 插槽 3：sandbox provider ----
 
   app.get("/v1/sandbox-providers", async (c) => {
@@ -441,10 +543,13 @@ export function createApp(db: Db, auth: Auth) {
         400,
       );
     }
-    const usesSandbox = harness.manifest.command !== BUILTIN_LOOP_COMMAND;
+    const kind = executionKind(harness.manifest);
+    const usesSandbox = kind === "sandbox";
+    // 內建 loop 不打任何上游；沙箱與 managed-agent 都要 BYOK key
+    const needsProviderKey = kind !== "builtin-loop";
 
     // harness manifest 決定講哪一種協定、用哪一把 key；model 必須是同一家。
-    if (usesSandbox && body.model.provider !== harness.manifest.provider) {
+    if (needsProviderKey && body.model.provider !== harness.manifest.provider) {
       return c.json(
         {
           error: "provider_mismatch",
@@ -471,7 +576,7 @@ export function createApp(db: Db, auth: Auth) {
     }
 
     // BYOK 缺席要在建立時就擋掉，不要跑到一半才在閘道爆
-    if (usesSandbox) {
+    if (needsProviderKey) {
       const key = await findProviderKeyRow(db, orgId, harness.manifest.provider, null);
       if (!key) {
         return c.json(
@@ -483,6 +588,22 @@ export function createApp(db: Db, auth: Auth) {
         );
       }
     }
+
+    // Managed Agents 的錶是上游回報的 list cost，不是閘道實測——誠實標記
+    // provider_reported 只有 Managed Agents 走得到（上游回報花費、上游強制上限）；
+    // 其他 harness 的錢都經閘道，收了這個模式等於 budget_usd 存了卻沒人強制——直接拒絕。
+    if (kind !== "managed-agent" && body.metering === "provider_reported") {
+      return c.json(
+        {
+          error: "invalid_metering",
+          detail:
+            "metering=provider_reported 只適用 claude-managed-agent；沙箱 harness 請用 exact 或 none",
+        },
+        400,
+      );
+    }
+    const metering =
+      kind === "managed-agent" && body.metering === "exact" ? "provider_reported" : body.metering;
 
     // external_user_id 只是歸因標籤；沒給就掛在 org 的 default 桶
     const externalUserId = body.external_user_id ?? "default";
@@ -500,7 +621,7 @@ export function createApp(db: Db, auth: Auth) {
             modelProvider: body.model.provider,
             model: body.model.id,
             sandbox: body.sandbox,
-            metering: body.metering,
+            metering,
             config: {
               instructions: body.instructions,
               input: body.input ?? null,
@@ -524,14 +645,17 @@ export function createApp(db: Db, auth: Auth) {
             harness: harness.slug,
             model: body.model,
             sandbox: body.sandbox,
-            metering: body.metering,
+            metering,
+            // Make any rewrite explicit (claude-managed-agent: exact -> provider_reported) so it is
+            // visible in both the response and the event stream
+            ...(metering !== body.metering ? { metering_adjusted_from: body.metering } : {}),
             budget_usd: body.budget_usd ?? null,
           },
         });
         await tx.insert(workItems).values({
           runId: created.id,
-          kind: usesSandbox ? "harness" : "model",
-          payload: usesSandbox ? {} : { step: 1 },
+          kind: kind === "builtin-loop" ? "model" : "harness",
+          payload: kind === "builtin-loop" ? { step: 1 } : {},
         });
         await tx.insert(auditEvents).values({
           orgId,
@@ -655,6 +779,23 @@ export function createApp(db: Db, auth: Auth) {
     });
   });
 
+  // ---- 帳務 rollup ----
+  // 錶與 harness 無關：每一筆花費都在 usage_records，這裡按窗口分桶加總給人看。
+  app.get("/v1/usage", async (c) => {
+    const parsed = usageQuery.safeParse(c.req.query());
+    if (!parsed.success) {
+      return c.json({ error: "invalid_request", issues: parsed.error.issues }, 400);
+    }
+    try {
+      return c.json(await rollupUsage(db, c.get("orgId"), parsed.data));
+    } catch (err) {
+      if (err instanceof UsageQueryError) {
+        return c.json({ error: err.code, detail: err.message }, 400);
+      }
+      throw err;
+    }
+  });
+
   return app;
 }
 
@@ -752,5 +893,5 @@ function toOrgResponse(row: { id: string; name: string; createdAt: Date }) {
 }
 
 function isUniqueViolation(err: unknown): boolean {
-  return typeof err === "object" && err !== null && "code" in err && err.code === "23505";
+  return pgErrorCode(err) === PG_UNIQUE_VIOLATION;
 }

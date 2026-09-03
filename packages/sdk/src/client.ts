@@ -2,6 +2,8 @@ import type {
   ApiKeyResponse,
   CreateApiKeyResponse,
   HarnessManifest,
+  McpServerRequestInput,
+  McpServerResponse,
   MemberResponse,
   ModelProvider,
   OrgResponse,
@@ -10,8 +12,12 @@ import type {
   PutProviderKeyRequest,
   RunEvent,
   RunResponse,
+  SkillManifestInput,
+  SkillResponse,
+  UsageGroupBy,
+  UsageResponse,
 } from "@nimplex/contracts";
-import { harnessManifest } from "@nimplex/contracts";
+import { harnessManifest, mcpServerRequest, skillManifest } from "@nimplex/contracts";
 import { type AgentSettings, CloudAgent, streamRunEvents, waitForTerminal } from "./agent.ts";
 import { Transport, type TransportOptions } from "./http.ts";
 
@@ -27,6 +33,17 @@ export interface SandboxProviderSummary {
   unavailable_reason: string | null;
 }
 
+export interface UsageSummaryOptions {
+  /** 窗口起點；預設 to 往前 30 天 */
+  from?: Date | string;
+  /** 窗口終點；預設現在 */
+  to?: Date | string;
+  /** 分桶維度；預設 day */
+  groupBy?: UsageGroupBy;
+  /** IANA 時區，只影響 day 分桶的切點；預設 UTC */
+  tz?: string;
+}
+
 export interface PricedModel {
   provider: ModelProvider;
   model: string;
@@ -39,7 +56,8 @@ export interface PricedModel {
  *   client.harness        插槽 2 —— 列出／上傳／刪除 harness
  *   client.providerKeys   插槽 1 —— 自己的 LLM token（BYOK）
  *   client.sandbox        插槽 3 —— 有哪些 sandbox provider 可用
- * 加上 client.runs 與 client.agent()。
+ * 加上 client.runs、client.usage（帳務 rollup）、client.skills / client.mcpServers（工具 registry）
+ * 與 client.agent()。
  */
 export class Nimplex {
   readonly transport: Transport;
@@ -103,9 +121,9 @@ export class Nimplex {
 
     /**
      * 上傳自己的 harness。送出前先在本地驗一次 manifest，
-     * 讓打錯字在呼叫端就爆掉，而不是等網路來回。
+     * 讓打錯字在呼叫端就爆掉，而不是等網路來回（驗證錯誤一律是 rejection，不會同步 throw）。
      */
-    upload: (manifest: HarnessManifest): Promise<HarnessSummary> => {
+    upload: async (manifest: HarnessManifest): Promise<HarnessSummary> => {
       const parsed = harnessManifest.parse(manifest);
       return this.transport.request<HarnessSummary>("PUT", `/v1/harnesses/${parsed.slug}`, {
         body: parsed,
@@ -174,4 +192,67 @@ export class Nimplex {
     wait: (runId: string, signal?: AbortSignal): Promise<RunResponse> =>
       waitForTerminal(this.transport, runId, signal),
   };
+
+  readonly usage = {
+    /**
+     * 帳務 rollup：窗口內的總花費與分桶（day / harness / external_user_id / model）。
+     * 「今日」「本月」的邊界由呼叫端用自己的時區算好帶進 from；tz 只影響 day 分桶的切點。
+     */
+    summary: (options: UsageSummaryOptions = {}): Promise<UsageResponse> =>
+      this.transport.request<UsageResponse>("GET", "/v1/usage", {
+        query: {
+          from: toIso(options.from),
+          to: toIso(options.to),
+          group_by: options.groupBy,
+          tz: options.tz,
+        },
+      }),
+  };
+
+  readonly skills = {
+    list: (): Promise<SkillResponse[]> =>
+      this.transport
+        .request<{ skills: SkillResponse[] }>("GET", "/v1/skills")
+        .then((r) => r.skills),
+
+    get: (slug: string): Promise<SkillResponse> =>
+      this.transport.request<SkillResponse>("GET", `/v1/skills/${slug}`),
+
+    /** 上傳／覆寫（同 slug 冪等）。送出前先本地驗一次，缺 SKILL.md 這種錯在呼叫端就爆。 */
+    upload: async (manifest: SkillManifestInput): Promise<SkillResponse> => {
+      const parsed = skillManifest.parse(manifest);
+      return this.transport.request<SkillResponse>("PUT", `/v1/skills/${parsed.slug}`, {
+        body: parsed,
+      });
+    },
+
+    delete: (slug: string): Promise<void> =>
+      this.transport.request<void>("DELETE", `/v1/skills/${slug}`),
+  };
+
+  readonly mcpServers = {
+    list: (): Promise<McpServerResponse[]> =>
+      this.transport
+        .request<{ mcp_servers: McpServerResponse[] }>("GET", "/v1/mcp-servers")
+        .then((r) => r.mcp_servers),
+
+    get: (slug: string): Promise<McpServerResponse> =>
+      this.transport.request<McpServerResponse>("GET", `/v1/mcp-servers/${slug}`),
+
+    /** 註冊／覆寫。auth 只收 broker 引用（nango:conn_abc 這種），明文 token 在本地就被擋下。 */
+    put: async (request: McpServerRequestInput): Promise<McpServerResponse> => {
+      const parsed = mcpServerRequest.parse(request);
+      return this.transport.request<McpServerResponse>("PUT", `/v1/mcp-servers/${parsed.slug}`, {
+        body: parsed,
+      });
+    },
+
+    delete: (slug: string): Promise<void> =>
+      this.transport.request<void>("DELETE", `/v1/mcp-servers/${slug}`),
+  };
+}
+
+function toIso(value: Date | string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  return value instanceof Date ? value.toISOString() : value;
 }

@@ -1,0 +1,1 @@
+CREATE INDEX "usage_org_time" ON "usage_records" USING btree ("org_id","created_at");

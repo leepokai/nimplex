@@ -12,6 +12,22 @@ import type { HarnessManifest } from "@nimplex/contracts";
  */
 export const BUILTIN_LOOP_COMMAND = "nimplex-builtin-loop";
 
+/**
+ * 第二個哨兵：Claude Managed Agents。worker 看到它不開沙箱、不裝東西，
+ * 而是透過閘道（BYOK 換 key、真 key 不進 worker）呼叫 Anthropic 的 sessions API，
+ * agent loop 與容器都在 Anthropic 那邊跑；花費由上游 session.usage 回報（metering=provider_reported）。
+ */
+export const BUILTIN_MANAGED_AGENT_COMMAND = "nimplex-claude-managed-agent";
+
+export type ExecutionKind = "builtin-loop" | "managed-agent" | "sandbox";
+
+/** manifest 的 command 決定 worker 走哪條執行路徑。 */
+export function executionKind(manifest: Pick<HarnessManifest, "command">): ExecutionKind {
+  if (manifest.command === BUILTIN_LOOP_COMMAND) return "builtin-loop";
+  if (manifest.command === BUILTIN_MANAGED_AGENT_COMMAND) return "managed-agent";
+  return "sandbox";
+}
+
 export const BUILTIN_HARNESSES: HarnessManifest[] = [
   {
     slug: "builtin",
@@ -26,6 +42,20 @@ export const BUILTIN_HARNESSES: HarnessManifest[] = [
     output: "text",
     workdir: "/workspace",
     timeout_seconds: 900,
+  },
+  {
+    slug: "claude-managed-agent",
+    name: "Claude Managed Agents",
+    version: "0.1.0",
+    description: "Anthropic 託管的 agent loop 與容器；預算由 Anthropic 端強制，花費以公開價回報",
+    source: { kind: "inline" },
+    install: [],
+    command: BUILTIN_MANAGED_AGENT_COMMAND,
+    env: {},
+    provider: "anthropic",
+    output: "stream-json",
+    workdir: "/workspace",
+    timeout_seconds: 3600,
   },
   {
     slug: "claude-code",

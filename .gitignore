@@ -3,7 +3,8 @@ docs/competitor-analyze/
 competitor-analyze/
 
 # Scratch space for trying out third-party tools/frameworks — never commit
-sandbox/
+# 只擋根目錄的 sandbox/：沒有開頭斜線會連 packages/sandbox（正式的 provider 套件）一起吃掉
+/sandbox/
 
 node_modules/
 dist/

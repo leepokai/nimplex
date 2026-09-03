@@ -56,6 +56,72 @@ export function createGateway(db: Db) {
       return c.json({ error: { type: "invalid_run_token", message: "run token 無效" } }, 401);
     }
     const { run } = authorized;
+    const method = c.req.method;
+    const rest = c.req.param("rest") ?? "";
+
+    // 控制面直通（Managed Agents 的 sessions / agents / environments）：只換 key、不預扣不結算。
+    // run 已終態時只放行「收尾」操作——查詢、刪除 session、只含 user.interrupt 的 events——
+    // 否則軟殺之後硬殺（刪 session）永遠到不了上游，session 會漏在那邊繼續計時。
+    if (adapter.passthroughPaths?.some((re) => re.test(rest))) {
+      // Passthrough is only for provider_reported runs (upstream reports spend and enforces the cap).
+      // If an exact run could reach this branch, its run token would bypass reserve/settle and the
+      // dollar cap entirely, so refuse.
+      if (run.metering !== "provider_reported") {
+        return c.json(
+          {
+            error: {
+              type: "passthrough_forbidden",
+              message: `控制面直通只給 metering=provider_reported 的 run；run ${run.id} 是 ${run.metering}，model call 請走計量端點`,
+            },
+          },
+          403,
+        );
+      }
+      const passBody = method === "GET" || method === "HEAD" ? undefined : await c.req.text();
+      if (!ledger.gateCall(run).allowed && !isCleanupRequest(method, rest, passBody)) {
+        return c.json(
+          {
+            error: {
+              type: "run_not_active",
+              message: `run ${run.id} 已結束（${run.status}），控制面只允許收尾操作（查詢／中斷／刪除 session）`,
+            },
+          },
+          409,
+        );
+      }
+      const passKey = await ledger.resolveProviderKey(db, run.orgId, run.endUserId, provider);
+      if (!passKey) {
+        return c.json(
+          { error: { type: "no_provider_key", message: `org 沒有 ${provider} 的 BYOK 憑證` } },
+          400,
+        );
+      }
+      const headers = new Headers();
+      for (const [name, value] of c.req.raw.headers) {
+        if (!STRIPPED_REQUEST_HEADERS.has(name.toLowerCase())) headers.set(name, value);
+      }
+      for (const [name, value] of Object.entries(adapter.authHeaders(passKey.apiKey))) {
+        headers.set(name, value);
+      }
+      let upstream: Response;
+      try {
+        upstream = await fetch(
+          buildUpstreamUrl(
+            passKey.baseUrl ?? adapter.defaultBaseUrl,
+            rest,
+            new URL(c.req.url).search,
+          ),
+          { method, headers, body: passBody },
+        );
+      } catch (err) {
+        return c.json({ error: { type: "upstream_unreachable", message: String(err) } }, 502);
+      }
+      const responseHeaders = new Headers();
+      for (const [name, value] of upstream.headers) {
+        if (!STRIPPED_RESPONSE_HEADERS.has(name.toLowerCase())) responseHeaders.set(name, value);
+      }
+      return new Response(upstream.body, { status: upstream.status, headers: responseHeaders });
+    }
 
     // 閘門一：發請求之前。這是「跑到一半也砍得掉」的軟殺路徑。
     const gate = ledger.gateCall(run);
@@ -88,7 +154,6 @@ export function createGateway(db: Db) {
       );
     }
 
-    const method = c.req.method;
     let bodyText: string | undefined;
     let bodyJson: Record<string, unknown> | null = null;
     if (method !== "GET" && method !== "HEAD") {
@@ -122,7 +187,7 @@ export function createGateway(db: Db) {
 
     const upstreamUrl = buildUpstreamUrl(
       key.baseUrl ?? adapter.defaultBaseUrl,
-      c.req.param("rest") ?? "",
+      rest,
       new URL(c.req.url).search,
     );
 
@@ -252,4 +317,26 @@ function estimateReserve(
   const { costUsd } = computeCost(provider, model, { inputTokens, outputTokens });
   if (!Number.isFinite(available)) return costUsd;
   return Math.min(costUsd, Math.max(available, 0));
+}
+
+/**
+ * Control-plane operations still allowed for a terminal run. The allowlist is exactly three:
+ * read its own session, delete its own session, and send an events batch to its own session that
+ * contains only user.interrupt. Arbitrary GET/DELETE must not pass: run tokens never expire, so a
+ * leaked token from a finished run could otherwise delete org-shared environments/agents or list
+ * the org's sessions.
+ */
+function isCleanupRequest(method: string, rest: string, body: string | undefined): boolean {
+  if ((method === "GET" || method === "DELETE") && /^v1\/sessions\/[^/]+$/.test(rest)) return true;
+  if (method !== "POST" || !/^v1\/sessions\/[^/]+\/events$/.test(rest) || !body) return false;
+  try {
+    const parsed = JSON.parse(body) as { events?: { type?: string }[] };
+    return (
+      Array.isArray(parsed.events) &&
+      parsed.events.length > 0 &&
+      parsed.events.every((ev) => ev?.type === "user.interrupt")
+    );
+  } catch {
+    return false;
+  }
 }

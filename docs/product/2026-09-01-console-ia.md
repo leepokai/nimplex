@@ -8,16 +8,16 @@
 
 | 分組 | Tab | 狀態 | 資料來源 | 缺的後端 |
 |---|---|---|---|---|
-| 執行 | **Runs** | ✅ 真 | `runs.list/kill/cancel/events`（SSE 即時） | — |
-| 執行 | **Usage** | 🟡 示意 | mock rollup | `GET /v1/usage?group_by=…`（`usage_events` 資料已在記） |
+| 執行 | **Runs** | ✅ 真 | `runs.list/kill/cancel/events`（SSE 即時）；2026-09-03 起沒 run 時是空狀態，不再塞示意 run | — |
+| 執行 | **Usage** | ✅ 真（2026-09-03） | `usage.summary()` → `GET /v1/usage`（day / harness / external_user_id / model 分桶） | — |
 | 執行 | **跑前試算** | 🟢 半真 | `models.list()` 真價格 + 手抄機時常數 | price registry 進 DB、版本化 |
-| 三插槽 | Harness | ✅ 真 | 既有 | — |
+| 三插槽 | Harness | ✅ 真 | 既有；2026-09-03 起上傳表單開放完整 manifest（env / output / workdir / timeout），可編輯、可覆寫內建 | — |
 | 三插槽 | LLM provider | ✅ 真 | 既有（org-scope only） | — |
 | 三插槽 | Sandbox | ✅ 真 | 既有 | — |
-| 工具 | **Skills** | 🟡 示意 | 本地 state | `/v1/skills` registry |
-| 工具 | **MCP servers** | 🟡 示意 | 本地 state | `/v1/mcp-servers` |
-| 組織 | **API keys** | 🟡 示意 | 本地 state | `api_keys` 表 + Bearer middleware（SDK 架構 §3-5） |
-| 組織 | **Members** | 🟡 示意 | 本地 state | Better Auth 接線 + 邀請流 |
+| 工具 | **Skills** | ✅ 真（registry） | `skills.list/get/upload/delete` → `/v1/skills` | 建 run 帶 `skills: [slug]` 的沙箱注入路徑 |
+| 工具 | **MCP servers** | ✅ 真（registry） | `mcpServers.list/get/put/delete` → `/v1/mcp-servers` | 建 run 帶 `mcp_servers: [slug]` 的注入路徑；broker 憑證解析 |
+| 組織 | **API keys** | ✅ 真 | `apiKeys.list/create/revoke` | — |
+| 組織 | **Members** | ✅ 真 | `members.list/add/setRole/remove` | 邀請流（目前直接加 email） |
 | topbar | **Org switcher** | ✅ 真 | `orgs.list/create` + `x-nimplex-org` header | auth 上線後 org 改由 key/session 決定 |
 
 ## 各 tab 功能定義
@@ -64,7 +64,11 @@ auth 上線後 header 讓位給 key/session 的 org 綁定。
 
 ## 從示意轉真的順序
 
-1. `api_keys` + Bearer middleware（組織組轉真的地基，SDK 架構 §3-5 已排）
-2. `GET /v1/usage` rollup（資料已在，工程量最小）
-3. `/v1/skills`、`/v1/mcp-servers` registry（表 + CRUD，形狀照本頁定義）
-4. Members = Better Auth 接線時一起轉真
+1. ✅ `api_keys` + Bearer middleware（2026-09-01）
+2. ✅ `GET /v1/usage` rollup（2026-09-03；`usage_records` 分桶加總，tz 由呼叫端帶）
+3. ✅ `/v1/skills`、`/v1/mcp-servers` registry（2026-09-03；表 + CRUD，PUT 冪等）
+4. ✅ Members（2026-09-01，Better Auth 接線）
+
+console 已無示意資料。剩下的是 registry 的「用」而不是「管」：
+`createRunRequest` 收 `skills` / `mcp_servers`，worker 開箱時把 skill 檔放進 harness 的 skills 目錄、
+把 MCP endpoint 寫進 harness 的設定（每家 harness 格式不同，先做 claude-code）。

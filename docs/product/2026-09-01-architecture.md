@@ -314,5 +314,5 @@ SDK 加一個 `run.report({ verdict, signal })`。有了它，`(harness × model
 
 - **控制面**：只做 CRUD 與授權，不碰錢也不碰箱子。
 - **計量面**：只認 run token，只看得到錢；**不准依賴 sandbox provider**。
-- **執行面**：只認資料庫上的狀態，不與 gateway 通訊；箱子的生死它全權負責。
+- **執行面**：只認資料庫上的狀態，不與 gateway 通訊；箱子的生死它全權負責。（2026-09-02 起的例外：Managed Agents 沒有箱子，worker 自己拿 run token 經閘道建 session——這是為了守 I1「真 key 不進 worker」，不是新的控制通道；狀態仍只靠 DB 協調。）
 - **共用核心**：`contracts` 是唯一真理來源，`core` 保持零 IO 的純函式。

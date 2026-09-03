@@ -78,52 +78,84 @@ export class Transport {
     return parsed as T;
   }
 
-  /** SSE：用 fetch 讀串流，斷線時以 Last-Event-ID 續傳。 */
+  /**
+   * SSE：用 fetch 讀串流。伺服器乾淨關閉＝事件流結束；
+   * 中途斷線（網路錯誤）會帶 Last-Event-ID 自動重連續傳，
+   * 連續失敗超過上限或 HTTP 層錯誤（4xx/5xx）則直接拋出。
+   */
   async *sse(
     path: string,
     options: { after?: number; signal?: AbortSignal } = {},
   ): AsyncGenerator<{ id: string | null; event: string; data: string }> {
     let lastId = options.after === undefined ? null : String(options.after);
+    let failures = 0;
     for (;;) {
-      const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
-        headers: this.headers({
-          accept: "text/event-stream",
-          ...(lastId === null ? {} : { "Last-Event-ID": lastId }),
-        }),
-        signal: options.signal,
-      });
-      if (!response.ok || !response.body) {
-        const text = await response.text().catch(() => "");
-        throw toError(response.status, safeJson(text), text);
-      }
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
       let closedCleanly = false;
       try {
-        for (;;) {
-          const { done, value } = await reader.read();
-          if (done) {
-            closedCleanly = true;
-            break;
-          }
-          buffer += decoder.decode(value, { stream: true });
-          const frames = buffer.split("\n\n");
-          buffer = frames.pop() ?? "";
-          for (const frame of frames) {
-            const parsed = parseFrame(frame);
-            if (!parsed) continue;
-            if (parsed.id !== null) lastId = parsed.id;
-            yield parsed;
-          }
+        const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
+          headers: this.headers({
+            accept: "text/event-stream",
+            ...(lastId === null ? {} : { "Last-Event-ID": lastId }),
+          }),
+          signal: options.signal,
+        });
+        if (!response.ok || !response.body) {
+          const text = await response.text().catch(() => "");
+          throw toError(response.status, safeJson(text), text);
         }
-      } finally {
-        await reader.cancel().catch(() => {});
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        try {
+          for (;;) {
+            const { done, value } = await reader.read();
+            if (done) {
+              closedCleanly = true;
+              break;
+            }
+            buffer += decoder.decode(value, { stream: true });
+            const frames = buffer.split("\n\n");
+            buffer = frames.pop() ?? "";
+            for (const frame of frames) {
+              const parsed = parseFrame(frame);
+              if (!parsed) continue;
+              if (parsed.id !== null) lastId = parsed.id;
+              failures = 0; // 有資料進來就重置退避
+              yield parsed;
+            }
+          }
+        } finally {
+          await reader.cancel().catch(() => {});
+        }
+      } catch (err) {
+        // 呼叫端主動取消、或 server 明確回錯（4xx/5xx）——不重試
+        if (options.signal?.aborted || err instanceof NimplexError) throw err;
+        failures += 1;
+        if (failures > SSE_MAX_RETRIES) throw err;
+        await sleep(SSE_RETRY_BASE_MS * failures, options.signal);
+        continue; // 帶著 lastId 重連，事件不重不漏（exclusive 語意）
       }
       if (closedCleanly) return;
     }
   }
+}
+
+const SSE_MAX_RETRIES = 5;
+const SSE_RETRY_BASE_MS = 200;
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal?.reason ?? new Error("aborted"));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 function parseFrame(frame: string): { id: string | null; event: string; data: string } | null {

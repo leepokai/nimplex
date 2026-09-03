@@ -5,6 +5,10 @@ export type {
   HarnessManifest,
   HarnessOutput,
   HarnessSource,
+  McpAuthKind,
+  McpServerRequest,
+  McpServerRequestInput,
+  McpServerResponse,
   MemberResponse,
   MeteringMode,
   ModelProvider,
@@ -18,8 +22,14 @@ export type {
   RunStatus,
   SandboxProviderId,
   SandboxSpec,
+  SkillManifest,
+  SkillManifestInput,
+  SkillResponse,
+  UsageBucket,
+  UsageGroupBy,
+  UsageResponse,
 } from "@nimplex/contracts";
-export { harnessManifest } from "@nimplex/contracts";
+export { harnessManifest, mcpServerRequest, skillManifest } from "@nimplex/contracts";
 export * from "./agent.ts";
 export * from "./client.ts";
 export { NimplexError, Transport, type TransportOptions } from "./http.ts";

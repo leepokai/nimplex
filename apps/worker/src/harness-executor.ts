@@ -8,8 +8,10 @@
 
 import type { HarnessManifest } from "@nimplex/contracts";
 import {
+  durationExceeded,
   type ExecResult,
   gatewayUrls,
+  isSandboxSessionState,
   isTerminal,
   renderHarness,
   type SandboxSession,
@@ -19,6 +21,7 @@ import {
   type Db,
   generateRunToken,
   hashToken,
+  killRun,
   type RunRow,
   runs,
 } from "@nimplex/db";
@@ -78,9 +81,20 @@ export async function executeHarnessRun(
       await renewLease();
       const current = await db.query.runs.findFirst({
         where: eq(runs.id, run.id),
-        columns: { status: true, error: true },
+        columns: { status: true, error: true, startedAt: true, maxDurationSeconds: true },
       });
-      if (current && isTerminal(current.status)) {
+      if (!current) return;
+      // 時間上限：metering=none 唯一的上限；exact 也可疊一層
+      if (
+        !isTerminal(current.status) &&
+        durationExceeded(current.startedAt, current.maxDurationSeconds)
+      ) {
+        await killRun(db, run, "max_duration", "worker");
+        killedReason = "max_duration";
+        controller.abort();
+        return;
+      }
+      if (isTerminal(current.status)) {
         killedReason = current.error ?? current.status;
         controller.abort();
       }
@@ -88,6 +102,17 @@ export async function executeHarnessRun(
   }, WATCHDOG_INTERVAL_MS);
 
   try {
+    // 重領（前一個 worker 中途死掉）：先砍它留下的箱子，否則 handle 被覆寫後就沒人管、漏到 docker prune
+    if (isSandboxSessionState(run.sandboxState)) {
+      const previous = run.sandboxState;
+      await provider
+        .delete(previous)
+        .catch((err) => console.error("[worker] 清理前次沙箱失敗", err));
+      await appendRunEvents(db, run.id, [
+        { type: "sandbox.reclaimed", payload: { previous_backend: previous.backendId } },
+      ]);
+    }
+
     session = await provider.create({
       label: run.id,
       image,
@@ -187,6 +212,8 @@ function describeSandbox(session: SandboxSession): string {
   const providerState = session.state.providerState;
   const ref =
     (typeof providerState.containerId === "string" && providerState.containerId.slice(0, 12)) ||
+    // e2b 與 ComputeSDK 系列的 provider 都用 sandboxId
+    (typeof providerState.sandboxId === "string" && providerState.sandboxId) ||
     (typeof providerState.workspaceRoot === "string" && providerState.workspaceRoot) ||
     "unknown";
   return `${session.state.backendId}:${ref}`;

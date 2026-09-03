@@ -1,0 +1,16 @@
+node_modules
+**/node_modules
+**/dist
+.turbo
+**/.turbo
+coverage
+.git
+.env
+.env.*
+!.env.example
+*.log
+sandbox
+docs/competitor-analyze
+.playwright-mcp
+.claude
+.agents

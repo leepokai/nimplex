@@ -1,5 +1,15 @@
 import { randomUUID } from "node:crypto";
-import { checkBudget, isSandboxSessionState, isTerminal, settleSpend } from "@nimplex/core";
+import { existsSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  checkBudget,
+  durationExceeded,
+  executionKind,
+  isSandboxSessionState,
+  isTerminal,
+  settleSpend,
+} from "@nimplex/core";
 import {
   appendRunEvents,
   auditEvents,
@@ -14,13 +24,31 @@ import {
 import { getSandboxProvider, hasSandboxProvider } from "@nimplex/sandbox";
 import { and, eq, isNotNull, sql } from "drizzle-orm";
 import { executeHarnessRun } from "./harness-executor.ts";
+import { executeManagedAgentRun } from "./managed-agent-executor.ts";
 import { stubExecutor } from "./stub-executor.ts";
+
+// 根目錄 .env（sandbox provider 的 API key、NIMPLEX_PUBLIC_URL 等）；已存在的環境變數優先。
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
+for (const candidate of [resolve(process.cwd(), ".env"), resolve(repoRoot, ".env")]) {
+  if (existsSync(candidate)) {
+    process.loadEnvFile(candidate);
+    break;
+  }
+}
 
 const { db, client } = createDb();
 const workerId = `worker-${process.pid}-${randomUUID().slice(0, 8)}`;
 const LEASE_SECONDS = 60;
 const POLL_MS = 300;
 const REAP_INTERVAL_MS = 10_000;
+
+/** Fence check failed: another worker took over the lease. Kept distinct from ordinary failures because the main loop must give up without touching run state. */
+class LostLeaseError extends Error {
+  constructor(itemId: string) {
+    super(`lost lease on work item ${itemId}`);
+    this.name = "LostLeaseError";
+  }
+}
 
 interface ClaimedItem {
   id: string;
@@ -47,8 +75,21 @@ for (;;) {
   try {
     await processItem(item);
   } catch (err) {
+    if (err instanceof LostLeaseError) {
+      // Another worker took the lease mid-execution (this worker stalled too long). That worker is
+      // now running the same run, so writing anything here would mark someone else's live run failed.
+      console.warn(`[worker] ${err.message}；放棄本次結果，交給接手的 worker`);
+      continue;
+    }
     console.error(`work item ${item.id} failed:`, err);
     await markItemFailed(item);
+    // executor 沒接住的例外：run 也要收尾，不能停在 running 讓呼叫端無限等
+    const dangling = await db.query.runs.findFirst({ where: eq(runs.id, item.run_id) });
+    if (dangling && !isTerminal(dangling.status)) {
+      await failRun(dangling, err instanceof Error ? err.message : String(err)).catch((e) =>
+        console.error(`failed to fail run ${item.run_id}:`, e),
+      );
+    }
   }
 }
 
@@ -108,6 +149,14 @@ async function processItem(item: ClaimedItem) {
     });
   }
 
+  // 時間上限（metering=none 的唯一上限）——每一步開始前先看鐘
+  if (durationExceeded(run.startedAt, run.maxDurationSeconds)) {
+    await killRun(db, run, "max_duration", "worker");
+    await destroySandbox(run);
+    await finishItem(item, "done");
+    return;
+  }
+
   // 美元硬上限——執行前先查帳，超額即殺，不再發出任何工作。
   if (run.metering === "exact" && run.budgetUsd !== null) {
     if (checkBudget(run.spentUsd, run.budgetUsd).exceeded) {
@@ -133,17 +182,22 @@ async function processHarnessItem(item: ClaimedItem, run: RunRow) {
     await finishItem(item, "done");
     return;
   }
-  if (!hasSandboxProvider(run.sandbox.provider)) {
+  const kind = executionKind(harness.manifest);
+  if (kind === "sandbox" && !hasSandboxProvider(run.sandbox.provider)) {
     await failRun(run, `sandbox provider "${run.sandbox.provider}" 尚未註冊`);
     await finishItem(item, "done");
     return;
   }
 
-  const result = await executeHarnessRun(
-    { db, renewLease: () => renewLease(item) },
-    run,
-    harness.manifest,
-  );
+  // managed-agent：不開箱，session 在 Anthropic；其餘走沙箱路徑
+  const result =
+    kind === "managed-agent"
+      ? await executeManagedAgentRun(
+          { db, renewLease: () => renewLease(item) },
+          run,
+          harness.manifest,
+        )
+      : await executeHarnessRun({ db, renewLease: () => renewLease(item) }, run, harness.manifest);
 
   const fresh = await db.query.runs.findFirst({ where: eq(runs.id, run.id) });
   const alreadyTerminal = fresh ? isTerminal(fresh.status) : false;
@@ -151,10 +205,14 @@ async function processHarnessItem(item: ClaimedItem, run: RunRow) {
   if (!alreadyTerminal) {
     if (result.status === "completed") {
       await db.transaction(async (tx) => {
-        await tx
+        const [completed] = await tx
           .update(runs)
           .set({ status: "completed", completedAt: new Date(), sandboxState: null })
-          .where(eq(runs.id, run.id));
+          .where(
+            sql`${runs.id} = ${run.id} and ${runs.status} in ('queued','running','awaiting_input')`,
+          )
+          .returning({ id: runs.id });
+        if (!completed) return; // 最後一刻被殺：保留 killed，不蓋成 completed
         await appendRunEvents(tx, run.id, [
           { type: "run.completed", payload: { spent_usd: fresh?.spentUsd ?? run.spentUsd } },
         ]);
@@ -211,7 +269,7 @@ async function processBuiltinItem(item: ClaimedItem, run: RunRow) {
         ),
       )
       .returning({ id: workItems.id });
-    if (owned.length === 0) throw new Error(`lost lease on work item ${item.id}`);
+    if (owned.length === 0) throw new LostLeaseError(item.id);
 
     await appendRunEvents(tx, run.id, result.events);
 
@@ -227,21 +285,27 @@ async function processBuiltinItem(item: ClaimedItem, run: RunRow) {
     await tx.update(runs).set({ spentUsd: newSpent }).where(eq(runs.id, run.id));
 
     if (result.next.kind === "complete") {
-      await tx
+      const [completed] = await tx
         .update(runs)
         .set({ status: "completed", completedAt: new Date() })
-        .where(eq(runs.id, run.id));
-      await appendRunEvents(tx, run.id, [
-        { type: "run.completed", payload: { spent_usd: newSpent } },
-      ]);
-      await tx.insert(auditEvents).values({
-        orgId: run.orgId,
-        endUserId: run.endUserId,
-        runId: run.id,
-        actor: "worker",
-        action: "run.completed",
-        meta: { spent_usd: newSpent },
-      });
+        .where(
+          sql`${runs.id} = ${run.id} and ${runs.status} in ('queued','running','awaiting_input')`,
+        )
+        .returning({ id: runs.id });
+      // 最後一步進行中被殺：保留 killed，不寫 completed
+      if (completed) {
+        await appendRunEvents(tx, run.id, [
+          { type: "run.completed", payload: { spent_usd: newSpent } },
+        ]);
+        await tx.insert(auditEvents).values({
+          orgId: run.orgId,
+          endUserId: run.endUserId,
+          runId: run.id,
+          actor: "worker",
+          action: "run.completed",
+          meta: { spent_usd: newSpent },
+        });
+      }
     } else if (exceeded) {
       // kill-switch：結帳後發現超額，當場終結，不發下一個 work item。
       await tx

@@ -1,4 +1,4 @@
-import type { HarnessManifest, ModelProvider } from "@nimplex/sdk";
+import type { HarnessManifest, HarnessOutput, ModelProvider } from "@nimplex/sdk";
 import { harnessManifest } from "@nimplex/sdk";
 import { useEffect, useState } from "react";
 import { CopyCall, ErrorNote, Field } from "../ui.tsx";
@@ -80,21 +80,34 @@ export interface UploadHarnessProps {
   onSubmit: (manifest: HarnessManifest) => void;
   pending: boolean;
   error: unknown;
+  /** 帶入既有 manifest ＝ 編輯（同 slug 上傳就是覆寫）；拿內建的當範本也是走這裡 */
+  initial?: HarnessManifest;
 }
 
-export function UploadHarness({ onCancel, onSubmit, pending, error }: UploadHarnessProps) {
-  const [kind, setKind] = useState<SourceKind>("git");
-  const [slug, setSlug] = useState("");
-  const [repo, setRepo] = useState("");
-  const [ref, setRef] = useState("");
-  const [pkg, setPkg] = useState("");
-  const [version, setVersion] = useState("");
-  const [image, setImage] = useState("");
-  const [command, setCommand] = useState("");
-  const [setup, setSetup] = useState("");
-  const [provider, setProvider] = useState<ModelProvider>("anthropic");
+export function UploadHarness({ onCancel, onSubmit, pending, error, initial }: UploadHarnessProps) {
+  // 表單每次開啟都是新掛載，所以 initial 只在第一次 render 用來初始化
+  const init = fromManifest(initial);
+  const [kind, setKind] = useState<SourceKind>(init.kind);
+  const [slug, setSlug] = useState(init.slug);
+  const [repo, setRepo] = useState(init.repo);
+  const [ref, setRef] = useState(init.ref);
+  const [pkg, setPkg] = useState(init.pkg);
+  const [version, setVersion] = useState(init.version);
+  const [image, setImage] = useState(init.image);
+  const [command, setCommand] = useState(init.command);
+  const [setup, setSetup] = useState(init.setup);
+  const [provider, setProvider] = useState<ModelProvider>(init.provider);
+  // manifest 的其他欄位：預設值就能跑，所以收在「進階」裡；編輯既有 harness 時直接展開
+  const [advanced, setAdvanced] = useState(initial !== undefined);
+  const [name, setName] = useState(init.name);
+  const [description, setDescription] = useState(init.description);
+  const [manifestVersion, setManifestVersion] = useState(init.manifestVersion);
+  const [envText, setEnvText] = useState(init.envText);
+  const [output, setOutput] = useState<HarnessOutput>(init.output);
+  const [workdir, setWorkdir] = useState(init.workdir);
+  const [timeoutSec, setTimeoutSec] = useState(init.timeout);
 
-  const manifest = buildManifest({
+  const form: FormState = {
     kind,
     slug,
     repo,
@@ -105,8 +118,18 @@ export function UploadHarness({ onCancel, onSubmit, pending, error }: UploadHarn
     command,
     setup,
     provider,
-  });
+    name,
+    description,
+    manifestVersion,
+    envText,
+    output,
+    workdir,
+    timeout: timeoutSec,
+  };
+  const envParsed = parseEnvLines(envText);
+  const manifest = buildManifest(form, envParsed.env);
   const parsed = harnessManifest.safeParse(manifest);
+  const submittable = parsed.success && envParsed.errors.length === 0;
 
   // Esc 關閉。背景點擊關閉被拿掉了：那需要在 div 上掛 click handler，
   // 對鍵盤與螢幕閱讀器都不是真的可及路徑；關閉鈕＋Esc 才是。
@@ -121,8 +144,12 @@ export function UploadHarness({ onCancel, onSubmit, pending, error }: UploadHarn
       <div className="modal" role="dialog" aria-modal="true" aria-label="Upload harness">
         <header className="modal-head">
           <div>
-            <h2>Upload harness</h2>
-            <p>從 Git repo、npm、容器映像，或完全自己寫的步驟建立一個 harness。</p>
+            <h2>{initial ? "Edit harness" : "Upload harness"}</h2>
+            <p>
+              {initial
+                ? "同一個 slug 再上傳就是覆寫；改了 slug 就是另存一份。"
+                : "從 Git repo、npm、容器映像，或完全自己寫的步驟建立一個 harness。"}
+            </p>
           </div>
           <button type="button" className="modal-x" onClick={onCancel} aria-label="關閉">
             ✕
@@ -273,6 +300,107 @@ export function UploadHarness({ onCancel, onSubmit, pending, error }: UploadHarn
             自動注入：{Object.keys(ENV_BY_PROVIDER[provider]).join(" · ")}
           </div>
 
+          <button
+            type="button"
+            className="btn ghost"
+            style={{ alignSelf: "flex-start" }}
+            aria-expanded={advanced}
+            onClick={() => setAdvanced((v) => !v)}
+          >
+            {advanced ? "▾" : "▸"} manifest 進階欄位（名稱、env、output、workdir、timeout）
+          </button>
+
+          {advanced ? (
+            <>
+              <Field htmlFor="uh-name" label="顯示名稱" hint="留空就用 slug">
+                <input
+                  id="uh-name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="My harness"
+                />
+              </Field>
+              <Field htmlFor="uh-desc" label="描述" hint="選填，最多 512 字">
+                <input
+                  id="uh-desc"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                />
+              </Field>
+              <Field htmlFor="uh-mver" label="Manifest 版本" hint="你自己的版號，跟 npm 版本無關">
+                <input
+                  id="uh-mver"
+                  value={manifestVersion}
+                  onChange={(e) => setManifestVersion(e.target.value)}
+                  placeholder="1.0.0"
+                />
+              </Field>
+              <div className="field">
+                <div className="field-row">
+                  <span className="field-label">額外 env</span>
+                  <span className="optional">選填</span>
+                </div>
+                <textarea
+                  id="uh-env"
+                  className="editor"
+                  rows={3}
+                  spellCheck={false}
+                  value={envText}
+                  onChange={(e) => setEnvText(e.target.value)}
+                  placeholder={"MY_FLAG=1\nAGENT_WORKDIR={{workdir}}"}
+                />
+                <span className="field-hint">
+                  一行一個 KEY=VALUE，值可用 {"{{run.id}} {{model}} {{workdir}}"} 等模板變數。
+                  閘道注入的那組永遠會蓋在上面——base URL 與短期票不能被改掉。
+                </span>
+              </div>
+              <Field
+                htmlFor="uh-output"
+                label="Output"
+                hint="harness stdout 的格式：text 整段當回覆；stream-json 逐行解析成事件"
+              >
+                <select
+                  id="uh-output"
+                  value={output}
+                  onChange={(e) => setOutput(e.target.value as HarnessOutput)}
+                >
+                  <option value="text">text</option>
+                  <option value="stream-json">stream-json</option>
+                </select>
+              </Field>
+              <Field
+                htmlFor="uh-workdir"
+                label="Workdir"
+                hint="沙箱裡執行 install / command 的目錄"
+              >
+                <input
+                  id="uh-workdir"
+                  value={workdir}
+                  onChange={(e) => setWorkdir(e.target.value)}
+                  placeholder="/workspace"
+                />
+              </Field>
+              <Field
+                htmlFor="uh-timeout"
+                label="Timeout（秒）"
+                hint="沙箱裡的硬性上限，壞掉的 harness 不會永遠不結束；最多 86400"
+              >
+                <input
+                  id="uh-timeout"
+                  inputMode="numeric"
+                  value={timeoutSec}
+                  onChange={(e) => setTimeoutSec(e.target.value)}
+                  placeholder="1800"
+                />
+              </Field>
+            </>
+          ) : null}
+
+          {envParsed.errors.length > 0 ? (
+            <div className="errnote" style={{ margin: 0 }}>
+              {envParsed.errors.join("\n")}
+            </div>
+          ) : null}
           {parsed.success ? null : slug || command ? (
             <div className="errnote" style={{ margin: 0 }}>
               {parsed.error.issues
@@ -296,10 +424,10 @@ export function UploadHarness({ onCancel, onSubmit, pending, error }: UploadHarn
           <button
             type="button"
             className="btn primary"
-            disabled={!parsed.success || pending}
-            onClick={() => parsed.success && onSubmit(parsed.data)}
+            disabled={!submittable || pending}
+            onClick={() => submittable && onSubmit(parsed.data)}
           >
-            {pending ? "上傳中…" : "Upload harness"}
+            {pending ? "上傳中…" : initial ? "Save harness" : "Upload harness"}
           </button>
         </footer>
       </div>
@@ -318,7 +446,35 @@ interface FormState {
   command: string;
   setup: string;
   provider: ModelProvider;
+  name: string;
+  description: string;
+  manifestVersion: string;
+  /** 一行一個 KEY=VALUE；閘道注入的那組不在這裡 */
+  envText: string;
+  output: HarnessOutput;
+  workdir: string;
+  timeout: string;
 }
+
+const EMPTY_FORM: FormState = {
+  kind: "git",
+  slug: "",
+  repo: "",
+  ref: "",
+  pkg: "",
+  version: "",
+  image: "",
+  command: "",
+  setup: "",
+  provider: "anthropic",
+  name: "",
+  description: "",
+  manifestVersion: "1.0.0",
+  envText: "",
+  output: "text",
+  workdir: "/workspace",
+  timeout: "1800",
+};
 
 /**
  * 表單 → manifest。
@@ -327,39 +483,110 @@ interface FormState {
  * install 陣列執行，source 欄位本身不會觸發任何動作。所以 GitHub 來源必須
  * 把 git clone 明確放進 install 的第一步，否則沙箱裡什麼都不會有。
  */
-function buildManifest(f: FormState): Record<string, unknown> {
+function buildManifest(f: FormState, extraEnv: Record<string, string>): Record<string, unknown> {
   const setupLines = f.setup
     .split("\n")
     .map((l) => l.trim())
     .filter(Boolean);
 
   let source: Record<string, unknown> = { kind: "inline" };
-  const install: string[] = [];
-
   if (f.kind === "git") {
     source = { kind: "git", repo: f.repo.trim(), ref: f.ref.trim() || "HEAD" };
-    const branch = f.ref.trim() ? ` --branch ${f.ref.trim()}` : "";
-    if (f.repo.trim()) install.push(`git clone --depth 1${branch} ${f.repo.trim()} .`);
   } else if (f.kind === "npm") {
-    const version = f.version.trim() || "latest";
-    source = { kind: "npm", package: f.pkg.trim(), version };
-    if (f.pkg.trim()) install.push(`npm install -g ${f.pkg.trim()}@${version}`);
+    source = { kind: "npm", package: f.pkg.trim(), version: f.version.trim() || "latest" };
   } else if (f.kind === "image") {
     source = { kind: "image", image: f.image.trim() };
   }
-  install.push(...setupLines);
+  const generated = generatedInstall(f);
+  const install = generated ? [generated, ...setupLines] : setupLines;
+  const timeout = Number(f.timeout.trim());
 
   return {
     slug: f.slug.trim(),
-    name: f.slug.trim() || "Untitled harness",
-    version: "1.0.0",
+    name: f.name.trim() || f.slug.trim() || "Untitled harness",
+    version: f.manifestVersion.trim() || "1.0.0",
+    description: f.description.trim() || undefined,
     source,
     install,
     command: f.command.trim(),
-    env: ENV_BY_PROVIDER[f.provider],
+    // 使用者的 env 先放，閘道注入的那組蓋在上面：base URL 與短期票是 harness 拿到模型的唯一途徑
+    env: { ...extraEnv, ...ENV_BY_PROVIDER[f.provider] },
     provider: f.provider,
-    output: "text",
-    workdir: "/workspace",
-    timeout_seconds: 1800,
+    output: f.output,
+    workdir: f.workdir.trim() || "/workspace",
+    timeout_seconds: Number.isFinite(timeout) && f.timeout.trim() !== "" ? timeout : f.timeout,
   };
+}
+
+/** 來源決定的那一行安裝指令（git clone / npm install）；沒填來源就沒有 */
+function generatedInstall(f: Pick<FormState, "kind" | "repo" | "ref" | "pkg" | "version">) {
+  if (f.kind === "git" && f.repo.trim()) {
+    const branch = f.ref.trim() ? ` --branch ${f.ref.trim()}` : "";
+    return `git clone --depth 1${branch} ${f.repo.trim()} .`;
+  }
+  if (f.kind === "npm" && f.pkg.trim()) {
+    return `npm install -g ${f.pkg.trim()}@${f.version.trim() || "latest"}`;
+  }
+  return null;
+}
+
+/** manifest → 表單（編輯既有的、或拿內建當範本）。與 buildManifest 互為反函式。 */
+function fromManifest(m: HarnessManifest | undefined): FormState {
+  if (!m) return EMPTY_FORM;
+  const f: FormState = {
+    ...EMPTY_FORM,
+    slug: m.slug,
+    name: m.name === m.slug ? "" : m.name,
+    description: m.description ?? "",
+    manifestVersion: m.version,
+    command: m.command,
+    provider: m.provider,
+    output: m.output,
+    workdir: m.workdir,
+    timeout: String(m.timeout_seconds),
+  };
+  const src = m.source;
+  if (src.kind === "git") {
+    f.kind = "git";
+    f.repo = src.repo;
+    f.ref = src.ref === "HEAD" ? "" : src.ref;
+  } else if (src.kind === "npm") {
+    f.kind = "npm";
+    f.pkg = src.package;
+    f.version = src.version === "latest" ? "" : src.version;
+  } else if (src.kind === "image") {
+    f.kind = "image";
+    f.image = src.image;
+  } else {
+    f.kind = "inline";
+  }
+  // 我們自動生的 clone / npm install 那行不回填成 setup，否則再上傳會重複一次
+  const generated = generatedInstall(f);
+  const install = generated && m.install[0] === generated ? m.install.slice(1) : m.install;
+  f.setup = install.join("\n");
+  // 閘道注入的那組不回填，剩下的才是使用者自己加的
+  const injected = ENV_BY_PROVIDER[m.provider];
+  f.envText = Object.entries(m.env)
+    .filter(([k, v]) => injected[k] !== v)
+    .map(([k, v]) => `${k}=${v}`)
+    .join("\n");
+  return f;
+}
+
+/** 「KEY=VALUE 一行一個」→ env；格式不對的行列成錯誤，不默默吞掉 */
+function parseEnvLines(text: string): { env: Record<string, string>; errors: string[] } {
+  const env: Record<string, string> = {};
+  const errors: string[] = [];
+  for (const raw of text.split("\n")) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#")) continue;
+    const eq = line.indexOf("=");
+    const key = eq === -1 ? line : line.slice(0, eq).trim();
+    if (eq === -1 || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+      errors.push(`env：「${line}」不是 KEY=VALUE`);
+      continue;
+    }
+    env[key] = line.slice(eq + 1).trim();
+  }
+  return { env, errors };
 }

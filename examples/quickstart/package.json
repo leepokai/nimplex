@@ -8,7 +8,8 @@
     "check": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@nimplex/sdk": "workspace:*"
+    "@nimplex/sdk": "workspace:*",
+    "@nimplex/testkit": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",

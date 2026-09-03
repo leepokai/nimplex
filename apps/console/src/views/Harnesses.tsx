@@ -3,19 +3,21 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { nimplex, queryKeys } from "../client.ts";
 import { Badge, Code, CopyCall, Empty, ErrorNote, Panel } from "../ui.tsx";
+import { omit } from "../util.ts";
 import { UploadHarness } from "./UploadHarness.tsx";
 
 export function HarnessesPage() {
   const qc = useQueryClient();
   const list = useQuery({ queryKey: queryKeys.harnesses, queryFn: () => nimplex.harness.list() });
-  const [open, setOpen] = useState(false);
+  // null ＝ 關閉；{} ＝ 新建；{ initial } ＝ 編輯既有的／拿內建當範本覆寫
+  const [editor, setEditor] = useState<{ initial?: HarnessManifest } | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
 
   const upload = useMutation({
     mutationFn: (manifest: HarnessManifest) => nimplex.harness.upload(manifest),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: queryKeys.harnesses });
-      setOpen(false);
+      setEditor(null);
     },
   });
   const remove = useMutation({
@@ -38,7 +40,7 @@ export function HarnessesPage() {
         title="從你自己的來源上傳"
         hint="公開 repo 現在就能用；私有 repo 需要先連接 GitHub"
         actions={
-          <button type="button" className="btn primary" onClick={() => setOpen(true)}>
+          <button type="button" className="btn primary" onClick={() => setEditor({})}>
             + Upload harness
           </button>
         }
@@ -89,6 +91,18 @@ export function HarnessesPage() {
                 <span className="tag">{h.provider}</span>
                 <span className="tag">{h.source.kind}</span>
               </button>
+              <button
+                type="button"
+                className="btn ghost"
+                title={
+                  h.builtin
+                    ? "以內建版本為範本，存成你 org 自己的覆寫"
+                    : "改 manifest 再上傳（同 slug 覆寫）"
+                }
+                onClick={() => setEditor({ initial: stripMeta(h) })}
+              >
+                {h.builtin ? "覆寫" : "編輯"}
+              </button>
               {h.builtin ? null : (
                 <button
                   type="button"
@@ -113,11 +127,12 @@ export function HarnessesPage() {
         ))}
       </Panel>
 
-      {open ? (
+      {editor ? (
         <UploadHarness
+          initial={editor.initial}
           pending={upload.isPending}
           error={upload.error}
-          onCancel={() => setOpen(false)}
+          onCancel={() => setEditor(null)}
           onSubmit={(m) => upload.mutate(m)}
         />
       ) : null}
@@ -127,6 +142,5 @@ export function HarnessesPage() {
 
 /** 回應多了 id/builtin/created_at，回填成 manifest 時要拿掉。 */
 function stripMeta(row: HarnessSummary): HarnessManifest {
-  const { id: _id, builtin: _builtin, created_at: _createdAt, ...manifest } = row;
-  return manifest;
+  return omit(row, ["id", "builtin", "created_at"]);
 }
