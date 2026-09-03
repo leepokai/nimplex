@@ -131,8 +131,14 @@ NIMPLEX_API_KEY=nmx_live_... ANTHROPIC_API_KEY=sk-ant-... \
 ## 7. 自架雲端 dev 環境（VPS + docker compose + GitHub Actions，2026-09-03 新增）
 
 上雲後 E2B 的箱子直接打回公網 api，不再需要 tunnel。形狀：一台 VPS（DigitalOcean / Linode，建議 2 vCPU / 4 GB），
-`deploy/docker-compose.yml` 跑 postgres + api + worker + caddy；`.github/workflows/deploy.yml` 在 push main 時
+`deploy/docker-compose.yml` 跑 postgres + api + worker + caddy；`.github/workflows/deploy.yml`（`deploy-dev`）在 **push `dev` branch** 時
 build 兩個映像檔推 GHCR，再 ssh 進 VPS `pull → migrate → up`。console 這輪不上（走 SDK 驗證）。
+
+**分支策略（2026-09-03 定案）**：日常工作推 `dev`，push 就自動部署到 `api-dev.nimplex.dev`；`main` 保留給正式環境，
+prod 的 workflow 等機器開了再加（同一份 compose，`.env` 換成 api.nimplex.dev + Neon）。功能穩了再 `dev → main`。
+
+現況：DO droplet `nimplex-dev`（sgp1，s-2vcpu-4gb，IP 168.144.107.105），2026-09-03 第一次部署（commit `0f32657`）全通：
+Caddy 自動拿到憑證、四個 service healthy、雲端跑 `claude-code-e2b.ts` completed（19 秒，$0.049，不需 tunnel）。
 
 ```bash
 # ---- VPS 一次性（Ubuntu 24.04）----

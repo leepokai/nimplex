@@ -1,4 +1,5 @@
-# Push to main -> build both images, push to GHCR -> ssh into the VPS: pull, migrate, up.
+# Dev environment (api-dev.nimplex.dev): push to the dev branch -> build both images, push to GHCR
+# -> ssh into the VPS: pull, migrate, up. main is reserved for production (no prod workflow yet).
 #
 # Required repo secrets:
 #   DEPLOY_HOST      VPS IP or hostname
@@ -7,11 +8,11 @@
 # The VPS must already have /opt/nimplex/.env (see deploy/.env.example); the compose file and
 # Caddyfile are copied from deploy/ on every deploy.
 
-name: deploy
+name: deploy-dev
 
 on:
   push:
-    branches: [main]
+    branches: [dev]
   workflow_dispatch:
 
 permissions:
