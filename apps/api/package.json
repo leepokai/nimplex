@@ -13,7 +13,6 @@
     "@nimplex/contracts": "workspace:*",
     "@nimplex/core": "workspace:*",
     "@nimplex/db": "workspace:*",
-    "@nimplex/gateway": "workspace:*",
     "@nimplex/sandbox": "workspace:*",
     "better-auth": "^1.7.2",
     "drizzle-orm": "^0.45.2",

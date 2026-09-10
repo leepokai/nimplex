@@ -1,0 +1,3 @@
+# Inherit the user's model, credentials, and permission settings.
+model_reasoning_effort = "high"
+personality = "friendly"

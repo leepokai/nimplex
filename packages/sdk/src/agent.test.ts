@@ -24,11 +24,9 @@ const RUN = {
   id: "r1",
   status: "queued",
   external_user_id: null,
-  harness: "builtin",
   model: { provider: "anthropic", id: "claude-sonnet-5" },
   sandbox: { provider: "local" },
   sandbox_ref: null,
-  metering: "exact",
   budget_usd: 1,
   spent_usd: 0,
   error: null,
@@ -53,8 +51,7 @@ const frame = (seq: number, type: string, payload: unknown) =>
 describe("CloudAgent", () => {
   it("generate()：建立 → 串事件 → 等終態，per-call 覆寫贏過 agent 預設", async () => {
     const { fn, bodies } = routedFetch({
-      "POST /v1/runs": () =>
-        new Response(JSON.stringify({ ...RUN, run_token: "nmx_run_x" }), { status: 201 }),
+      "POST /v1/runs": () => new Response(JSON.stringify(RUN), { status: 201 }),
       "GET /v1/runs/r1/events": () =>
         sse([
           frame(0, "run.created", {}),
@@ -69,7 +66,6 @@ describe("CloudAgent", () => {
 
     const agent = new CloudAgent(new Transport({ baseUrl: "http://api.test", fetch: fn }), {
       id: "unit-test",
-      harness: "builtin",
       model: { provider: "anthropic", id: "claude-sonnet-5" },
       instructions: "測試",
       budgetUsd: 1,
@@ -78,7 +74,6 @@ describe("CloudAgent", () => {
     const result = await agent.generate({ prompt: "hi", budgetUsd: 0.5 });
 
     const body = bodies["POST /v1/runs"] as Record<string, unknown>;
-    expect(body.harness).toBe("builtin");
     expect(body.input).toBe("hi");
     expect(body.budget_usd).toBe(0.5); // per-call 覆寫贏
     expect((body.metadata as Record<string, unknown>).agent_id).toBe("unit-test");
@@ -93,17 +88,8 @@ describe("CloudAgent", () => {
 describe("extractText", () => {
   const ev = (type: string, payload: unknown) => ({ seq: 0, type, payload, created_at: "" });
 
-  it("三種來源都還原得出文字", () => {
-    expect(extractText([ev("harness.stdout", { text: "純文字" })])).toBe("純文字");
+  it("rebuilds text from message.delta events", () => {
     expect(extractText([ev("message.delta", { text: "增量" })])).toBe("增量");
-    expect(
-      extractText([
-        ev("harness.event", {
-          message: { content: [{ type: "text", text: "stream-json 內容" }] },
-        }),
-      ]),
-    ).toBe("stream-json 內容");
-    expect(extractText([ev("harness.event", { result: "最終結果" })])).toBe("最終結果");
   });
 
   it("非文字 payload 安靜跳過，不炸", () => {

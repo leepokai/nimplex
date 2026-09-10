@@ -12,7 +12,7 @@ import type {
   SandboxSession,
   SandboxSessionState,
 } from "@nimplex/core";
-import { SANDBOX_SESSION_STATE_VERSION, shellQuote } from "@nimplex/core";
+import { SANDBOX_SESSION_STATE_VERSION, SandboxMissingError, shellQuote } from "@nimplex/core";
 import { probe, spawnCollect } from "./spawn.ts";
 
 export const DOCKER_BACKEND_ID = "docker";
@@ -125,6 +125,19 @@ export class DockerSandboxProvider implements SandboxProvider {
   }
 
   async resume(state: SandboxSessionState): Promise<SandboxSession> {
+    const containerId = String(state.providerState.containerId);
+    const result = await spawnCollect(
+      "docker",
+      ["inspect", "--format", "{{.State.Running}}", containerId],
+      { timeoutMs: 10000 },
+    );
+    if (result.exitCode !== 0) {
+      if (/No such (object|container)/i.test(result.stderr))
+        throw new SandboxMissingError("Docker sandbox no longer exists");
+      throw new Error(`docker inspect failed: ${result.stderr}`);
+    }
+    if (result.stdout.trim() !== "true")
+      throw new SandboxMissingError("Docker sandbox is no longer running");
     return new DockerSandboxSession(state);
   }
 

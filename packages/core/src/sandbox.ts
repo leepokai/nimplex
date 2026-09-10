@@ -15,6 +15,14 @@
 
 export const SANDBOX_SESSION_STATE_VERSION = 1;
 
+/** A provider has positively confirmed the environment no longer exists. */
+export class SandboxMissingError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SandboxMissingError";
+  }
+}
+
 export interface SandboxSessionState {
   version: number;
   /** provider 身分，對應 SandboxProvider.backendId */
@@ -74,6 +82,8 @@ export interface SandboxProvider {
   create(args: SandboxCreateArgs): Promise<SandboxSession>;
   /** 用序列化的 state 接回既有箱子（換一個 worker 程序也接得回來） */
   resume(state: SandboxSessionState): Promise<SandboxSession>;
+  /** Optional idle suspension. resume() must make a paused session executable again. */
+  pause?(state: SandboxSessionState): Promise<void>;
   /** 不需要先 resume 就能砍掉——worker 看到 run 被殺時走這條 */
   delete(state: SandboxSessionState): Promise<void>;
 }

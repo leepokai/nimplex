@@ -1,14 +1,8 @@
-import type {
-  HarnessManifest,
-  McpAuthKind,
-  MeteringMode,
-  ModelProvider,
-  SandboxSpec,
-} from "@nimplex/contracts";
+import type { ModelProvider, SandboxSpec, WorkspaceMetadata } from "@nimplex/contracts";
 import type { SandboxSessionState } from "@nimplex/core";
 import { sql } from "drizzle-orm";
 import {
-  boolean,
+  customType,
   index,
   integer,
   jsonb,
@@ -24,6 +18,12 @@ import {
 const id = () => uuid("id").primaryKey().default(sql`gen_random_uuid()`);
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
 const usd = (name: string) => numeric(name, { precision: 12, scale: 6, mode: "number" });
+// drizzle 0.45 has no bytea column; postgres.js returns Buffer for bytea.
+const bytea = customType<{ data: Uint8Array; driverData: Buffer }>({
+  dataType: () => "bytea",
+  toDriver: (value) => Buffer.from(value),
+  fromDriver: (value) => new Uint8Array(value),
+});
 
 export const orgs = pgTable("orgs", {
   id: id(),
@@ -87,46 +87,6 @@ export const apiKeys = pgTable(
   (t) => [uniqueIndex("api_keys_hash").on(t.keyHash), index("api_keys_org").on(t.orgId)],
 );
 
-// Claude Managed Agents 的遠端資源對照：Anthropic 要求 agent / environment「建一次、用多次」，
-// 不能每個 run 都建（會把使用者帳號塞滿版本化物件）。key 由 worker 決定：
-//   kind=environment → key="cloud"
-//   kind=agent       → key=`${model}:${sha256(instructions)}`
-export const managedAgentRefs = pgTable(
-  "managed_agent_refs",
-  {
-    id: id(),
-    orgId: uuid("org_id")
-      .notNull()
-      .references(() => orgs.id, { onDelete: "cascade" }),
-    kind: text("kind", { enum: ["environment", "agent"] }).notNull(),
-    key: text("key").notNull(),
-    /** Anthropic 端的 id（env_… / agent_…） */
-    remoteId: text("remote_id").notNull(),
-    createdAt: createdAt(),
-  },
-  (t) => [uniqueIndex("managed_agent_refs_org_kind_key").on(t.orgId, t.kind, t.key)],
-);
-
-// 插槽 2：harness 註冊表。
-// org_id 為 null ＝ 內建（所有 org 共用）；有 org_id ＝ 客戶自己上傳的。
-// 「用網路上的 harness」與「上傳自己的 harness」在這張表裡是同一件事。
-export const harnesses = pgTable(
-  "harnesses",
-  {
-    id: id(),
-    orgId: uuid("org_id").references(() => orgs.id, { onDelete: "cascade" }),
-    slug: text("slug").notNull(),
-    /** 完整 manifest（安裝指令＋啟動指令＋env 注入映射），由 zod harnessManifest 驗過 */
-    manifest: jsonb("manifest").$type<HarnessManifest>().notNull(),
-    createdAt: createdAt(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => [
-    uniqueIndex("harnesses_org_slug").on(t.orgId, t.slug),
-    uniqueIndex("harnesses_builtin_slug").on(t.slug).where(sql`${t.orgId} is null`),
-  ],
-);
-
 // 插槽 1：BYOK 保險庫。明文永不落地，只存 AES-256-GCM 密文。
 // 解析優先序 end_user > org —— 同一個 org 底下每個終端使用者可以燒自己的帳。
 export const providerKeys = pgTable(
@@ -173,8 +133,6 @@ export const runs = pgTable(
     })
       .notNull()
       .default("queued"),
-    /** harness slug，對到 harnesses 表 */
-    harness: text("harness").notNull().default("builtin"),
     /** 插槽 1：走哪一家、哪個 model */
     modelProvider: text("model_provider").$type<ModelProvider>().notNull().default("anthropic"),
     model: text("model").notNull(),
@@ -187,25 +145,19 @@ export const runs = pgTable(
      * worker 無狀態、隨時可死——任何一個 worker 讀到這欄都能接回同一個箱子把它砍掉。
      */
     sandboxState: jsonb("sandbox_state").$type<SandboxSessionState>(),
-    /** exact ＝ 流量走閘道、美元上限是真的；none ＝ 只能用時間上限 */
-    metering: text("metering").$type<MeteringMode>().notNull().default("exact"),
     /** { instructions, input, credentials } */
     config: jsonb("config").notNull(),
-    /** 美元硬上限：超額即殺。metering=none 時為 null */
+    /** Hard USD cap: the run is killed once spend reaches it. */
     budgetUsd: usd("budget_usd"),
     spentUsd: usd("spent_usd").notNull().default(sql`0`),
     /** 已發出但還沒結算的預留額度（併發保險） */
     reservedUsd: usd("reserved_usd").notNull().default(sql`0`),
     maxDurationSeconds: integer("max_duration_seconds"),
-    /**
-     * 兩張短期票的 sha256，明文一律不落地。
-     *   run_token_hash     ── 建立時回傳一次，給「自己跑 harness」的整合方
-     *   sandbox_token_hash ── worker 開箱時現鑄，只存在於那個沙箱裡
-     */
-    runTokenHash: text("run_token_hash"),
-    sandboxTokenHash: text("sandbox_token_hash"),
     /** 事件序號計數器，appendRunEvents 用原子遞增分配 seq */
     eventSeq: integer("event_seq").notNull().default(0),
+    workspaceRevision: integer("workspace_revision").notNull().default(0),
+    workspaceMetadata: jsonb("workspace_metadata").$type<WorkspaceMetadata>().notNull().default({}),
+    sandboxGeneration: integer("sandbox_generation").notNull().default(0),
     error: text("error"),
     clientNonce: text("client_nonce"),
     createdAt: createdAt(),
@@ -214,8 +166,6 @@ export const runs = pgTable(
   },
   (t) => [
     uniqueIndex("runs_org_nonce").on(t.orgId, t.clientNonce),
-    uniqueIndex("runs_token_hash").on(t.runTokenHash),
-    uniqueIndex("runs_sandbox_token_hash").on(t.sandboxTokenHash),
     index("runs_org_end_user").on(t.orgId, t.endUserId),
     index("runs_status").on(t.status),
   ],
@@ -236,6 +186,24 @@ export const events = pgTable(
   (t) => [primaryKey({ columns: [t.runId, t.seq] })],
 );
 
+// Tier 0 durable workspace: the run's file tree, written through on every turn in the same
+// transaction as the turn's events. A sandbox (just-bash VFS today, a real box later) is only a
+// cache of this table; a worker that dies loses nothing.
+// ponytail: whole files per row, no history; add a snapshot + write-event replay when repos get big.
+export const workspaceFiles = pgTable(
+  "workspace_files",
+  {
+    runId: uuid("run_id")
+      .notNull()
+      .references(() => runs.id, { onDelete: "cascade" }),
+    /** Absolute path inside the sandbox, e.g. /workspace/src/index.ts */
+    path: text("path").notNull(),
+    content: bytea("content").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.runId, t.path] })],
+);
+
 // 工作佇列：loop 的每一步都是一個可領取的 work item（Omnara 模式）。
 // lease + fence 防止卡住又醒來的 worker 雙寫（Rakazo/Omnara 同款）。
 export const workItems = pgTable(
@@ -245,7 +213,7 @@ export const workItems = pgTable(
     runId: uuid("run_id")
       .notNull()
       .references(() => runs.id, { onDelete: "cascade" }),
-    kind: text("kind", { enum: ["model", "tool", "harness"] }).notNull(),
+    kind: text("kind", { enum: ["model", "tool"] }).notNull(),
     payload: jsonb("payload"),
     status: text("status", { enum: ["pending", "leased", "done", "failed"] })
       .notNull()
@@ -258,6 +226,31 @@ export const workItems = pgTable(
     completedAt: timestamp("completed_at", { withTimezone: true }),
   },
   (t) => [index("work_items_claim").on(t.status, t.leaseExpiresAt)],
+);
+
+// A reservation is created before dispatch. Unknown outcomes retain their entire allowance.
+export const modelCalls = pgTable(
+  "model_calls",
+  {
+    id: uuid("id").primaryKey(),
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id, { onDelete: "cascade" }),
+    runId: uuid("run_id")
+      .notNull()
+      .references(() => runs.id, { onDelete: "cascade" }),
+    workItemId: uuid("work_item_id")
+      .notNull()
+      .references(() => workItems.id),
+    fence: integer("fence").notNull(),
+    status: text("status", { enum: ["reserved", "settled", "unknown"] }).notNull(),
+    reservedUsd: usd("reserved_usd").notNull(),
+    costUsd: usd("cost_usd"),
+    inputTokenBound: integer("input_token_bound").notNull(),
+    maxOutputTokens: integer("max_output_tokens").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("model_calls_run").on(t.orgId, t.runId)],
 );
 
 // 每一分錢都掛在 end_user 上——可轉售計量的基礎（Omnara 只記 token，這裡記美元）。
@@ -284,26 +277,6 @@ export const usageRecords = pgTable(
   ],
 );
 
-// 只存 broker 引用（如 nango:conn_abc）。
-// 這張表永遠不會有明文欄位——憑證由 broker 保管、防火牆層注入（分岔二）。
-export const credentialRefs = pgTable(
-  "credential_refs",
-  {
-    id: id(),
-    orgId: uuid("org_id")
-      .notNull()
-      .references(() => orgs.id, { onDelete: "cascade" }),
-    endUserId: uuid("end_user_id")
-      .notNull()
-      .references(() => endUsers.id),
-    broker: text("broker").notNull(),
-    brokerRef: text("broker_ref").notNull(),
-    scopes: jsonb("scopes"),
-    createdAt: createdAt(),
-  },
-  (t) => [index("credential_refs_org_end_user").on(t.orgId, t.endUserId)],
-);
-
 // append-only 稽核：憑證 × 花費 × 動作。
 export const auditEvents = pgTable(
   "audit_events",
@@ -321,45 +294,4 @@ export const auditEvents = pgTable(
     createdAt: createdAt(),
   },
   (t) => [index("audit_org_time").on(t.orgId, t.createdAt)],
-);
-
-// ---- 工具 registry：agent 用的 skills 與 MCP servers ----
-// 內容由 zod skillManifest / mcpServerRequest 驗過才落地；掛進 run 的沙箱注入路徑尚未接。
-export const skills = pgTable(
-  "skills",
-  {
-    id: id(),
-    orgId: uuid("org_id")
-      .notNull()
-      .references(() => orgs.id, { onDelete: "cascade" }),
-    slug: text("slug").notNull(),
-    name: text("name").notNull(),
-    version: text("version").notNull(),
-    description: text("description").notNull().default(""),
-    enabled: boolean("enabled").notNull().default(true),
-    /** 相對路徑 → 內容；一定含 SKILL.md */
-    files: jsonb("files").$type<Record<string, string>>().notNull(),
-    createdAt: createdAt(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => [uniqueIndex("skills_org_slug").on(t.orgId, t.slug)],
-);
-
-export const mcpServers = pgTable(
-  "mcp_servers",
-  {
-    id: id(),
-    orgId: uuid("org_id")
-      .notNull()
-      .references(() => orgs.id, { onDelete: "cascade" }),
-    slug: text("slug").notNull(),
-    url: text("url").notNull(),
-    auth: text("auth").$type<McpAuthKind>().notNull().default("none"),
-    /** 只存 broker 引用（如 nango:conn_abc），這欄永遠沒有明文 token */
-    credentialRef: text("credential_ref"),
-    enabled: boolean("enabled").notNull().default(true),
-    createdAt: createdAt(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => [uniqueIndex("mcp_servers_org_slug").on(t.orgId, t.slug)],
 );

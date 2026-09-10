@@ -24,13 +24,13 @@ export async function killRun(
       .update(runs)
       .set({ status: "killed", error: reason, completedAt: new Date() })
       .where(
-        sql`${runs.id} = ${run.id} and ${runs.status} in ('queued','running','awaiting_input')`,
+        sql`${runs.id} = ${run.id} and ${runs.orgId} = ${run.orgId} and ${runs.status} in ('queued','running','awaiting_input')`,
       )
       .returning({ id: runs.id, spentUsd: runs.spentUsd, budgetUsd: runs.budgetUsd });
     if (!updated) return; // 已經是終態，不重複寫事件
     const spentUsd = updated.spentUsd;
     const budgetUsd = updated.budgetUsd;
-    await appendRunEvents(tx, run.id, [
+    await appendRunEvents(tx, run, [
       { type: "run.killed", payload: { reason, spent_usd: spentUsd, budget_usd: budgetUsd } },
     ]);
     await tx.insert(auditEvents).values({

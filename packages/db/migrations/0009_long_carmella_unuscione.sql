@@ -1,0 +1,1 @@
+ALTER TABLE "runs" ADD COLUMN "workspace_metadata" jsonb DEFAULT '{}'::jsonb NOT NULL;

@@ -24,14 +24,14 @@ services:
       retries: 30
     restart: unless-stopped
 
-  # One-shot: schema migrations + built-in harness seed (idempotent).
+  # One-shot: schema migrations (idempotent).
   # Not started by `up`; run with `docker compose run --rm migrate`.
   migrate:
     image: ghcr.io/leepokai/nimplex-api:${IMAGE_TAG:-latest}
     build:
       context: ..
       target: api
-    command: ["sh", "-c", "pnpm --filter @nimplex/db migrate && pnpm --filter @nimplex/db seed"]
+    command: ["pnpm", "--filter", "@nimplex/db", "migrate"]
     environment:
       DATABASE_URL: postgres://nimplex:${POSTGRES_PASSWORD}@postgres:5432/nimplex
     depends_on:

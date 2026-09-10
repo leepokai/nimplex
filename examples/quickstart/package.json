@@ -8,6 +8,8 @@
     "check": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@nimplex/db": "workspace:*",
+    "@nimplex/sandbox": "workspace:*",
     "@nimplex/sdk": "workspace:*",
     "@nimplex/testkit": "workspace:*"
   },

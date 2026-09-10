@@ -19,8 +19,8 @@ import type {
   SandboxSession,
   SandboxSessionState,
 } from "@nimplex/core";
-import { SANDBOX_SESSION_STATE_VERSION, shellQuote } from "@nimplex/core";
-import { CommandExitError, Sandbox, TimeoutError } from "e2b";
+import { SANDBOX_SESSION_STATE_VERSION, SandboxMissingError, shellQuote } from "@nimplex/core";
+import { CommandExitError, NotFoundError, Sandbox, TimeoutError } from "e2b";
 
 export const E2B_BACKEND_ID = "e2b";
 
@@ -169,8 +169,18 @@ export class E2bSandboxProvider implements SandboxProvider {
   }
 
   async resume(state: SandboxSessionState): Promise<SandboxSession> {
-    const sandbox = await Sandbox.connect(sandboxIdOf(state), { apiKey: apiKey() });
-    return new E2bSandboxSession(state, sandbox);
+    try {
+      const sandbox = await Sandbox.connect(sandboxIdOf(state), { apiKey: apiKey() });
+      return new E2bSandboxSession(state, sandbox);
+    } catch (error) {
+      if (error instanceof NotFoundError)
+        throw new SandboxMissingError("E2B sandbox no longer exists");
+      throw error;
+    }
+  }
+
+  async pause(state: SandboxSessionState): Promise<void> {
+    await Sandbox.pause(sandboxIdOf(state), { apiKey: apiKey() });
   }
 
   /** 靜態 kill：不需先 connect；找不到回 false，重複呼叫也不會炸——reaper 需要這個性質。 */

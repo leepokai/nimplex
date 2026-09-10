@@ -1,5 +1,13 @@
 # Local dev runbook：服務拓撲、啟動、e2e 驗收
 
+> **2026-09-10 現行驗收**：先 `docker compose up -d`，再 `pnpm e2e`；真 E2B 用 `pnpm e2e:e2b`，真 Haiku + E2B 用 `pnpm e2e:real`。
+> 這些命令自建獨立 DB／API／worker，並自動清理。預算已改為呼叫前預留，恢復邊界已改為 model/tool checkpoint；下方 9/9 的「每 turn 重做、最多超出一次模型費用」描述為歷史行為。
+> 詳見 [2026-09-10 harness runtime](2026-09-10-harness-runtime.md)。
+
+
+> **2026-09-06 註**：console、閘道（`/gw`）、harness 註冊表、Managed Agents、`db:seed` 已全部移除，
+> 本文提到它們的段落已過期；現行最短啟動路徑見根目錄 `README.md`。
+
 > 2026-09-01。記錄本日落地後的**實際可跑狀態**：auth（Better Auth + org API key）接完、
 > `/v1/*` 全面認證、console 接真 API、e2e 冒煙 11/11 通過。
 > 承接 `2026-09-01-architecture.md`（架構切分）與 `2026-09-01-sdk-architecture.md`（SDK 定案）。
@@ -14,9 +22,8 @@ api / worker / console 是本機 node process（dev 要熱重載，容器化是�
 | 服務 | 跑在哪 | Port | 啟動指令 | 定義位置 |
 |---|---|---|---|---|
 | **postgres** | docker（`docker-compose.yml`） | 5433 | `docker compose up -d` | `docker-compose.yml` |
-| **api**（控制面 + `/gw` 計量面） | 本機 node（tsx） | 8787 | `pnpm --filter @nimplex/api start` | `apps/api` |
+| **api**（控制面） | 本機 node（tsx） | 8787 | `pnpm --filter @nimplex/api start` | `apps/api` |
 | **worker**（執行面） | 本機 node（tsx） | 無對外 port | `pnpm --filter @nimplex/worker start` | `apps/worker` |
-| **console** | vite dev server | 5173 | `pnpm --filter @nimplex/console dev` | `apps/console` |
 | **site**（waitlist 首頁，可選） | vite dev server | 5176 | `pnpm --filter @nimplex/site dev` | `apps/site` |
 | **run 沙箱** | docker container（worker 按需開/銷毀） | — | 由 worker 管生死 | `packages/sandbox/src/docker.ts` |
 
@@ -29,10 +36,9 @@ api / worker / console 是本機 node process（dev 要熱重載，容器化是�
 ```bash
 pnpm install
 docker compose up -d          # Postgres on :5433
-pnpm db:migrate && pnpm db:seed   # schema + 內建 harness（builtin / claude-code / opencode / codex / claude-managed-agent）；seed 冪等，加了新內建 harness 要再跑一次
+pnpm db:migrate               # schema（含 Tier 0 的 workspace_files）
 pnpm --filter @nimplex/api start &
 pnpm --filter @nimplex/worker start &
-pnpm --filter @nimplex/console dev &
 ```
 
 開 <http://localhost:5173> → GitHub 或 Google 登入 → 首次登入自動建 org →「API keys」頁發 `nmx_live_…`。
@@ -62,7 +68,7 @@ pnpm --filter @nimplex/console dev &
 - ⚠️ **Google 在 Testing 模式**：只有測試使用者名單（目前僅 kevin2005ha@gmail.com）能登入；加人去 GCP「Google Auth Platform → 目標對象」。
 - ⚠️ 上線到 nimplex.dev 時**另建正式 OAuth 憑證**（callback 換網域、Google app 要發布＋驗證），local 這組不上正式環境。
 
-## 5. e2e 驗收
+## 5. e2e 驗收（2026-09-09 改寫：Pi loop + just-bash + Tier 0）
 
 `examples/quickstart/src/e2e.ts`（冒煙腳本，可重複跑）：
 
@@ -71,15 +77,35 @@ pnpm --filter @nimplex/console dev &
 pnpm --filter @nimplex/example-quickstart exec tsx src/e2e.ts
 ```
 
-涵蓋 23 項（有 `E2B_API_KEY` 時）：無身分 401 → 註冊即建 org → 發 API key → BYOK 落地 → harness 註冊表 → sandbox providers →
-內建 loop 跑完（$0.60/$1）→ **mid-run 預算殺**（$0.36 就停）→ **usage rollup**（`GET /v1/usage` 的 harness / external_user_id / day 分桶一分不差對回前兩個 run；不認得的 tz 400）→
-**工具 registry**（skills / MCP servers 上傳、覆寫、列表、刪除；缺 SKILL.md、路徑穿越、明文憑證都 400）→ **metering 守門**（沙箱 harness 帶 provider_reported → 400）→ docker sandbox 跑自上傳 harness →
-**E2B 雲端沙箱**跑同一份 harness（只換 sandbox.provider，跑完並銷毀）→
-**Managed Agents** completed（$0.42 回填）/ budget_reached → killed（$0.33）/ session 都刪掉 / **MA 花費也進 usage rollup**（session usage 的增量逐筆記帳）→
-**閘道計量**（沙箱內 2 次 model call 經 reserve/settle，$0.014）/ **閘道軟殺**（第二次 call 402 → killed）→
-**max_duration_seconds**（metering=none 的 run 超時 → killed(max_duration)）→ 跨租戶 404（run / skill）、usage 為 0 → 撤銷 key 即 401。
+涵蓋：無身分 401 → 註冊即建 org → 發 API key → BYOK 落地 → sandbox providers →
+**Pi loop 跑完**（假上游腳本 4 次 bash tool_use：5 次 `model.call`、4 個 `tool.result`，每次 1000 in / 500 out，claude-sonnet-5 價 $0.007/次 → $0.035，cap $1）→
+**mid-run 預算殺**（cap $0.02，第 3 次 call 後 $0.021 → `killed(budget_exceeded)`）→ `budget_usd` 必填 → 跨租戶 404 → 撤銷 key 即 401。
 
-最近一次全綠：2026-09-03（23/23：LLM 走假上游、sandbox 含真 E2B；新增 usage rollup 與工具 registry 兩段）。OAuth 登入另以瀏覽器實測過 GitHub / Google 全程。
+最近一次全綠：2026-09-09。
+
+## 5.0 無 key 測試模式：`@nimplex/testkit` 假上游
+
+沒有 `ANTHROPIC_API_KEY` 時 e2e / demo 會**自己起一個假的 Anthropic 上游**（:8790），把 BYOK 的 `base_url` 指過去；
+Pi 的 Anthropic adapter、worker 記帳、預算殺、Tier 0 寫回全部走真實程式碼，只有 `api.anthropic.com` 那一跳是假的。本機驗收**不需要真 key、不花錢**。
+
+- 形狀照官方 Messages API（非串流 / 串流 SSE，usage 在 `message_start` + `message_delta`）。
+- `toolCalls: n`：對話裡的 `tool_result` 少於 n 個就回一個 `bash` tool_use（`echo "fake step k" > /workspace/step-k.txt`），否則 `end_turn`——無狀態，同時多個 run 互不干擾。`delayMs`：每次回應加延遲，給 kill -9 demo 留手。
+- 也可獨立起來給手動測試：`pnpm --filter @nimplex/testkit start`，BYOK 放任意 key 並填 `base_url=http://localhost:8790`。
+- 有 `ANTHROPIC_API_KEY` 時自動改走真上游（會花錢；e2e 的數字斷言只在無 key 模式成立）。
+
+## 5.3 kill -9 demo：`demo-kill.ts`（2026-09-09 新增）
+
+MVP 的主張：run 不因 worker 死掉而死、錢停在上限。
+
+```bash
+# 只起 api（NIMPLEX_DEV_EMAIL_AUTH=1）；不要自己起 worker——腳本會自己起 worker A、殺掉、再起 worker B
+pnpm --filter @nimplex/example-quickstart exec tsx src/demo-kill.ts
+# 真 key 彩排（Haiku，約 $0.006）：
+set -a; source .env; set +a; pnpm --filter @nimplex/example-quickstart exec tsx src/demo-kill.ts
+```
+
+劇本：建 run（budget $0.20）→ 事件流滾到第 2 次 `model.call` → `SIGKILL` worker A → lease 60s 內到期 → worker B 重領、寫 `run.resumed` → 從 `run_events` 投影 Pi 訊息、從 Tier 0 seed VFS 接著跑 → `run.completed`、spent ≤ 0.20 → `GET /v1/runs/:id/files` 列出 Tier 0 檔案（假上游 4 個 `step-k.txt`；真 key `hello.txt` 含當天日期）。
+被殺那一刻進行中的 turn 沒 commit，worker B 會**重做那個 turn**（多花一次 model call，這就是「最多超出一個 in-flight call」的 overshoot）。
 
 ## 4.1 Sandbox conformance kit（2026-09-02 新增）
 
@@ -90,43 +116,9 @@ provider 不可用（沒 docker daemon、沒 `E2B_API_KEY` / `DAYTONA_API_KEY` /
 `packages/sandbox/src/conformance.test.ts`，紅了才算知道差在哪。** local 以 `absolutePaths: false` 明示
 它的 `/workspace` 只是虛擬映射。
 
-## 5.0 無 key 測試模式：`@nimplex/testkit` 假上游（2026-09-02 新增）
+## 5.1 / 5.2（已移除）
 
-`examples/quickstart/src/e2e.ts` 在沒有 `ANTHROPIC_API_KEY` 時會**自己起一個假的 Anthropic 上游**（:8790），
-並把 BYOK 的 `base_url` 指過去。閘道 reserve/settle、預算軟殺、docker 沙箱、Managed Agents executor
-全部走真實程式碢，只有 `api.anthropic.com` 那一跳是假的。因此本機 e2e **完全不需要任何真 key、不花錢**，
-且能驗到以前驗不到的：沙箱內 model call 經閘道計量、超額 402 軟殺、MA 的 completed 與 budget_reached 兩種語意。
-
-- 假上游的形狀照官方文件：Messages 非串流/串流 usage、MA 的 sessions/events/stream SSE（`event:` + `data:`）、
-  `session.usage.list_cost`（分的整數字串）、`stop_reason.type`。一個 MA turn 固定 42 分；預算不足 → `budget_reached`（含 overshoot 3 分）。
-- 也可獨立起來給手動測試：`pnpm --filter @nimplex/testkit start`，再在 console「LLM provider」放任意 key 並填 `base_url=http://localhost:8790`。
-- 有 `ANTHROPIC_API_KEY` 時 e2e 自動改走真上游（會花錢）。
-
-## 5.1 `claude-managed-agent` harness（2026-09-02 新增）
-
-不開沙箱：worker 用官方 SDK 經閘道打 Anthropic Managed Agents，`budget_usd` 映射成 session budget，
-花費由 `session.usage` 回填（`metering=provider_reported`）。**真機測試前置條件**：console「LLM provider」頁放一把
-真的 Anthropic key（帳號需有 Managed Agents beta 存取）；會花真錢，建議 `budget_usd: 0.5` 起跳。
-沒有真 key 時 e2e 走 §5.0 的假上游，可驗 completed / budget_reached 兩種語意。
-設計與對照見 `2026-09-02-managed-agents-integration.md`。
-
-## 5.2 具體組合驗證：claude-code × E2B × Anthropic 官方 API × Haiku（2026-09-03 新增）
-
-```bash
-# 1. E2B 雲端的箱子要打得回本機閘道：開一條 tunnel 指到 api
-ngrok http 8787            # 拿到 https://xxx.ngrok-free.dev
-# 2. worker 用 tunnel URL 重啟（只有 worker 需要；api 的 NIMPLEX_PUBLIC_URL 留給 OAuth callback）
-cd apps/worker && NIMPLEX_PUBLIC_URL=https://xxx.ngrok-free.dev pnpm start
-# 3. 跑組合
-NIMPLEX_API_KEY=nmx_live_... ANTHROPIC_API_KEY=sk-ant-... \
-  pnpm --filter @nimplex/example-quickstart exec tsx src/claude-code-e2b.ts
-```
-
-- 2026-09-03 實測全通：18 秒完成，閘道記帳 $0.0137 與 claude-code 自報一致（4 次 model call 逐筆 reserve/settle）。
-- `cloudflared tunnel --url` 的 quick tunnel 在本機網路連不上（HTTP 000），ngrok 可用。
-- E2B 預設 template 是 node 20.9，claude-code 2.x 宣告需要 node ≥ 22：目前只是 EBADENGINE 警告仍可跑，
-  但這是「harness 預裝 image / E2B template」該優先做的原因之一（每次 run 都 `npm install -g` 約 6 秒）。
-- 沒有真 key 時設 `ANTHROPIC_BASE_URL` 指到 testkit 假上游（`pnpm --filter @nimplex/testkit start`），同一條路徑照跑。
+Managed Agents 路徑與 claude-code × E2B CLI-in-box 組合在 2026-09-06 刪掉（見 `2026-09-06-harness-on-just-bash.md` §6；歷史在 git `0f32657`）。真箱子（Tier 2）路徑在 Slice 2 重接，屆時補回組合驗證。
 
 ## 7. 自架雲端 dev 環境（VPS + docker compose + GitHub Actions，2026-09-03 新增）
 

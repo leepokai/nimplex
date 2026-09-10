@@ -78,6 +78,27 @@ export class Transport {
     return parsed as T;
   }
 
+  /** GET returning raw bytes (workspace files). Errors are parsed like `request`. */
+  async requestBytes(
+    path: string,
+    options: { query?: Record<string, string | undefined>; signal?: AbortSignal } = {},
+  ): Promise<Uint8Array> {
+    const url = new URL(`${this.baseUrl}${path}`);
+    for (const [key, value] of Object.entries(options.query ?? {})) {
+      if (value !== undefined) url.searchParams.set(key, value);
+    }
+    const response = await this.fetchImpl(url, {
+      method: "GET",
+      headers: this.headers(),
+      signal: options.signal,
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      throw toError(response.status, text ? safeJson(text) : null, text);
+    }
+    return new Uint8Array(await response.arrayBuffer());
+  }
+
   /**
    * SSE：用 fetch 讀串流。伺服器乾淨關閉＝事件流結束；
    * 中途斷線（網路錯誤）會帶 Last-Event-ID 自動重連續傳，

@@ -1,77 +1,53 @@
 # nimplex
 
-**OpenRouter for cloud agents.** 一把 key，在任何 sandbox 上跑任何 harness、燒你自己的 LLM 額度，
-而且每一個終端使用者都有一個跑到一半也砍得掉的美元硬上限。
+開源、可自架的 coding agent 雲端 runtime。主張一句話：**run 不會因為 worker 或箱子死掉而死、錢有美元硬上限、隨時殺得掉。**
 
-## 三個插槽
+> **2026-09-06 重新聚焦**：harness 改為自己寫、跑在 worker 程序裡（loop-outside），工具面以
+> just-bash 虛擬環境為第一層、真箱子（docker / E2B …）為第二層；append-only 的 run events 是
+> runtime 的唯一真相（log is the runtime，見 Apache Maka 的同名文章）。
+> 舊的「任意 CLI harness 進箱子」、Claude Managed Agents、閘道代理、console、tool registry
+> 已全部移除，要翻舊帳看 commit `0f32657`。
 
-換掉任何一格，其他格都不用改。
+## 現在 repo 裡有什麼
 
-| 插槽 | 你可以選 | 換掉它要改什麼 |
-| --- | --- | --- |
-| **harness** | 內建的 `claude-code` / `codex` / `opencode` / `claude-managed-agent`（Anthropic 託管），或**上傳你自己的** | `PUT /v1/harnesses/:slug` 一份 manifest |
-| **LLM provider** | anthropic / openai / openrouter，**你自己的 token** | `PUT /v1/provider-keys` |
-| **sandbox** | `docker`、`e2b`（直接接）、`daytona` / `vercel`（透過 ComputeSDK adapter）、`local`（dev） | 直接接：實作 `SandboxProvider`；長尾：`new ComputeSdkSandboxProvider({ backendId, backend: () => modal({…}) })` 三行；兩條路都要過 `@nimplex/testkit` 的 conformance kit |
+| 目錄 | 內容 |
+| --- | --- |
+| `apps/api` | `/v1` 控制面：Better Auth 登入、org API key、BYOK provider key、runs、可續傳 SSE 事件流（Hono，:8787） |
+| `apps/worker` | lease + fence 工作佇列（含 heartbeat）、美元硬上限、kill、孤兒沙箱回收。`pi-executor.ts`：Pi 當 loop kernel，一個 work item ＝ 一個 turn，工具打在 just-bash VFS（Tier 1），檔案寫回 `workspace_files`（Tier 0） |
+| `apps/site` | 行銷首頁（nimplex.dev，Vercel） |
+| `packages/contracts` | zod schemas：run / event / key / org / sandbox spec（唯一真理來源） |
+| `packages/core` | 零 IO 純函式：budget、pricing、狀態機、SandboxProvider port |
+| `packages/db` | Drizzle schema + migrations、BYOK 加密、append-only events |
+| `packages/sandbox` | SandboxProvider 實作：docker、e2b、computesdk（daytona / vercel）、local（dev） |
+| `packages/sdk` | `@nimplex/sdk`：Nimplex client + CloudAgent（對齊 ai@7 `Agent`）+ SSE transport |
+| `packages/testkit` | 假 Anthropic 上游（e2e 不用真 key）+ sandbox conformance kit |
+| `examples/quickstart` | `src/harness-e2e.ts` 完整隔離驗收；`src/index.ts` 最小示範；`src/e2e.ts` 冒煙測試；`src/demo-kill.ts` kill -9 worker 續跑 demo |
 
-harness 是**資料不是程式碼**：內建的與你上傳的走同一份 manifest、同一條解析路徑。
-同名 slug 會覆寫內建版本（只在你的 org 生效）——上游 CLI 改了旗標，你自己改 manifest 就好，不用等我們發版。
-
-## 為什麼錶跟 harness 無關
-
-支點是 **`ANTHROPIC_BASE_URL` 注入**：沙箱裡的 harness 拿到的是 nimplex 簽發的短期票，
-你的真 key 只存在閘道那一側（AES-256-GCM 加密落地），**永遠不進箱子**。
-
-```
-        ┌────────── nimplex control plane ──────────┐
-        │  runs · budgets · events · audit          │
-        └────┬──────────────────────┬───────────────┘
-             │ 開/砍                 │ 每次 call 記帳 + 放行/拒絕
-             ▼                      ▼
-     ┌───────────────┐      ┌──────────────────┐
-     │  Sandbox Port │      │  nimplex Gateway │──► Anthropic / OpenAI /
-     │ docker·local  │      │  (BYOK vault)    │    OpenRouter（你自己的 key）
-     └───────┬───────┘      └────────▲─────────┘
-             │ 箱子裡跑              │ base URL 注入
-             ▼                      │
-     ┌───────────────────────────────┴──┐
-     │  Harness（內建 or 你上傳的）        │ ← 箱內只有 nimplex 短期票
-     └──────────────────────────────────┘
-```
-
-因此 kill 有兩層：**軟殺**（閘道拒發下一個 call）+ **硬殺**（銷毀整個沙箱）。
-
-## Quickstart
+## 跑起來
 
 ```bash
 pnpm install
 docker compose up -d        # Postgres on :5433
-pnpm db:migrate && pnpm db:seed
-pnpm --filter @nimplex/api start &
+pnpm db:migrate
+NIMPLEX_DEV_EMAIL_AUTH=1 pnpm --filter @nimplex/api start &
 pnpm --filter @nimplex/worker start &
-pnpm --filter @nimplex/console dev &   # console on :5173
+pnpm --filter @nimplex/example-quickstart exec tsx src/e2e.ts   # 註冊 → 發 key → Pi loop 跑完 → 預算殺 → 租戶隔離（固定假上游）
 ```
 
-**先拿一把 org API key**：開 <http://localhost:5173> 用 GitHub 或 Google 登入
-（Better Auth；OAuth 憑證填在根目錄 `.env`，步驟見 `.env.example`；首次登入即自動擁有一個
-organization）→「API keys」頁建立一把 `nmx_live_…`。開發期沒有 OAuth 憑證時，
-可先設 `NIMPLEX_DEV_EMAIL_AUTH=1` 走 email 註冊（e2e 冒煙腳本也走這條）。
-`/v1/*` 全部要帶身分——console 用 session cookie，程式用 Bearer key，兩者打的是同一組 endpoint。
+沒有 console：先 `POST /api/auth/sign-up/email`（需 `NIMPLEX_DEV_EMAIL_AUTH=1`）拿 session，
+再 `POST /v1/api-keys` 發一把 `nmx_live_…`；之後 `/v1/*` 全用 Bearer key。
 
 ```bash
 export NIMPLEX_API_KEY=nmx_live_...
 
-# 插槽 1：放進你自己的 LLM token（明文只在這一次請求裡出現，落地即加密）
+# 放進自己的 LLM token（明文只在這一次請求裡出現，落地即加密）
 curl -X PUT localhost:8787/v1/provider-keys \
   -H "authorization: Bearer $NIMPLEX_API_KEY" -H 'content-type: application/json' \
   -d '{"provider":"anthropic","api_key":"sk-ant-...","scope":"org"}'
 
-# 插槽 3：看有哪些 sandbox provider 可用
-curl -s -H "authorization: Bearer $NIMPLEX_API_KEY" localhost:8787/v1/sandbox-providers
-
-# 插槽 2：用網路上現成的 harness 跑一次，上限 $0.50
+# 跑一次，上限 $0.50
 curl -X POST localhost:8787/v1/runs \
   -H "authorization: Bearer $NIMPLEX_API_KEY" -H 'content-type: application/json' -d '{
-  "harness":"claude-code",
   "model":{"provider":"anthropic","id":"claude-sonnet-5"},
   "sandbox":{"provider":"docker"},
   "instructions":"在 /workspace 建一個 hello.txt",
@@ -81,49 +57,58 @@ curl -X POST localhost:8787/v1/runs \
 curl -N -H "authorization: Bearer $NIMPLEX_API_KEY" localhost:8787/v1/runs/<run_id>/events
 ```
 
-SDK 版本見 `examples/quickstart`（讀 `NIMPLEX_API_KEY`）：
+## Demo：kill -9 worker，run 照跑完、錢停在上限
 
 ```bash
-pnpm --filter @nimplex/example-quickstart start        # 三插槽走一遍
-pnpm --filter @nimplex/example-quickstart exec tsx src/e2e.ts   # e2e 冒煙：不需要任何 LLM key（自帶假上游），驗閘道計量、預算殺、Managed Agents、租戶隔離
+# 只起 api；worker 由腳本自己起（worker A → SIGKILL → worker B）
+NIMPLEX_DEV_EMAIL_AUTH=1 pnpm --filter @nimplex/api start &
+pnpm --filter @nimplex/example-quickstart exec tsx src/demo-kill.ts        # 無 key：假上游，不花錢
+ANTHROPIC_API_KEY=sk-ant-... pnpm --filter @nimplex/example-quickstart exec tsx src/demo-kill.ts   # 真 key（Haiku，約 $0.006）
 ```
 
-## 上傳自己的 harness
-
-manifest 就是全部的介面。模板變數會在開箱時展開：
-
-| 變數 | 展開成 |
-| --- | --- |
-| `{{gateway.anthropic}}` `{{gateway.openai}}` `{{gateway.openrouter}}` | nimplex 閘道 base URL |
-| `{{run.token}}` | 只在這個 run 有效的短期票（**不是**你的真 key） |
-| `{{model}}` `{{prompt}}` `{{run.id}}` `{{workdir}}` | 這次 run 的參數 |
-
-```jsonc
-{
-  "name": "My harness",
-  "source": { "kind": "npm", "package": "my-agent-cli" },
-  "install": ["npm install -g my-agent-cli@latest"],
-  // 代入 command 的值一律會被 shell 單引號包起來——manifest 自己不要再補引號
-  "command": "my-agent run {{prompt}} --model {{model}}",
-  "env": {
-    "ANTHROPIC_BASE_URL": "{{gateway.anthropic}}",
-    "ANTHROPIC_API_KEY": "{{run.token}}"
-  },
-  "provider": "anthropic",
-  "output": "text"
-}
 ```
+#1  run.started   by worker-A
+#2  model.call    toolUse $0.0017
+#4  tool.call     bash {"command":"date"}
+#7  model.call    toolUse $0.0022
+>>> kill -9 worker A
+#9  tool.call     write {"path":"/workspace/hello.txt", ...}
+#15 run.resumed   by worker-B            ← lease 到期，另一個 worker 從 log 接手
+#16 model.call    stop $0.0021
+#19 run.completed spent $0.006
+Tier 0 /workspace/hello.txt (28 B): Wed Sep  9 09:49:11 UTC 2026
+```
+
+怎麼做到的：Pi 在 worker 跑，模型回覆先存 log 並結算預留額度；每個工具的結果、檔案差異與 metadata 再各自原子提交。
+worker 死掉後只補做尚未提交的工具，已完成的模型呼叫與工具不重做。純 shell 用 just-bash；native 指令在執行前整段路由到 Docker／E2B。
+E2B command 的 supervisor 與結果 journal 留在箱子內，worker 重接可收回結果；箱子確認丟失才新建 generation，從 Tier 0 重建工作區。
+E2B 閒置時 pause，下一次 native 呼叫 resume。檔案、空目錄、symlink、權限與 binary 都持久化。
+
+## 一鍵完整驗收
+
+```bash
+pnpm e2e          # 新建獨立 local DB、API、worker；假模型，不花 LLM 費用
+pnpm e2e:e2b      # 加入真 E2B：native 執行、worker crash、pause/resume、箱子丟失重建
+pnpm e2e:real     # 再加真 Haiku + E2B 功能驗證（從 .env 讀 key）
+```
+
+只需 local Postgres 在 :5433；腳本自選 API port、自建並清除測試 DB，不占用現有 API／worker。
+`e2e:e2b` 需要 `.env` 中的 `E2B_API_KEY`，`e2e:real` 再需要 `ANTHROPIC_API_KEY`。
+雲端驗收會產生少量 sandbox／模型費用，測試結束會清理建立的箱子。
+
+預算計的是已支援價目表的 **LLM token 成本**，不包含 sandbox、儲存與網路。
+每次請求先預留保守 input 上界及受限 output tokens；關閉隱藏重試、prompt caching 與付費 server tools。
+`spent_usd` 是已結算費用，`reserved_usd` 是尚未確定的費用上界；worker crash 後的未知請求不會直接釋放預留。
+不認得價目的模型會在付費呼叫前拒絕。完整行為、限制及 migration 見 [runtime 文件](docs/product/2026-09-10-harness-runtime.md)。
 
 ## SDK
 
-介面形狀對齊 **Vercel AI SDK v7 的 `Agent`**（`version` / `id` / `generate` / `stream`）——
-極小的介面加一個現成實作。差別在跑的地方：AI SDK 在你的程序裡跑 tool loop，
-nimplex 在雲端沙箱裡跑一整個 harness，所以多了 `budgetUsd`（美元硬上限，跑到一半也砍得掉）。
+介面形狀對齊 **Vercel AI SDK v7 的 `Agent`**（`version` / `id` / `generate` / `stream`），
+多一個 `budgetUsd`（美元硬上限，跑到一半也砍得掉）。
 
 ```ts
 const nimplex = new Nimplex();
 const agent = nimplex.agent({
-  harness: "claude-code",
   model: { provider: "anthropic", id: "claude-sonnet-5" },
   sandbox: { provider: "docker" },
   instructions: "修好 CI",
@@ -135,37 +120,10 @@ for await (const event of run.events) console.log(event.type, event.payload);
 console.log(await run.wait());
 ```
 
-## metered vs unmetered
-
-| 模式 | 條件 | 你拿得到 |
-| --- | --- | --- |
-| `exact`（預設） | model 流量走閘道（BYOK API key） | 美元硬上限、即時花費、mid-run kill、精確帳 |
-| `provider_reported` | 上游自己跑 loop 並回報花費（`claude-managed-agent`） | 上限由上游強制（Anthropic session budget）、花費是**公開價**非合約價、mid-run kill |
-| `none` | 綁訂閱席次，流量不經過我們 | 只有 `max_duration_seconds` + 硬殺沙箱；**美元不可保證** |
-
-`metering: "none"` 的 run **不准**設 `budget_usd`——含糊帶過就是計量出錯的來源。
-上游沒回報 usage 時會寫一筆 `metering.gap` 事件，而不是靜靜當成 $0。
-
-## Layout
-
-```
-apps/api            Hono — 控制面 + /gw 閘道（Console 與 SDK 走同一組公開 endpoint）
-apps/worker         work-queue executor — 開箱、跑 harness、串事件、硬殺、回收孤兒沙箱
-apps/console        三個插槽的接線台（harness 註冊表 / BYOK / sandbox provider），吃 @nimplex/sdk
-apps/site           waitlist 首頁（GSAP + ScrollTrigger）；表單走 Tally，見 apps/site/.env.example
-packages/contracts  zod schemas：harness manifest、sandbox spec、run 契約
-packages/core       狀態機 · budget · 價格表 · harness 模板 · SandboxProvider port
-packages/gateway    BYOK 保險庫 + 計量 + 預留/結算 + 軟殺
-packages/sandbox    sandbox provider 註冊表（docker / local）
-packages/sdk        @nimplex/sdk — Agent 介面（generate / stream）+ 控制面客戶端
-packages/db         Drizzle + Postgres — runs 第一級物件、美元計量、append-only 稽核
-examples/quickstart 三個插槽走一遍
-```
-
 ## 設計來源
 
-- **harness / Agent 介面** ← Vercel AI SDK v7 `Agent`（`ai@7`）：介面自帶 `version` 才改得動又不破相容。
-- **sandbox port** ← OpenAI Agents SDK `SandboxClient` / `SandboxSession`（`@openai/agents-core`）：
-  session state 可序列化、可跨程序 `resume`。nimplex 的 worker 無狀態、隨時可死，
-  所以「誰砍得掉這個箱子」不能靠記憶體裡的 handle——寫進 `runs.sandbox_state`，
-  任何一個 worker 讀到都能接回去銷毀。
+- **Agent 介面** ← Vercel AI SDK v7 `Agent`：介面自帶 `version` 才改得動又不破相容。
+- **sandbox port** ← OpenAI Agents SDK `SandboxClient` / `SandboxSession`：session state 可序列化、可跨程序 `resume`；
+  worker 無狀態、隨時可死，「誰砍得掉這個箱子」寫在 `runs.sandbox_state`，任何 worker 讀到都能接回去銷毀。
+- **log is the runtime** ← Apache Maka `docs/blogs/log-is-the-runtime.md`：狀態是 append-only 事件的投影，
+  UI、下一次 model context、crash recovery 各自是同一份 log 的不同投影。

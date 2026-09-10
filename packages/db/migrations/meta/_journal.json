@@ -43,6 +43,34 @@
       "when": 1788423716001,
       "tag": "0005_woozy_triathlon",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1788705292321,
+      "tag": "0006_pretty_klaw",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1788946880066,
+      "tag": "0007_tearful_nightmare",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1788974131152,
+      "tag": "0008_supreme_korvac",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1788975539593,
+      "tag": "0009_long_carmella_unuscione",
+      "breakpoints": true
     }
   ]
 }

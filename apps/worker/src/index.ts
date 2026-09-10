@@ -2,32 +2,42 @@ import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { RunStatus } from "@nimplex/contracts";
 import {
   checkBudget,
+  checkWorkspaceLimits,
   durationExceeded,
-  executionKind,
+  type ExecutorStepResult,
   isSandboxSessionState,
   isTerminal,
-  settleSpend,
 } from "@nimplex/core";
 import {
   appendRunEvents,
   auditEvents,
   createDb,
+  type DbExecutor,
+  findProviderKeyRow,
   killRun,
+  listRunEvents,
+  loadWorkspace,
+  modelCalls,
+  open,
   type RunRow,
-  resolveHarness,
   runs,
-  usageRecords,
   workItems,
 } from "@nimplex/db";
 import { getSandboxProvider, hasSandboxProvider } from "@nimplex/sandbox";
 import { and, eq, isNotNull, sql } from "drizzle-orm";
-import { executeHarnessRun } from "./harness-executor.ts";
-import { executeManagedAgentRun } from "./managed-agent-executor.ts";
-import { stubExecutor } from "./stub-executor.ts";
+import {
+  BudgetExceededError,
+  createCheckpoints,
+  LostLeaseError,
+  lockOwnedRun,
+} from "./checkpoints.ts";
+import { createNativeBash } from "./native-bash.ts";
+import { piExecutor } from "./pi-executor.ts";
 
-// 根目錄 .env（sandbox provider 的 API key、NIMPLEX_PUBLIC_URL 等）；已存在的環境變數優先。
+// Root .env (sandbox provider keys, ...); existing env vars win.
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 for (const candidate of [resolve(process.cwd(), ".env"), resolve(repoRoot, ".env")]) {
   if (existsSync(candidate)) {
@@ -38,31 +48,34 @@ for (const candidate of [resolve(process.cwd(), ".env"), resolve(repoRoot, ".env
 
 const { db, client } = createDb();
 const workerId = `worker-${process.pid}-${randomUUID().slice(0, 8)}`;
-const LEASE_SECONDS = 60;
-const POLL_MS = 300;
+const LEASE_SECONDS = Number(process.env.NIMPLEX_LEASE_SECONDS ?? 60);
+if (!Number.isFinite(LEASE_SECONDS) || LEASE_SECONDS < 3) throw new Error("invalid lease duration");
+const HEARTBEAT_MS = Math.min(1000, (LEASE_SECONDS * 1000) / 3);
+const POLL_MS = 100;
 const REAP_INTERVAL_MS = 10_000;
-
-/** Fence check failed: another worker took over the lease. Kept distinct from ordinary failures because the main loop must give up without touching run state. */
-class LostLeaseError extends Error {
-  constructor(itemId: string) {
-    super(`lost lease on work item ${itemId}`);
-    this.name = "LostLeaseError";
-  }
-}
 
 interface ClaimedItem {
   id: string;
   run_id: string;
-  kind: "model" | "tool" | "harness";
+  org_id: string;
+  kind: "model" | "tool";
   payload: unknown;
   fence: number;
+  attempts: number;
 }
+
+/** How a turn ends, decided by the worker once the executor has returned. */
+type Outcome =
+  | { kind: "continue" }
+  | { kind: "completed" }
+  | { kind: "killed"; reason: string }
+  | { kind: "failed"; error: string };
 
 console.log(`nimplex worker ${workerId} started`);
 
-// 硬殺的收尾：被砍掉的 run 若還留著沙箱，任何一個 worker 讀 sandbox_state 都能接回去銷毀。
+// Hard-kill cleanup: any worker that reads a killed run's sandbox_state can reconnect and destroy it.
 const reaper = setInterval(() => {
-  void reapOrphanSandboxes().catch((err) => console.error("[worker] reaper 失敗", err));
+  void reapOrphanSandboxes().catch((err) => console.error("[worker] reaper failed", err));
 }, REAP_INTERVAL_MS);
 reaper.unref();
 
@@ -78,22 +91,41 @@ for (;;) {
     if (err instanceof LostLeaseError) {
       // Another worker took the lease mid-execution (this worker stalled too long). That worker is
       // now running the same run, so writing anything here would mark someone else's live run failed.
-      console.warn(`[worker] ${err.message}；放棄本次結果，交給接手的 worker`);
+      console.warn(`[worker] ${err.message}; dropping this result, the new lease owner continues`);
       continue;
     }
     console.error(`work item ${item.id} failed:`, err);
-    await markItemFailed(item);
-    // executor 沒接住的例外：run 也要收尾，不能停在 running 讓呼叫端無限等
-    const dangling = await db.query.runs.findFirst({ where: eq(runs.id, item.run_id) });
-    if (dangling && !isTerminal(dangling.status)) {
-      await failRun(dangling, err instanceof Error ? err.message : String(err)).catch((e) =>
-        console.error(`failed to fail run ${item.run_id}:`, e),
-      );
-    }
+    const message = err instanceof Error ? err.message : String(err);
+    await db
+      .transaction(async (tx) => {
+        const snapshot = await db.query.runs.findFirst({
+          where: and(eq(runs.id, item.run_id), eq(runs.orgId, item.org_id)),
+        });
+        if (!snapshot) return;
+        const current = await lockOwnedRun(
+          tx,
+          { id: item.id, owner: workerId, fence: item.fence },
+          snapshot,
+        );
+        if (!isTerminal(current.status)) {
+          const killed = err instanceof BudgetExceededError || message === "max_duration";
+          await finishRun(tx, current, killed ? "killed" : "failed", message, {
+            error: message,
+            reason: message,
+            spent_usd: current.spentUsd,
+            reserved_usd: current.reservedUsd,
+          });
+        }
+        await tx
+          .update(workItems)
+          .set({ status: "failed", completedAt: new Date() })
+          .where(eq(workItems.id, item.id));
+      })
+      .catch((error) => console.error("[worker] could not finalize failed item", error));
   }
 }
 
-/** 原子 CAS 領取：pending 或租約過期的 leased 都可領；fence 遞增（防雙寫） */
+/** Atomic CAS claim: pending, or leased with an expired lease. Fence increments on every claim (double-write guard). */
 async function claimNext(): Promise<ClaimedItem | null> {
   const rows = await client`
     update work_items set
@@ -109,278 +141,267 @@ async function claimNext(): Promise<ClaimedItem | null> {
       for update skip locked
       limit 1
     )
-    returning id, run_id, kind, payload, fence
+    returning id, run_id, kind, payload, fence, attempts,
+      (select org_id from runs where runs.id = work_items.run_id) as org_id
   `;
   const row = rows[0];
   return row ? (row as unknown as ClaimedItem) : null;
 }
 
-/** 長時間執行的 harness 要一直續租，否則 60 秒後會被別的 worker 搶走。 */
-async function renewLease(item: ClaimedItem): Promise<boolean> {
-  const updated = await db
-    .update(workItems)
-    .set({ leaseExpiresAt: new Date(Date.now() + LEASE_SECONDS * 1000) })
-    .where(
-      and(
-        eq(workItems.id, item.id),
-        eq(workItems.leaseOwner, workerId),
-        eq(workItems.fence, item.fence),
-      ),
-    )
-    .returning({ id: workItems.id });
-  return updated.length > 0;
-}
-
 async function processItem(item: ClaimedItem) {
-  const run = await db.query.runs.findFirst({ where: eq(runs.id, item.run_id) });
+  const run = await db.query.runs.findFirst({
+    where: and(eq(runs.id, item.run_id), eq(runs.orgId, item.org_id)),
+  });
   if (!run || isTerminal(run.status)) {
     if (run) await destroySandbox(run);
-    await finishItem(item, "done");
+    await releaseItem(item, "done");
     return;
   }
 
   if (run.status === "queued") {
-    await db.transaction(async (tx) => {
-      await tx
+    // CAS on queued: a kill that landed between the read above and this update must win.
+    const started = await db.transaction(async (tx) => {
+      await lockOwnedRun(tx, { id: item.id, owner: workerId, fence: item.fence }, run);
+      const [row] = await tx
         .update(runs)
         .set({ status: "running", startedAt: new Date() })
-        .where(eq(runs.id, run.id));
-      await appendRunEvents(tx, run.id, [{ type: "run.started", payload: { worker: workerId } }]);
+        .where(and(eq(runs.id, run.id), eq(runs.orgId, run.orgId), eq(runs.status, "queued")))
+        .returning({ id: runs.id });
+      if (!row) return false;
+      await appendRunEvents(tx, run, [{ type: "run.started", payload: { worker: workerId } }]);
+      return true;
+    });
+    if (!started) {
+      await releaseItem(item, "done");
+      return;
+    }
+  } else if (item.attempts > 1) {
+    // Re-claimed after the previous owner's lease expired (it died or stalled): this worker
+    // continues from the log. The previous attempt's uncommitted turn is simply redone.
+    await db.transaction(async (tx) => {
+      await lockOwnedRun(tx, { id: item.id, owner: workerId, fence: item.fence }, run);
+      const unknown = await tx
+        .update(modelCalls)
+        .set({ status: "unknown" })
+        .where(
+          and(
+            eq(modelCalls.orgId, run.orgId),
+            eq(modelCalls.runId, run.id),
+            eq(modelCalls.workItemId, item.id),
+            eq(modelCalls.status, "reserved"),
+          ),
+        )
+        .returning({ id: modelCalls.id, reserved: modelCalls.reservedUsd });
+      await appendRunEvents(tx, run, [
+        { type: "run.resumed", payload: { worker: workerId, attempt: item.attempts } },
+        ...unknown.map((call) => ({
+          type: "model.unknown",
+          payload: { call_id: call.id, reserved_usd: call.reserved },
+        })),
+      ]);
     });
   }
 
-  // 時間上限（metering=none 的唯一上限）——每一步開始前先看鐘
+  // Wall-clock cap: checked before every step, and again by the lease heartbeat during it.
   if (durationExceeded(run.startedAt, run.maxDurationSeconds)) {
     await killRun(db, run, "max_duration", "worker");
     await destroySandbox(run);
-    await finishItem(item, "done");
+    await releaseItem(item, "done");
     return;
   }
 
-  // 美元硬上限——執行前先查帳，超額即殺，不再發出任何工作。
-  if (run.metering === "exact" && run.budgetUsd !== null) {
-    if (checkBudget(run.spentUsd, run.budgetUsd).exceeded) {
-      await killRun(db, run, "budget_exceeded", "worker");
-      await destroySandbox(run);
-      await finishItem(item, "done");
-      return;
-    }
-  }
-
-  if (item.kind === "harness") {
-    await processHarnessItem(item, run);
+  // USD hard cap: checked before every step; once exceeded no further work is issued.
+  if (run.budgetUsd !== null && checkBudget(run.spentUsd, run.budgetUsd).exceeded) {
+    await killRun(db, run, "budget_exceeded", "worker");
+    await destroySandbox(run);
+    await releaseItem(item, "done");
     return;
   }
-  await processBuiltinItem(item, run);
+
+  await processStep(item, run);
 }
 
-/** 插槽合體的那條路徑：任意 harness × 任意 sandbox × 使用者自己的 LLM 額度。 */
-async function processHarnessItem(item: ClaimedItem, run: RunRow) {
-  const harness = await resolveHarness(db, run.orgId, run.harness);
-  if (!harness) {
-    await failRun(run, `harness "${run.harness}" 已從註冊表消失`);
-    await finishItem(item, "done");
-    return;
+/** Model and tool boundaries commit while Pi runs; this transaction only schedules the next turn. */
+async function processStep(item: ClaimedItem, run: RunRow) {
+  const [events, files, key] = await Promise.all([
+    listRunEvents(db, run.id, run.orgId),
+    loadWorkspace(db, run.id, run.orgId),
+    findProviderKeyRow(db, run.orgId, run.modelProvider, null),
+  ]);
+  if (!key) throw new Error(`no ${run.modelProvider} provider key for org ${run.orgId}`);
+  const lease = { id: item.id, owner: workerId, fence: item.fence };
+  const abort = new AbortController();
+  let ticking = false;
+  const heartbeat = setInterval(() => {
+    if (ticking) return;
+    ticking = true;
+    void extendLease(item, abort).finally(() => {
+      ticking = false;
+    });
+  }, HEARTBEAT_MS);
+  let result: ExecutorStepResult;
+  try {
+    result = await piExecutor(
+      {
+        id: run.id,
+        orgId: run.orgId,
+        modelProvider: run.modelProvider,
+        model: run.model,
+        config: run.config,
+        workspaceMetadata: run.workspaceMetadata,
+        events,
+        files,
+        credential: { apiKey: open(key), baseUrl: key.baseUrl },
+        persistence: createCheckpoints(db, lease, run, files),
+        nativeBash: createNativeBash(db, lease, run),
+      },
+      abort.signal,
+    );
+  } finally {
+    clearInterval(heartbeat);
   }
-  const kind = executionKind(harness.manifest);
-  if (kind === "sandbox" && !hasSandboxProvider(run.sandbox.provider)) {
-    await failRun(run, `sandbox provider "${run.sandbox.provider}" 尚未註冊`);
-    await finishItem(item, "done");
-    return;
-  }
-
-  // managed-agent：不開箱，session 在 Anthropic；其餘走沙箱路徑
-  const result =
-    kind === "managed-agent"
-      ? await executeManagedAgentRun(
-          { db, renewLease: () => renewLease(item) },
-          run,
-          harness.manifest,
-        )
-      : await executeHarnessRun({ db, renewLease: () => renewLease(item) }, run, harness.manifest);
-
-  const fresh = await db.query.runs.findFirst({ where: eq(runs.id, run.id) });
-  const alreadyTerminal = fresh ? isTerminal(fresh.status) : false;
-
-  if (!alreadyTerminal) {
-    if (result.status === "completed") {
-      await db.transaction(async (tx) => {
-        const [completed] = await tx
-          .update(runs)
-          .set({ status: "completed", completedAt: new Date(), sandboxState: null })
-          .where(
-            sql`${runs.id} = ${run.id} and ${runs.status} in ('queued','running','awaiting_input')`,
-          )
-          .returning({ id: runs.id });
-        if (!completed) return; // 最後一刻被殺：保留 killed，不蓋成 completed
-        await appendRunEvents(tx, run.id, [
-          { type: "run.completed", payload: { spent_usd: fresh?.spentUsd ?? run.spentUsd } },
-        ]);
-        await tx.insert(auditEvents).values({
-          orgId: run.orgId,
-          endUserId: run.endUserId,
-          runId: run.id,
-          actor: "worker",
-          action: "run.completed",
-          meta: { harness: run.harness, spent_usd: fresh?.spentUsd ?? run.spentUsd },
-        });
-      });
-    } else {
-      await failRun(run, result.error ?? "harness 執行失敗");
-    }
-  } else {
-    // 已經被閘道或 API 軟殺了，這裡只負責把沙箱狀態清乾淨
-    await db.update(runs).set({ sandboxState: null }).where(eq(runs.id, run.id));
-  }
-
-  await finishItem(item, "done");
-}
-
-/** 零設定的內建 loop：不開沙箱、不需要 BYOK，用來驗證計量與 kill-switch。 */
-async function processBuiltinItem(item: ClaimedItem, run: RunRow) {
-  const result = await stubExecutor.step(
-    {
-      id: run.id,
-      orgId: run.orgId,
-      endUserId: run.endUserId,
-      config: run.config,
-      spentUsd: run.spentUsd,
-      budgetUsd: run.budgetUsd ?? Number.POSITIVE_INFINITY,
-    },
-    { id: item.id, kind: item.kind === "harness" ? "model" : item.kind, payload: item.payload },
-  );
-
-  const newSpent = settleSpend(run.spentUsd, result.costUsd);
-  const exceeded =
-    run.metering === "exact" &&
-    run.budgetUsd !== null &&
-    checkBudget(newSpent, run.budgetUsd).exceeded;
-
+  if (abort.signal.reason instanceof LostLeaseError) throw abort.signal.reason;
   await db.transaction(async (tx) => {
-    // fence：確認租約仍屬於本 worker，否則整筆放棄（防止卡住又醒來的雙寫）
-    const owned = await tx
+    const current = await lockOwnedRun(tx, lease, run);
+    await tx
       .update(workItems)
       .set({ status: "done", completedAt: new Date() })
-      .where(
-        and(
-          eq(workItems.id, item.id),
-          eq(workItems.leaseOwner, workerId),
-          eq(workItems.fence, item.fence),
-        ),
-      )
-      .returning({ id: workItems.id });
-    if (owned.length === 0) throw new LostLeaseError(item.id);
-
-    await appendRunEvents(tx, run.id, result.events);
-
-    // 每一分錢都掛在 end_user 上
-    await tx.insert(usageRecords).values({
-      orgId: run.orgId,
-      endUserId: run.endUserId,
-      runId: run.id,
-      kind: item.kind,
-      amountUsd: result.costUsd,
-      meta: { executor: stubExecutor.id },
-    });
-    await tx.update(runs).set({ spentUsd: newSpent }).where(eq(runs.id, run.id));
-
-    if (result.next.kind === "complete") {
-      const [completed] = await tx
-        .update(runs)
-        .set({ status: "completed", completedAt: new Date() })
-        .where(
-          sql`${runs.id} = ${run.id} and ${runs.status} in ('queued','running','awaiting_input')`,
-        )
-        .returning({ id: runs.id });
-      // 最後一步進行中被殺：保留 killed，不寫 completed
-      if (completed) {
-        await appendRunEvents(tx, run.id, [
-          { type: "run.completed", payload: { spent_usd: newSpent } },
-        ]);
-        await tx.insert(auditEvents).values({
-          orgId: run.orgId,
-          endUserId: run.endUserId,
-          runId: run.id,
-          actor: "worker",
-          action: "run.completed",
-          meta: { spent_usd: newSpent },
+      .where(eq(workItems.id, item.id));
+    if (isTerminal(current.status)) return;
+    const exceeded = current.budgetUsd !== null && current.spentUsd > current.budgetUsd;
+    const outcome = decideOutcome(result, exceeded, abort.signal.reason);
+    switch (outcome.kind) {
+      case "continue":
+        await tx.insert(workItems).values({ runId: run.id, kind: "model" });
+        break;
+      case "completed":
+        await finishRun(tx, current, "completed", null, { spent_usd: current.spentUsd });
+        break;
+      case "killed":
+        await finishRun(tx, current, "killed", outcome.reason, {
+          reason: outcome.reason,
+          spent_usd: current.spentUsd,
+          budget_usd: current.budgetUsd,
         });
-      }
-    } else if (exceeded) {
-      // kill-switch：結帳後發現超額，當場終結，不發下一個 work item。
-      await tx
-        .update(runs)
-        .set({ status: "killed", error: "budget_exceeded", completedAt: new Date() })
-        .where(eq(runs.id, run.id));
-      await appendRunEvents(tx, run.id, [
-        {
-          type: "run.killed",
-          payload: { reason: "budget_exceeded", spent_usd: newSpent, budget_usd: run.budgetUsd },
-        },
-      ]);
-      await tx.insert(auditEvents).values({
-        orgId: run.orgId,
-        endUserId: run.endUserId,
-        runId: run.id,
-        actor: "worker",
-        action: "run.killed",
-        meta: { spent_usd: newSpent, budget_usd: run.budgetUsd },
-      });
-    } else if (result.next.kind === "continue") {
-      await tx.insert(workItems).values({
-        runId: run.id,
-        kind: result.next.nextItem.kind,
-        payload: result.next.nextItem.payload,
-      });
-    } else {
-      await tx.update(runs).set({ status: "awaiting_input" }).where(eq(runs.id, run.id));
-      await appendRunEvents(tx, run.id, [{ type: "run.awaiting_input" }]);
+        break;
+      case "failed":
+        await finishRun(tx, current, "failed", outcome.error, { error: outcome.error });
     }
   });
 }
 
-async function failRun(run: RunRow, error: string) {
-  await db.transaction(async (tx) => {
-    const [updated] = await tx
-      .update(runs)
-      .set({ status: "failed", error, completedAt: new Date(), sandboxState: null })
-      .where(
-        sql`${runs.id} = ${run.id} and ${runs.status} not in ('completed','failed','killed','canceled')`,
-      )
-      .returning({ id: runs.id });
-    if (!updated) return;
-    await appendRunEvents(tx, run.id, [{ type: "run.failed", payload: { error } }]);
-    await tx.insert(auditEvents).values({
-      orgId: run.orgId,
-      endUserId: run.endUserId,
-      runId: run.id,
-      actor: "worker",
-      action: "run.failed",
-      meta: { error },
-    });
-  });
+function decideOutcome(
+  result: ExecutorStepResult,
+  exceeded: boolean,
+  abortReason: unknown,
+): Outcome {
+  if (exceeded) return { kind: "killed", reason: "budget_exceeded" };
+  const tooLarge = checkWorkspaceLimits(result.files);
+  if (tooLarge) return { kind: "failed", error: tooLarge };
+  switch (result.stopReason) {
+    case "stop":
+      return { kind: "completed" };
+    case "toolUse":
+    case "length":
+      return { kind: "continue" };
+    case "aborted":
+      // Either the heartbeat saw the duration cap, or the run was killed / canceled (then the
+      // status is already terminal and this outcome is a no-op).
+      return abortReason === "max_duration"
+        ? { kind: "killed", reason: "max_duration" }
+        : { kind: "failed", error: "aborted" };
+    default:
+      return {
+        kind: "failed",
+        error: `model stopped: ${result.stopReason}${result.errorMessage ? `: ${result.errorMessage}` : ""}`,
+      };
+  }
 }
 
-async function destroySandbox(run: Pick<RunRow, "id" | "sandboxState">) {
+/**
+ * Terminal transition with CAS. A run that already ended (kill / cancel from the API, or another
+ * path in this worker) keeps its status and reason; returns false in that case.
+ */
+async function finishRun(
+  tx: DbExecutor,
+  run: Pick<RunRow, "id" | "orgId" | "endUserId">,
+  status: "completed" | "killed" | "failed",
+  error: string | null,
+  payload: Record<string, unknown>,
+): Promise<boolean> {
+  const [row] = await tx
+    .update(runs)
+    .set({ status, error, completedAt: new Date() })
+    .where(
+      sql`${runs.id} = ${run.id} and ${runs.orgId} = ${run.orgId} and ${runs.status} in ('queued','running','awaiting_input')`,
+    )
+    .returning({ id: runs.id });
+  if (!row) return false;
+  await appendRunEvents(tx, run, [{ type: `run.${status}`, payload }]);
+  await tx.insert(auditEvents).values({
+    orgId: run.orgId,
+    endUserId: run.endUserId,
+    runId: run.id,
+    actor: "worker",
+    action: `run.${status}`,
+    meta: payload,
+  });
+  return true;
+}
+
+/** Lease heartbeat. Aborts the in-flight turn when the lease is gone, the run ended, or the duration cap hit. */
+async function extendLease(item: ClaimedItem, abort: AbortController) {
+  try {
+    const rows = await client`
+      update work_items w
+      set lease_expires_at = now() + make_interval(secs => ${LEASE_SECONDS})
+      from runs r
+      where w.id = ${item.id} and w.lease_owner = ${workerId} and w.fence = ${item.fence}
+        and r.id = w.run_id and r.org_id = ${item.org_id} and w.status = 'leased' and w.lease_expires_at > now()
+      returning r.status, r.started_at, r.max_duration_seconds
+    `;
+    const row = rows[0] as
+      | { status: RunStatus; started_at: Date | null; max_duration_seconds: number | null }
+      | undefined;
+    if (!row) abort.abort(new LostLeaseError(item.id));
+    else if (isTerminal(row.status)) abort.abort(new Error(`run ${item.run_id} is ${row.status}`));
+    else if (durationExceeded(row.started_at, row.max_duration_seconds))
+      abort.abort("max_duration");
+  } catch (err) {
+    console.error(`[worker] lease heartbeat failed for ${item.id}`, err);
+    abort.abort(new LostLeaseError(item.id));
+  }
+}
+
+async function destroySandbox(run: Pick<RunRow, "id" | "orgId" | "sandboxState">) {
   const state = run.sandboxState;
   if (!isSandboxSessionState(state)) return;
   if (!hasSandboxProvider(state.backendId)) return;
   try {
     await getSandboxProvider(state.backendId).delete(state);
-    await appendRunEvents(db, run.id, [
+    await appendRunEvents(db, run, [
       { type: "sandbox.destroyed", payload: { provider: state.backendId, reason: "run_terminal" } },
     ]);
   } catch (err) {
-    console.error(`[worker] 銷毀 run ${run.id} 的沙箱失敗`, err);
-  } finally {
-    await db.update(runs).set({ sandboxState: null }).where(eq(runs.id, run.id));
+    console.error(`[worker] failed to destroy sandbox for run ${run.id}`, err);
+    return;
   }
+  await db
+    .update(runs)
+    .set({ sandboxState: null })
+    .where(
+      and(
+        eq(runs.id, run.id),
+        eq(runs.orgId, run.orgId),
+        sql`${runs.sandboxState} = ${JSON.stringify(state)}::jsonb`,
+      ),
+    );
 }
 
-/** 終態但沙箱還在的 run —— 通常是被閘道軟殺後、原本的 worker 掛掉了。 */
+/** Terminal runs that still own a sandbox: usually soft-killed while the original worker died. */
 async function reapOrphanSandboxes() {
   const orphans = await db
-    .select({ id: runs.id, sandboxState: runs.sandboxState })
+    .select({ id: runs.id, orgId: runs.orgId, sandboxState: runs.sandboxState })
     .from(runs)
     .where(
       and(
@@ -392,17 +413,25 @@ async function reapOrphanSandboxes() {
   for (const orphan of orphans) await destroySandbox(orphan);
 }
 
-async function finishItem(item: ClaimedItem, status: "done" | "failed") {
-  await db
-    .update(workItems)
-    .set({ status, completedAt: new Date() })
-    .where(eq(workItems.id, item.id));
-}
-
-async function markItemFailed(item: ClaimedItem) {
-  await finishItem(item, "failed").catch((err) => {
-    console.error(`failed to mark item ${item.id} as failed:`, err);
-  });
+/** Release our lease on the item. False = the lease is no longer ours (another worker claimed it). */
+async function releaseItem(item: ClaimedItem, status: "done" | "failed"): Promise<boolean> {
+  try {
+    const rows = await db
+      .update(workItems)
+      .set({ status, completedAt: new Date() })
+      .where(
+        and(
+          eq(workItems.id, item.id),
+          eq(workItems.leaseOwner, workerId),
+          eq(workItems.fence, item.fence),
+        ),
+      )
+      .returning({ id: workItems.id });
+    return rows.length > 0;
+  } catch (err) {
+    console.error(`failed to release item ${item.id}:`, err);
+    return false;
+  }
 }
 
 function sleep(ms: number) {

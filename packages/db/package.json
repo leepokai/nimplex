@@ -9,8 +9,7 @@
   "scripts": {
     "check": "tsc --noEmit -p tsconfig.json",
     "generate": "drizzle-kit generate",
-    "migrate": "drizzle-kit migrate",
-    "seed": "tsx src/seed.ts"
+    "migrate": "drizzle-kit migrate"
   },
   "dependencies": {
     "@nimplex/contracts": "workspace:*",

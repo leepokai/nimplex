@@ -58,16 +58,12 @@ export function last4(value: string): string {
   return value.slice(-4).padStart(4, "*");
 }
 
-/** run token 只存雜湊；外洩 DB 也拿不到能打閘道的票。 */
+/** Tokens are stored hashed only; a leaked DB yields nothing usable. */
 export function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
 
-export function generateRunToken(): string {
-  return `nmx_run_${randomBytes(24).toString("base64url")}`;
-}
-
-/** org API key。與 run token 同一套雜湊落地策略：明文只在建立當下回傳一次。 */
+/** org API key: plaintext is returned once at creation, only the hash lands in the DB. */
 export function generateApiKey(): string {
   return `nmx_live_${randomBytes(24).toString("base64url")}`;
 }

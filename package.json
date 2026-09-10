@@ -16,9 +16,11 @@
     "test": "vitest run",
     "db:generate": "pnpm --filter @nimplex/db generate",
     "db:migrate": "pnpm --filter @nimplex/db migrate",
-    "db:seed": "pnpm --filter @nimplex/db seed",
     "compose:up": "docker compose up -d",
-    "compose:down": "docker compose down"
+    "compose:down": "docker compose down",
+    "e2e": "pnpm --filter @nimplex/example-quickstart exec tsx src/harness-e2e.ts",
+    "e2e:e2b": "NIMPLEX_E2E_SANDBOX=e2b pnpm e2e",
+    "e2e:real": "NIMPLEX_E2E_SANDBOX=e2b NIMPLEX_E2E_REAL_MODEL=1 pnpm e2e"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.9",
