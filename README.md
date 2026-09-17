@@ -2,6 +2,8 @@
 
 **A cloud coding-agent harness built on [Pi](https://github.com/earendil-works/pi), with a runtime that keeps runs alive when workers or sandboxes die, caps spend in dollars, and can kill any run mid-flight.**
 
+nimplex is inspired by [Cloudflare's Project Think](https://blog.cloudflare.com/project-think/): durable identity, persistence, and resumable execution for agents. It pursues the same promise for Pi agents while staying self-hostable (SQLite locally, PostgreSQL hosted) and keeping Pi's session and tool semantics; it does not use the Think harness or Durable Objects. See [the Think reference study](docs/product/2026-09-16-cloudflare-think-reference.md) for what was compared and what remains open.
+
 nimplex runs the agent loop *outside* the sandbox. Pi drives the model and tools inside a nimplex worker; every model response, tool result, and file change is committed to an append-only event log in Postgres before the next step. The log is the runtime: the transcript, the model's context, the workspace, and crash recovery are all projections of the same history. Sandboxes are disposable compute. Provider keys never enter them.
 
 ```text
@@ -235,6 +237,7 @@ Dependency direction: `apps/* → packages/*`; `sdk → contracts` only; `core �
 
 ## Design sources
 
+- **Durable cloud agents**: [Cloudflare Project Think](https://developers.cloudflare.com/agents/harnesses/think/) and its [announcement](https://blog.cloudflare.com/project-think/). nimplex borrows the shape of the promise, durable identity, persistence, resumable interaction, and tool integration, and implements it on Pi with explicit commit barriers, hard USD budgets, and a durable workspace instead of platform-owned actors. Comparison and open questions: [`docs/product/2026-09-16-cloudflare-think-reference.md`](docs/product/2026-09-16-cloudflare-think-reference.md), positioning: [`docs/product/2026-09-16-positioning-map.md`](docs/product/2026-09-16-positioning-map.md).
 - **Log is the runtime**: Apache Maka, [`docs/blogs/log-is-the-runtime.md`](https://github.com/apache/maka/blob/main/docs/blogs/log-is-the-runtime.md). nimplex adds what a cloud runtime needs on top of the event log: durable workspace, sandbox generations, and lease fencing across workers.
 - **Loop kernel**: [Pi](https://github.com/earendil-works/pi) with custom tool `operations` and one-turn-per-work-item scheduling.
 - **Agent interface**: Vercel AI SDK v7 `Agent`; `version` keeps interface evolution explicit.
