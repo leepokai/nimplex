@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { gsap, MM, ScrollTrigger, useGSAP } from "../lib/gsap.ts";
 
-/** 同一段整合，換掉三個值就換掉整個技術棧。 */
+/** The same integration changes stacks by replacing only three values. */
 const STACKS = [
   {
     label: "Anthropic on your own Docker",
@@ -30,11 +30,11 @@ const STACKS = [
 ];
 
 /**
- * 釘住 + scrub：捲動時只有三行在換，其餘每一個字元都不動。
+ * Pin and scrub while only three lines change; every other character stays fixed.
  *
- * 這是整頁的主張本身 —— 中立性不是講出來的，是讓你「看著它不動」。
- * 值用 state 換而不是用 GSAP 補間文字：文字補間會產生沒有意義的中間狀態，
- * 而這裡要的恰恰是「乾淨的一刀切換」。GSAP 只負責釘住、推進度、以及切換當下那一下閃動。
+ * Demonstrate provider neutrality through the unchanged integration.
+ * State swaps avoid meaningless intermediate text from character tweening.
+ * GSAP handles pinning, progress, and a brief flash at each switch.
  */
 export function Swap() {
   const root = useRef<HTMLElement>(null);
@@ -71,7 +71,7 @@ export function Swap() {
     { scope: root },
   );
 
-  // 換值的當下讓三行閃一下，讓「哪三行動了」一眼看得出來
+  // Flash the three changed lines to make the replacement immediately visible.
   useGSAP(
     () => {
       if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;

@@ -1,9 +1,9 @@
-// Agent 介面刻意對齊 Vercel AI SDK v7 的 `Agent`（ai 套件的 dist/index.d.ts）：
+// Follow Vercel AI SDK v7 Agent (ai dist/index.d.ts):
 //
-//   readonly version: 'agent-v1'   ← 介面自帶版本號，之後才改得動又不破相容
+//   readonly version: 'agent-v1' keeps interface evolution explicit.
 //   readonly id
-//   generate(options)  非串流
-//   stream(options)    串流
+//   generate(options): nonstreaming result.
+//   stream(options): event stream.
 //
 // Same minimal shape ("implement the Agent interface, or use the ready-made class"); the only
 // difference is where it runs: the nimplex loop runs in the worker against a cloud sandbox, so
@@ -26,10 +26,14 @@ export interface AgentSettings {
 }
 
 export interface AgentCallOptions {
-  /** 可選的歸因標籤：只進帳目與稽核，方便你自己 rollup；你的使用者由你自己管 */
+  parentRunId?: string;
+  contextMode?: "continue" | "reset" | "compact";
+  executionMode?: "build" | "read_only";
+  attachments?: { path: string; content: string }[];
+  /** Optional accounting/audit attribution; callers manage their own users and rollups. */
   externalUserId?: string;
   prompt?: string;
-  /** 逐次覆寫 agent 的預設值 */
+  /** Override agent defaults for this call. */
   model?: ModelSpec;
   sandbox?: SandboxSpec;
   budgetUsd?: number;
@@ -51,7 +55,7 @@ export interface StreamResult {
   /** State at creation time (usually queued) */
   run: RunResponse;
   events: AsyncGenerator<RunEvent>;
-  /** 等到終態 */
+  /** Wait for terminal state. */
   wait(): Promise<RunResponse>;
   kill(reason?: string): Promise<RunResponse>;
   cancel(): Promise<RunResponse>;
@@ -91,6 +95,10 @@ export class CloudAgent implements Agent {
     const created = await this.transport.request<RunResponse>("POST", "/v1/runs", {
       signal: options.signal,
       body: {
+        parent_run_id: options.parentRunId,
+        context_mode: options.contextMode,
+        execution_mode: options.executionMode,
+        attachments: options.attachments,
         external_user_id: options.externalUserId,
         model: options.model ?? this.settings.model,
         sandbox: options.sandbox ?? this.settings.sandbox ?? { provider: "docker" },
@@ -133,7 +141,7 @@ export async function* streamRunEvents(
     try {
       yield JSON.parse(frame.data) as RunEvent;
     } catch {
-      // 壞掉的 frame 不該讓整個串流死掉
+      // A malformed frame must not terminate the entire event stream.
     }
   }
 }

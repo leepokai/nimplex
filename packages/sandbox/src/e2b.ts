@@ -1,15 +1,15 @@
-// E2B provider：第一家遠端沙箱。worker 不需要 Docker daemon，只打 E2B 的 API——
-// 這是 worker 能放到任何 PaaS 上的前提（架構文件 §9）。
+// Remote E2B sandbox provider. Workers call its API without a Docker daemon,
+// allowing deployment on ordinary PaaS hosts (architecture §9).
 //
-// 對應關係（port → E2B SDK）：
+// Port to E2B SDK mapping:
 //   create  → Sandbox.create(template, { envs, timeoutMs })   image ≈ template
-//   resume  → Sandbox.connect(sandboxId)                       state 只存 sandboxId，任何 worker 都接得回去
-//   delete  → Sandbox.kill(sandboxId)                          靜態呼叫、不需先 connect、找不到回 false（天然冪等）
+//   resume → Sandbox.connect(sandboxId); serialized IDs work across workers.
+//   delete → Sandbox.kill(sandboxId); no connect needed, missing IDs return false.
 //   exec    → sandbox.commands.run(cmd, { cwd, envs, timeoutMs, onStdout, onStderr, signal })
 //
-// 注意：E2B 的 sandbox 有自己的壽命（timeoutMs，到了自動銷毀）。port 沒有「預期壽命」這個參數，
-// 所以用 NIMPLEX_E2B_LIFETIME_MS 給一個上限（預設 2 小時）；run 結束時 worker 本來就會 delete。
-// 遠端沙箱要打回閘道，NIMPLEX_PUBLIC_URL 必須是 E2B 雲端連得到的位址（本機開發要開 tunnel）。
+// E2B has an independent timeoutMs lifetime and automatically destroys expired sandboxes.
+// NIMPLEX_E2B_LIFETIME_MS sets that bound; the default below is one hour.
+// The current Pi loop calls models from the worker, so native sandboxes need no model gateway.
 
 import type {
   ExecArgs,
@@ -24,8 +24,8 @@ import { CommandExitError, NotFoundError, Sandbox, TimeoutError } from "e2b";
 
 export const E2B_BACKEND_ID = "e2b";
 
-// E2B Hobby 方案的 sandbox 壽命上限是 1 小時（超過直接 400 "Timeout cannot be greater than 1 hours"）；
-// Pro 可到 24 小時——要更長請自行設 NIMPLEX_E2B_LIFETIME_MS。
+// E2B Hobby limits lifetime to one hour; larger values return HTTP 400.
+// Pro supports up to 24 hours; override NIMPLEX_E2B_LIFETIME_MS as appropriate.
 // Read env lazily: this module is imported before the worker loads .env, so a module-level read
 // would see nothing.
 function defaultLifetimeMs(): number {
@@ -53,7 +53,7 @@ export class E2bSandboxSession implements SandboxSession {
     const opts = {
       cwd: args.workdir ?? this.state.workdir,
       envs: { ...this.state.environment, ...args.env },
-      // E2B 預設 60 秒就切斷；port 的語意是「沒給就不限」，0 = 不限
+      // E2B defaults to 60 seconds; the port uses zero for an unlimited omitted timeout.
       timeoutMs: args.timeoutMs ?? 0,
       onStdout: args.onStdout,
       onStderr: args.onStderr,
@@ -61,7 +61,7 @@ export class E2bSandboxSession implements SandboxSession {
     };
     try {
       if (args.stdin !== undefined) {
-        // 要餵 stdin 得走 handle：start（stdin 開著）→ 送 → 關 → 等
+        // Stdin requires a live handle: start with stdin open, send, close, then wait.
         const handle = await this.sandbox.commands.run(args.cmd, {
           ...opts,
           background: true,
@@ -87,7 +87,7 @@ export class E2bSandboxSession implements SandboxSession {
         timedOut: false,
       };
     } catch (err) {
-      // 非零結束碼在 E2B 是 throw，port 的語意是「回傳 exitCode」——壓平
+      // Normalize E2B nonzero-exit exceptions into the port exitCode result.
       if (err instanceof CommandExitError) {
         return {
           exitCode: err.exitCode,
@@ -132,7 +132,7 @@ export class E2bSandboxProvider implements SandboxProvider {
 
   async create(args: SandboxCreateArgs): Promise<SandboxSession> {
     const workdir = args.workdir ?? "/workspace";
-    // image 在 E2B 叫 template；snapshot 目前也對映到 template（E2B 沒有獨立的 snapshot 概念）
+    // E2B images and the port snapshot option map to templates in this adapter.
     const template = args.image ?? args.snapshot ?? process.env.NIMPLEX_E2B_TEMPLATE ?? null;
     const environment = args.environment ?? {};
     const opts = {
@@ -141,11 +141,11 @@ export class E2bSandboxProvider implements SandboxProvider {
       envs: environment,
       metadata: { nimplex_label: args.label.slice(0, 64) },
     };
-    // cpu / memoryMb：E2B 由 template 決定規格，port 的這兩個欄位在這家沒有對應，略過
+    // CPU/memory are defined by the E2B template rather than per-create port options.
     const sandbox = template ? await Sandbox.create(template, opts) : await Sandbox.create(opts);
-    // 建箱之後任何一步失敗，箱子要自己收掉——否則沒人拿到 id、沒人砍，漏在雲端燒額度
+    // Clean up any setup failure after creation so no paid sandbox loses its owner.
     try {
-      // E2B 預設使用者是非 root 的 `user`，在 / 底下開資料夾要 root；建完 chown 回去讓 harness 寫得進去
+      // Create /workspace as root, then chown it to the default non-root user.
       const q = shellQuote(workdir);
       await sandbox.commands.run(`mkdir -p ${q} && chown -R user:user ${q}`, {
         user: "root",
@@ -183,7 +183,7 @@ export class E2bSandboxProvider implements SandboxProvider {
     await Sandbox.pause(sandboxIdOf(state), { apiKey: apiKey() });
   }
 
-  /** 靜態 kill：不需先 connect；找不到回 false，重複呼叫也不會炸——reaper 需要這個性質。 */
+  /** Static idempotent kill without connect; missing IDs return false, suitable for reaping. */
   async delete(state: SandboxSessionState): Promise<void> {
     await Sandbox.kill(sandboxIdOf(state), { apiKey: apiKey() });
   }

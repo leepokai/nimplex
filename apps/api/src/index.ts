@@ -6,7 +6,7 @@ import { createDb } from "@nimplex/db";
 import { createApp } from "./app.ts";
 import { createAuth } from "./auth.ts";
 
-// 根目錄 .env（OAuth 憑證、secret 等）；已存在的環境變數優先，不覆蓋。
+// Load root .env credentials/settings without overriding existing environment variables.
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 for (const candidate of [resolve(process.cwd(), ".env"), resolve(repoRoot, ".env")]) {
   if (existsSync(candidate)) {

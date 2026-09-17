@@ -8,7 +8,7 @@ function subscribe(callback: () => void) {
   return () => mql.removeEventListener("change", callback);
 }
 
-/** 伺服器端一律回 true：先不要動，掛載後再決定。 */
+/** Server rendering defaults to reduced motion until client preferences are known. */
 export function useReducedMotion(): boolean {
   return useSyncExternalStore(
     subscribe,

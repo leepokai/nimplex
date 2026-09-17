@@ -1,15 +1,15 @@
-// Console 登入走 Better Auth。對外只提供 GitHub / Google 社群登入（2026-09-01 定案）；
-// email + password 降級為開發用開關（NIMPLEX_DEV_EMAIL_AUTH=1）——e2e 冒煙腳本靠它
-// 程式化註冊，UI 上除非開關打開否則不出現。
-// auth 層只認得 user / session 四張表；租戶層（orgs / org_members）靠
-// 「註冊即建 org」的 hook 與 email 對應鬆耦合——換掉 auth 方案不動任何業務表。
+// Better Auth provides GitHub/Google login, selected on 2026-09-01.
+// Email/password is a development-only option (NIMPLEX_DEV_EMAIL_AUTH=1)
+// for programmatic E2E signup; clients expose it only when enabled.
+// Authentication tables and organization tables remain loosely coupled through
+// email and the organization-on-signup hook, allowing auth replacement independently.
 import { account, type Db, orgMembers, orgs, session, user, verification } from "@nimplex/db";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 
 const DEV_SECRET = "nimplex-dev-secret-do-not-use-in-prod";
 
-/** 哪些登入方式已設定好。公開給 /api/auth-providers，讓 AuthScreen 只渲染可用的按鈕。 */
+/** Expose configured login providers through /api/auth-providers. */
 export function authProviderStatus() {
   return {
     github: Boolean(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET),
@@ -36,7 +36,7 @@ export function createAuth(db: Db) {
     baseURL: process.env.NIMPLEX_PUBLIC_URL ?? "http://localhost:8787",
     basePath: "/api/auth",
     secret: secret ?? DEV_SECRET,
-    // console dev server（vite proxy）與 API 本體
+    // Development frontend origins and the API itself.
     trustedOrigins: (
       process.env.NIMPLEX_TRUSTED_ORIGINS ?? "http://localhost:5173,http://localhost:8787"
     ).split(","),
@@ -67,7 +67,7 @@ export function createAuth(db: Db) {
       user: {
         create: {
           after: async (newUser) => {
-            // 註冊即有自己的 org（social 首次登入也走這裡）：owner 一人一格。
+            // First signup, including social login, creates an organization and owner.
             const [org] = await db
               .insert(orgs)
               .values({ name: newUser.name ? `${newUser.name} 的組織` : newUser.email })

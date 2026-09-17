@@ -1,6 +1,9 @@
 import { z } from "zod";
 
-// ---- run 狀態 ----
+export * from "./pi-storage.ts";
+export * from "./runtime.ts";
+
+// Run states.
 export const RUN_STATUSES = [
   "queued",
   "running",
@@ -13,9 +16,9 @@ export const RUN_STATUSES = [
 export const runStatus = z.enum(RUN_STATUSES);
 export type RunStatus = z.infer<typeof runStatus>;
 
-// ---- 插槽 1：LLM provider（BYOK）----
-// 使用者自己提供 token；nimplex 只當閘道，key 永不進沙箱。
-export const MODEL_PROVIDERS = ["anthropic", "openai", "openrouter"] as const;
+// LLM provider selection and BYOK.
+// Customer provider keys remain in the trusted API/worker boundary, never in sandboxes.
+export const MODEL_PROVIDERS = ["anthropic", "openai", "openrouter", "openai-codex"] as const;
 export const modelProvider = z.enum(MODEL_PROVIDERS);
 export type ModelProvider = z.infer<typeof modelProvider>;
 
@@ -33,8 +36,8 @@ export type OrgResponse = z.infer<typeof orgResponse>;
 export const orgListResponse = z.object({ orgs: z.array(orgResponse) });
 export type OrgListResponse = z.infer<typeof orgListResponse>;
 
-// ---- org API keys（程式化身分）----
-// 明文只在建立回應出現一次；之後只讀得到 last4。撤銷＝標記不刪列。
+// Organization API keys: programmatic identity.
+// Plaintext is returned once; subsequent reads expose last4. Revocation retains the row.
 export const createApiKeyRequest = z.object({ name: z.string().min(1).max(120) });
 export type CreateApiKeyRequest = z.infer<typeof createApiKeyRequest>;
 
@@ -49,12 +52,12 @@ export const apiKeyResponse = z.object({
 export type ApiKeyResponse = z.infer<typeof apiKeyResponse>;
 
 export const createApiKeyResponse = apiKeyResponse.extend({
-  /** 只在這裡出現一次的明文 key（nmx_live_…），存好再關掉 */
+  /** One-time plaintext nmx_live key; save it before discarding this response. */
   key: z.string(),
 });
 export type CreateApiKeyResponse = z.infer<typeof createApiKeyResponse>;
 
-// ---- org members（登入 console 的「人」；你產品的終端使用者不在這層）----
+// Organization members are customer staff, not their product end users.
 export const ORG_ROLES = ["owner", "admin", "member"] as const;
 export const orgRole = z.enum(ORG_ROLES);
 export type OrgRole = z.infer<typeof orgRole>;
@@ -76,14 +79,14 @@ export const memberResponse = z.object({
 });
 export type MemberResponse = z.infer<typeof memberResponse>;
 
-/** 2026-09-01 起 BYOK 只有 org 一層；per-user 的帳務切分由呼叫端在自己那端處理。 */
+/** BYOK is organization-scoped since 2026-09-01; callers own per-user accounting. */
 export const CREDENTIAL_SCOPES = ["org"] as const;
 export const credentialScope = z.enum(CREDENTIAL_SCOPES);
 export type CredentialScope = z.infer<typeof credentialScope>;
 
 export const modelSpec = z.object({
   provider: modelProvider,
-  /** provider 端的 model id，如 "claude-sonnet-4-5"、"gpt-5"、"anthropic/claude-sonnet-4.5" */
+  /** Provider model ID, e.g. claude-sonnet-4-5, gpt-5, or anthropic/claude-sonnet-4.5. */
   id: z.string().min(1),
 });
 export type ModelSpec = z.infer<typeof modelSpec>;
@@ -107,6 +110,18 @@ export type SandboxSpec = z.infer<typeof sandboxSpec>;
 // external_user_id is an optional attribution label: it only lands in usage/audit rows so the
 // caller can roll up spend on their side. Who the end user is stays the caller's business.
 export const createRunRequest = z.object({
+  parent_run_id: z.string().uuid().optional(),
+  context_mode: z.enum(["continue", "reset", "compact"]).default("continue"),
+  execution_mode: z.enum(["build", "read_only"]).default("build"),
+  attachments: z
+    .array(
+      z.object({
+        path: z.string().startsWith("/workspace/").max(1024),
+        content: z.string().max(131072),
+      }),
+    )
+    .max(16)
+    .optional(),
   external_user_id: z.string().min(1).optional(),
   model: modelSpec,
   sandbox: sandboxSpec.default({ provider: "local" }),
@@ -130,6 +145,8 @@ export const runResponse = z.object({
   sandbox_ref: z.string().nullable(),
   budget_usd: z.number().nullable(),
   spent_usd: z.number(),
+  /** Subscription usage has no per-request API charge; quota is provider-managed. */
+  billing_mode: z.enum(["api", "subscription"]).optional(),
   reserved_usd: z.number().optional(),
   workspace_revision: z.number().int().nonnegative().optional(),
   sandbox_generation: z.number().int().nonnegative().optional(),

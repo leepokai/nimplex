@@ -26,11 +26,11 @@ const SLOTS = [
 ];
 
 /**
- * 桌機：釘住整段，垂直捲動換成橫向平移（三個插槽並排推過去）。
- * 行動裝置與 reduced-motion：直接直向堆疊，什麼都不動。
+ * Desktop: pin the section and translate three side-by-side slots with vertical scrolling.
+ * Mobile/reduced motion: stack vertically without animation.
  *
- * end 寫成函式 + invalidateOnRefresh，是因為 distance 依賴 scrollWidth，
- * 視窗一改變就要重算；寫死數值在 resize 之後會對不上。
+ * Functional end plus invalidateOnRefresh recalculates distance from scrollWidth
+ * after resize instead of retaining stale measurements.
  */
 export function Slots() {
   const wrap = useRef<HTMLElement>(null);

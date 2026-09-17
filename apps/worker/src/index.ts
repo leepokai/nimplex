@@ -26,6 +26,7 @@ import {
   runs,
   workItems,
 } from "@nimplex/db";
+import { piExecutor } from "@nimplex/runtime/pi-executor";
 import { getSandboxProvider, hasSandboxProvider } from "@nimplex/sandbox";
 import { and, eq, isNotNull, sql } from "drizzle-orm";
 import {
@@ -35,7 +36,6 @@ import {
   lockOwnedRun,
 } from "./checkpoints.ts";
 import { createNativeBash } from "./native-bash.ts";
-import { piExecutor } from "./pi-executor.ts";
 
 // Root .env (sandbox provider keys, ...); existing env vars win.
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -244,7 +244,6 @@ async function processStep(item: ClaimedItem, run: RunRow) {
     result = await piExecutor(
       {
         id: run.id,
-        orgId: run.orgId,
         modelProvider: run.modelProvider,
         model: run.model,
         config: run.config,

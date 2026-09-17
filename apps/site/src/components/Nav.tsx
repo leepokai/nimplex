@@ -12,7 +12,7 @@ export function Nav() {
   const root = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
 
-  // dependencies: [open] —— 選單每次開啟都重播一次進場 stagger
+  // Replay the entrance stagger whenever the menu opens via dependencies: [open].
   useGSAP(
     () => {
       if (!open) return;
@@ -69,7 +69,7 @@ export function Nav() {
                 {l.label}
               </a>
             ))}
-            {/* biome-ignore lint/a11y/useValidAnchor: 這是導覽到 #join 的連結，只是長得像按鈕；onClick 只負責關掉覆蓋層 */}
+            {/* biome-ignore lint/a11y/useValidAnchor: Navigates to #join; onClick only closes the overlay. */}
             <a data-menu-link className="btn btn-primary" href="#join" onClick={close}>
               Join the waitlist
             </a>

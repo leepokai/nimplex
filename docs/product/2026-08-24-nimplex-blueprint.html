@@ -1,4 +1,4 @@
-<title>nimplex 產品藍圖</title>
+<title> nimplex product blueprint </title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+TC:wght@400;500;700;900&display=swap">
@@ -209,27 +209,27 @@
 <div class="wrap">
 
   <header class="hero">
-    <p class="eyebrow">2026-08-24 · 產品藍圖</p>
-    <h1>你的十點，整理成一張圖</h1>
-    <p class="lede">形狀已經很清楚了 —— 這是「Vercel for agents」。下面把每點細化，並標出三個你還沒處理的矛盾。</p>
+    <p class="eyebrow"> 2026-08-24 · Historical product blueprint </p>
+    <h1> Ten ideas, organized into one design </h1>
+    <p class="lede"> The original framing was Vercel for agents. This presentation refines each idea and identifies unresolved contradictions; later architecture decisions supersede it. </p>
   </header>
 
-  <!-- ============ 架構 ============ -->
+  <!-- Presentation section -->
   <section>
     <div class="sec-h">
-      <p class="eyebrow">整體架構</p>
-      <h2>SDK 做「做得到的事」，Console 做「說了算的事」</h2>
+      <p class="eyebrow"> Overall architecture </p>
+      <h2> SDK supplies execution; Console supplies policy </h2>
     </div>
 
     <figure>
       <div class="canvas">
-        <svg viewBox="0 0 900 460" role="img" aria-label="開發者本機用 CLI 把設定與 skills 推到 nimplex Console。Console 持有預算餘額、政策、secret vault、trace 與 RBAC。客戶應用程式裡的 nimplex SDK 在每個 model call 與 tool call 前跟 Console 做 checkpoint 往返，回報用量並取得繼續或停止的指令，再去執行層建立 sandbox、跑 harness。">
+        <svg viewBox="0 0 900 460" role="img" aria-label="Developer CLI uploads configuration and skills. Console stores budgets, policies, credentials, traces, and roles. SDK checks usage and admission before model/tool calls, then runs sandbox and harness.">
 
-          <!-- 開發者本機 -->
+          <!-- Presentation section -->
           <g fill="none" stroke="currentColor" stroke-width="1.5">
             <rect x="34" y="36" width="212" height="112" rx="4"/>
           </g>
-          <text x="52" y="64" font-size="16" font-weight="700" fill="currentColor">開發者本機</text>
+          <text x="52" y="64" font-size="16" font-weight="700" fill="currentColor"> Developer machine </text>
           <text x="52" y="90" font-size="13.5" fill="currentColor" class="c-dim m">nimplex.toml</text>
           <text x="52" y="112" font-size="13.5" fill="currentColor" class="c-dim m">.claude/skills/ · .mcp.json</text>
           <text x="52" y="134" font-size="13.5" fill="currentColor" class="c-dim m">nimplex dev</text>
@@ -248,10 +248,10 @@
           <text x="336" y="56" font-size="17" font-weight="700" fill="currentColor" class="c-plane">nimplex Console</text>
           <text x="336" y="76" font-size="12.5" fill="currentColor" class="c-dim m">POLICY DECISION POINT</text>
           <line x1="336" y1="90" x2="592" y2="90" stroke="currentColor" stroke-width="1" class="c-dim"/>
-          <text x="336" y="112" font-size="13.5" fill="currentColor">預算餘額（per end-user）</text>
-          <text x="336" y="134" font-size="13.5" fill="currentColor">政策：網路白名單 · 權限模式</text>
-          <text x="336" y="156" font-size="13.5" fill="currentColor">Secret Vault · Trace 儲存</text>
-          <text x="336" y="178" font-size="13.5" fill="currentColor">團隊 RBAC · 審批佇列</text>
+          <text x="336" y="112" font-size="13.5" fill="currentColor"> Per-end-user budget balance </text>
+          <text x="336" y="134" font-size="13.5" fill="currentColor"> Network allowlists and permission modes </text>
+          <text x="336" y="156" font-size="13.5" fill="currentColor"> Secret vault and trace storage </text>
+          <text x="336" y="178" font-size="13.5" fill="currentColor"> Team RBAC and approval queue </text>
 
           <!-- checkpoint arrow (bidirectional) -->
           <g stroke="currentColor" stroke-width="2" class="c-stop">
@@ -260,182 +260,182 @@
           <polygon points="414,196 420,184 426,196" fill="currentColor" class="c-stop"/>
           <polygon points="414,264 420,276 426,264" fill="currentColor" class="c-stop"/>
           <text x="438" y="218" font-size="14" font-weight="700" fill="currentColor" class="c-stop">checkpoint</text>
-          <text x="438" y="238" font-size="13" fill="currentColor" class="c-dim">用量回報 ⇄ 繼續 / 暫停 / 停止</text>
-          <text x="438" y="256" font-size="13" fill="currentColor" class="c-dim">每次 model call、tool call</text>
+          <text x="438" y="238" font-size="13" fill="currentColor" class="c-dim"> Usage reports ⇄ continue / pause / stop </text>
+          <text x="438" y="256" font-size="13" fill="currentColor" class="c-dim"> Every model and tool call </text>
 
-          <!-- 客戶應用程式 -->
+          <!-- Presentation section -->
           <g fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="6 5">
             <rect x="250" y="284" width="330" height="150" rx="4"/>
           </g>
-          <text x="272" y="312" font-size="15" fill="currentColor" class="c-dim">你的客戶的應用程式</text>
+          <text x="272" y="312" font-size="15" fill="currentColor" class="c-dim"> Customer application </text>
 
           <g fill="none" stroke="currentColor" stroke-width="2.5" class="c-edge">
             <rect x="272" y="330" width="286" height="82" rx="4"/>
           </g>
           <text x="292" y="358" font-size="16" font-weight="700" fill="currentColor" class="c-edge">nimplex SDK</text>
           <text x="292" y="377" font-size="12.5" fill="currentColor" class="c-dim m">POLICY ENFORCEMENT POINT</text>
-          <text x="292" y="399" font-size="13" fill="currentColor" class="c-dim">攔在每個呼叫前面，收到 stop 就 abort</text>
+          <text x="292" y="399" font-size="13" fill="currentColor" class="c-dim"> Check before each call; abort on stop </text>
 
           <!-- arrow to runtime -->
           <g stroke="currentColor" stroke-width="1.5">
             <line x1="582" y1="371" x2="638" y2="371"/>
           </g>
           <polygon points="638,365 652,371 638,377" fill="currentColor"/>
-          <text x="612" y="357" font-size="13" text-anchor="middle" fill="currentColor" class="c-dim">建立 / 執行</text>
+          <text x="612" y="357" font-size="13" text-anchor="middle" fill="currentColor" class="c-dim"> Create / execute </text>
 
-          <!-- 執行層 -->
+          <!-- Presentation section -->
           <g fill="none" stroke="currentColor" stroke-width="1.5">
             <rect x="660" y="252" width="212" height="182" rx="4"/>
           </g>
-          <text x="678" y="280" font-size="16" font-weight="700" fill="currentColor">執行層</text>
+          <text x="678" y="280" font-size="16" font-weight="700" fill="currentColor"> Execution layer </text>
           <text x="678" y="306" font-size="12.5" fill="currentColor" class="c-dim m">SANDBOX PROVIDER</text>
           <text x="678" y="326" font-size="13.5" fill="currentColor">Vercel · Cloudflare · E2B</text>
-          <text x="678" y="346" font-size="13.5" fill="currentColor">Docker（本機）</text>
+          <text x="678" y="346" font-size="13.5" fill="currentColor"> Local Docker </text>
           <text x="678" y="376" font-size="12.5" fill="currentColor" class="c-dim m">HARNESS</text>
           <text x="678" y="396" font-size="13.5" fill="currentColor">Claude Code · Codex · Pi</text>
-          <text x="678" y="416" font-size="13.5" fill="currentColor" class="c-dim">（可切換）</text>
+          <text x="678" y="416" font-size="13.5" fill="currentColor" class="c-dim"> Interchangeable </text>
         </svg>
       </div>
-      <figcaption>紅色那條上下往返的箭頭是整個產品的心臟。它同時做三件事：回報用量、扣預算、下達 kill 指令 —— 而且是 SDK 主動問，所以穿得過 NAT 和客戶防火牆。</figcaption>
+      <figcaption> The bidirectional path reports usage, reserves budget, and delivers stop decisions. SDK-initiated requests traverse NAT and customer firewalls. </figcaption>
     </figure>
   </section>
 
-  <!-- ============ 旅程 ============ -->
+  <!-- Presentation section -->
   <section>
     <div class="sec-h">
-      <p class="eyebrow">使用者旅程</p>
-      <h2>從安裝到管起來</h2>
-      <p>注意第 1、2 步的順序 —— <strong>能跑起來在前，註冊在後</strong>。</p>
+      <p class="eyebrow"> User journey </p>
+      <h2> From installation to managed execution </h2>
+      <p> Notice the order of the first two steps: <strong> run locally before requiring signup </strong>。</p>
     </div>
 
     <div class="journey">
-      <div class="jstep"><span class="jnum">01</span><div><strong>npx nimplex init</strong><p>產生 <code>nimplex.toml</code>。不需要帳號。</p></div></div>
-      <div class="jstep"><span class="jnum">02</span><div><strong>nimplex dev</strong><p>本機 Docker 當 sandbox、SQLite 當預算計數器、trace 寫本機檔。功能完整，只是不共享。</p></div></div>
-      <div class="jstep"><span class="jnum">03</span><div><strong>登入 console</strong><p>發生在他需要「多人共享」或「上線」的時候，不是第一天。</p></div></div>
-      <div class="jstep"><span class="jnum">04</span><div><strong>建立 App</strong><p>一個 App = 一組 agent 設定的家。綁一個 git repo。</p></div></div>
-      <div class="jstep"><span class="jnum">05</span><div><strong>nimplex push</strong><p>把 skills、MCP 設定、secret 推上去。設定走 git，secret 走 vault。</p></div></div>
-      <div class="jstep"><span class="jnum">06</span><div><strong>開 branch → 自動長出 preview</strong><p>每條 branch 一個獨立環境：獨立設定、獨立 secret scope、獨立預算。</p></div></div>
-      <div class="jstep"><span class="jnum">07</span><div><strong>接 trigger</strong><p>cron、webhook、或你的應用程式直接呼叫 SDK。</p></div></div>
-      <div class="jstep"><span class="jnum">08</span><div><strong>在 Trace tab 看、在 Console 管</strong><p>看軌跡與花費；超標自動停、也能手動按紅色按鈕殺掉跑到一半的 run。</p></div></div>
+      <div class="jstep"><span class="jnum">01</span><div><strong>npx nimplex init</strong><p> Generate <code>nimplex.toml</code> without an account. </p></div></div>
+      <div class="jstep"><span class="jnum">02</span><div><strong>nimplex dev</strong><p> Docker sandbox, SQLite budget counters, and local trace files provide full single-user behavior. </p></div></div>
+      <div class="jstep"><span class="jnum">03</span><div><strong> Sign in to Console </strong><p> When shared collaboration or deployment becomes necessary, not on day one. </p></div></div>
+      <div class="jstep"><span class="jnum">04</span><div><strong> Create an App </strong><p> An App holds agent configuration and binds to a Git repository. </p></div></div>
+      <div class="jstep"><span class="jnum">05</span><div><strong>nimplex push</strong><p> Push skills, MCP configuration, and secrets. Configuration belongs in Git; secrets belong in the vault. </p></div></div>
+      <div class="jstep"><span class="jnum">06</span><div><strong> Create a branch and preview environment </strong><p> Independent configuration, secret scope, and budget per branch. </p></div></div>
+      <div class="jstep"><span class="jnum">07</span><div><strong> Connect triggers </strong><p> Cron, webhooks, or direct SDK calls. </p></div></div>
+      <div class="jstep"><span class="jnum">08</span><div><strong> Observe traces and manage in Console </strong><p> Inspect execution and spending; stop automatically at caps or manually interrupt an active run. </p></div></div>
     </div>
   </section>
 
-  <!-- ============ 逐項細化 ============ -->
+  <!-- Presentation section -->
   <section>
     <div class="sec-h">
-      <p class="eyebrow">你的十點 · 逐項細化</p>
-      <h2>哪些直接做，哪些要先改一下</h2>
+      <p class="eyebrow"> Refining the ten ideas </p>
+      <h2> Build directly or revise first </h2>
     </div>
 
     <div class="points">
 
       <article class="pt">
-        <div class="pt-h"><span class="tag">#1 #2</span><h3>先 configure，再登入</h3></div>
-        <p class="said">你說的：使用 SDK configure 好之後，登入到 console</p>
-        <p>順序要反過來想：<strong>登入不能是入口，只能是升級</strong>。開發者 <code>npm install</code> 之後如果第一件事是註冊拿 key，採用率會直接歸零。</p>
-        <p class="rec"><b>建議</b> 同一組介面、兩種後端：<code>localGovernor()</code> 讀設定檔、記憶體計數；<code>hostedGovernor()</code> 指向你的服務。功能一模一樣，差別只在「共不共享」。LiteLLM、Langfuse、Sentry 全是這個形狀。</p>
+        <div class="pt-h"><span class="tag">#1 #2</span><h3> Configure before login </h3></div>
+        <p class="said"> Original request: configure the SDK, then sign in to Console </p>
+        <p> Treat the sequence as: <strong> login is an upgrade, not the entry point </strong> . After installation, a developer <code>npm install</code> should not have to register before trying the product. </p>
+        <p class="rec"><b> Recommendation </b> One interface, two backends: <code>localGovernor()</code> local configuration and in-memory counters; <code>hostedGovernor()</code> a remote service. Shared versus local operation is the distinction, following LiteLLM/Langfuse/Sentry. </p>
       </article>
 
       <article class="pt">
         <div class="pt-h"><span class="tag">#3</span><h3>App、preview URL、worktree branching</h3></div>
-        <p class="said">你說的：sandbox service 對應一個 URL，可以 branch 出很多不同的 sandbox configure version</p>
-        <p>直覺是對的，但要先釘死一件事：<strong>preview 對應的是「一組 agent 設定」，不是「一份程式碼」</strong>。你要 branch 的是 harness 選擇、sandbox provider、skills、政策 —— 不是應用程式原始碼。</p>
-        <p class="rec"><b>建議</b> 把 <code>nimplex.toml</code> 放進 git，branching 就自動成立，不用另外設計一套版本機制。git branch ↔ preview 環境 ↔ 本機 worktree，三者一一對應，心智模型跟 Vercel 完全一致，使用者不用學新東西。</p>
+        <p class="said"> Original request: one sandbox-service URL with branched configuration versions </p>
+        <p> Clarify the resource being previewed: <strong> a preview represents agent configuration, not application source </strong> . Branch harness choice, provider, skills, and policies. </p>
+        <p class="rec"><b> Recommendation </b> Put <code>nimplex.toml</code> in Git to reuse versioning. Branch, preview environment, and local worktree map one-to-one. </p>
       </article>
 
       <article class="pt">
-        <div class="pt-h"><span class="tag">#4</span><h3>TOML 同步設定與 secret</h3></div>
-        <p class="said">你說的：需要一個 toml 檔案同步雲端設定和雲端 env secret</p>
-        <p>這裡最容易出事的是 <strong>source of truth 不明</strong> —— 兩邊都能改就會 config drift。</p>
+        <div class="pt-h"><span class="tag">#4</span><h3> TOML configuration and secrets </h3></div>
+        <p class="said"> Original request: TOML synchronizes cloud settings and environment secrets </p>
+        <p> The main risk is <strong> an ambiguous source of truth </strong> and configuration drift when both sides edit the same data. </p>
         <ul>
-          <li><code>nimplex.toml</code> 進版控，是宣告式的、唯一的設定來源</li>
-          <li>secret <strong>只留引用</strong>（<code>{{ secret.OPENAI_KEY }}</code>），值存在雲端 vault，永遠不進 git</li>
-          <li>Console 只能改「不該進版控的東西」：secret 值、預算、RBAC</li>
+          <li><code>nimplex.toml</code> Version-controlled declarative configuration is authoritative </li>
+          <li>secret <strong> Store only references </strong>（<code>{{ secret.OPENAI_KEY }}</code> ); secret values live in the cloud vault and never enter Git </li>
+          <li> Console edits non-versioned data: secret values, budgets, and RBAC </li>
         </ul>
-        <p class="rec"><b>建議</b> 設定歸 git，secret 歸 vault，界線畫死。Console 上的設定頁改成唯讀＋「這是從 <code>main</code> 分支讀來的」。</p>
+        <p class="rec"><b> Recommendation </b> Keep Git configuration and vault values separate. Console configuration becomes read-only, showing its source <code>main</code> branch. </p>
       </article>
 
       <article class="pt">
-        <div class="pt-h"><span class="tag">#5</span><h3>RBAC、匿名 user、每人用量</h3></div>
-        <p class="said">你說的：RBAC 設定、匿名 user 設定、每個 user 對應多少 token 使用量</p>
-        <p>你把三種不同的東西混在一起了，它們的難度和價值差很多：</p>
+        <div class="pt-h"><span class="tag">#5</span><h3> RBAC, anonymous users, per-user usage </h3></div>
+        <p class="said"> Original request: RBAC, anonymous users, and per-user token allocation </p>
+        <p> These are separate concerns with different complexity and value: </p>
         <ul>
-          <li><strong>團隊 RBAC</strong>（你客戶的員工誰能改設定）—— 零差異化，<strong>別自建</strong>，用 Clerk / WorkOS</li>
-          <li><strong>End-user 額度</strong>（你客戶的使用者，每人多少 $）—— <strong>這才是護城河</strong>，全力做</li>
-          <li><strong>匿名 user</strong>（未登入的 end-user）—— 用 device / IP 雜湊當身分，給極小固定額度，本質是防濫用</li>
+          <li><strong> Team RBAC </strong> controls which customer employees edit configuration; reuse existing providers, <strong> avoid building it from scratch </strong> , and consider Clerk/WorkOS </li>
+          <li><strong> End-user budgets </strong> control customer-user spending; <strong> this proposal's primary differentiation </strong> and implementation priority </li>
+          <li><strong> Anonymous users </strong> use device/IP hashes with small fixed caps for abuse prevention </li>
         </ul>
-        <p class="rec"><b>MVP</b> 只做 end-user 額度，團隊權限先給 owner / member 兩級。「搭配 DB 給不同 user 不同用量」先抽象成幾個固定 plan，別一開始就做任意規則引擎。</p>
+        <p class="rec"><b>MVP</b> Begin with end-user budgets and owner/member team roles. Model usage through a few fixed plans rather than an arbitrary rules engine. </p>
       </article>
 
       <article class="pt">
         <div class="pt-h"><span class="tag">#6</span><h3>CLI push skills、agents、MCP</h3></div>
-        <p class="said">你說的：user 在 local 自定義完，透過 CLI push 上來</p>
-        <p>這點很好，但有個決定會影響採用率：<strong>不要自創格式</strong>。</p>
+        <p class="said"> Original request: define locally and push through CLI </p>
+        <p> One adoption decision matters: <strong> reuse existing formats </strong>。</p>
         <ul>
-          <li><code>.claude/skills/*/SKILL.md</code> —— Claude Code 現有格式</li>
-          <li><code>AGENTS.md</code> —— Codex 現有格式</li>
-          <li><code>.mcp.json</code> —— MCP server 設定</li>
+          <li><code>.claude/skills/*/SKILL.md</code> : Claude Code's existing format </li>
+          <li><code>AGENTS.md</code> : Codex's existing format </li>
+          <li><code>.mcp.json</code> : MCP server configuration </li>
         </ul>
-        <p class="rec"><b>建議</b> <code>nimplex push</code> 直接掃這些既有目錄打包上傳。使用者手上的 skills 零遷移成本就能用 —— 這會是很強的採用理由。另外 skills 要跟著 branch 走，preview 的 skills 不能污染 production。</p>
+        <p class="rec"><b> Recommendation </b> <code>nimplex push</code> Package existing directories without migration. Skills follow branches so preview changes cannot alter production skills. </p>
       </article>
 
       <article class="pt">
-        <div class="pt-h"><span class="tag">#7</span><h3>本機可跑，用 Docker</h3></div>
-        <p class="said">你說的：agent SDK 要在 local 可跑，可能有 docker 處理</p>
-        <p>這跟 #1 是同一件事的兩面。關鍵是 <strong>dev / prod parity</strong>：本機和雲端讀<em>同一份</em> TOML，只是 provider 不同。</p>
-        <p class="rec"><b>建議</b> <code>nimplex dev</code> 起完整本機環境：sandbox 走 Docker provider、governor 走 SQLite、trace 走本機檔＋本機 UI。使用者換到雲端時一行設定都不用改。</p>
+        <div class="pt-h"><span class="tag">#7</span><h3> Local execution through Docker </h3></div>
+        <p class="said"> Original request: the agent SDK should run locally, possibly through Docker </p>
+        <p> This complements the first idea. The key is <strong>dev / prod parity</strong> that local and cloud read <em> the same </em> TOML with different providers. </p>
+        <p class="rec"><b> Recommendation </b> <code>nimplex dev</code> Start the complete local environment with Docker, a SQLite governor, and local traces/UI. Cloud migration should preserve application configuration. </p>
       </article>
 
       <article class="pt">
-        <div class="pt-h"><span class="tag">#8</span><h3>Trace tab 與分析對話</h3></div>
-        <p class="said">你說的：每個 agent 的運行軌跡和統計數字，提供使用者做分析對話</p>
-        <p>「分析對話」是好點子，但它是查詢介面 —— <strong>資料結構做對了它才有東西可查</strong>。一條 trace 是一棵樹：</p>
+        <div class="pt-h"><span class="tag">#8</span><h3> Trace view and conversational analysis </h3></div>
+        <p class="said"> Original request: execution trajectories/statistics with an analysis conversation </p>
+        <p> Conversational analysis is a query interface; <strong> it depends on a sound data model </strong> . Each trace is a tree: </p>
         <p class="mono" style="color:var(--muted)">run → step( model call | tool call | sandbox exec )</p>
-        <p>每個節點都要帶 <code>cost</code>、<code>tokens</code>、<code>duration</code>、<code>end_user_id</code>、<code>outcome</code>。少了 <code>end_user_id</code>，「誰花最多錢」就永遠查不出來。</p>
-        <p class="rec"><b>建議</b> 直接用 OpenTelemetry 的 GenAI semantic conventions，別自創欄位。好處是使用者可以同時把 trace 匯出到 Langfuse / Datadog —— 「不綁架你的資料」本身就是賣點。</p>
+        <p> Every node includes <code>cost</code>、<code>tokens</code>、<code>duration</code>、<code>end_user_id</code>、<code>outcome</code> . Without <code>end_user_id</code> , queries cannot identify the highest-spending users. </p>
+        <p class="rec"><b> Recommendation </b> Use OpenTelemetry GenAI semantic conventions rather than custom fields, enabling export to Langfuse/Datadog and retaining customer data portability. </p>
       </article>
 
       <article class="pt">
-        <div class="pt-h"><span class="tag">#9</span><h3>Cron、webhook 觸發</h3></div>
-        <p class="said">你說的：提供 cron、webhook 等 trigger agent 的方式</p>
-        <p>這裡藏著一個會<strong>打破你整個預算模型</strong>的問題：cron 觸發的 run，算在誰頭上？它沒有 end-user。</p>
-        <p class="rec"><b>建議</b> 早點引入 <strong>service identity（系統身分）</strong> 的概念 —— 它也是一個 principal，有自己的預算和 kill-switch。webhook 則必須能從 payload 映射出 <code>end_user_id</code>，否則多租戶的成本歸因會整段斷掉。這個決定越晚做越痛。</p>
+        <div class="pt-h"><span class="tag">#9</span><h3> Cron and webhook triggers </h3></div>
+        <p class="said"> Original request: cron/webhook agent triggers </p>
+        <p> One question can <strong> break the budget model </strong> : who owns a cron-triggered run when no end user initiated it? </p>
+        <p class="rec"><b> Recommendation </b> Introduce <strong> a service identity </strong> early, with its own budget and kill switch. Webhook payloads must map to <code>end_user_id</code> for tenant-aware cost attribution. </p>
       </article>
 
       <article class="pt warn">
-        <div class="pt-h"><span class="tag">#10</span><h3>讓 user 用自己的 Claude Code / Codex OAuth token</h3></div>
-        <p class="said">你說的：讓 user 能夠登入 codex 或 claude code，使用 oauth token 來 serve user</p>
-        <p>價值很高：使用者用自己的訂閱，<strong>你完全不承擔 token 成本</strong> —— 這解掉 agent 產品最大的一塊成本。但有三件事必須先面對：</p>
+        <div class="pt-h"><span class="tag">#10</span><h3> Customer Claude Code / Codex OAuth </h3></div>
+        <p class="said"> Original request: users sign in to Codex or Claude Code and use subscription OAuth for agent execution </p>
+        <p> Customer-owned subscriptions may reduce <strong> the platform's token costs </strong> , but three issues need resolution: </p>
         <ul>
-          <li><strong>ToS 風險</strong> —— 拿訂閱制的 OAuth token 跑伺服器端自動化，是否違反供應商條款，要去查清楚，不能假設沒事</li>
-          <li><strong>你會持有高價值憑證</strong> —— 需要 vault 等級保護、可撤銷、可稽核。這是你整個系統最值得被攻擊的地方</li>
-          <li><strong>它跟 #5 直接衝突</strong> —— 見下一節</li>
+          <li><strong> Terms of service </strong> : verify whether server-side automation through subscription tokens is permitted; do not assume it </li>
+          <li><strong> High-value credential custody </strong> requires vault protection, revocation, and audit and creates an attractive target </li>
+          <li><strong> Conflict with the budget feature </strong> , explained next </li>
         </ul>
-        <p class="rec"><b>建議</b> 做成兩種 credential 模式並存，並在 UI 上明講差別，不要讓使用者以為兩邊一樣。</p>
+        <p class="rec"><b> Recommendation </b> Expose distinct credential modes and explain their actual enforcement differences. </p>
       </article>
 
     </div>
   </section>
 
-  <!-- ============ 矛盾 ============ -->
+  <!-- Presentation section -->
   <section>
     <div class="sec-h">
-      <p class="eyebrow">必須面對的矛盾</p>
-      <h2>#10 會讓 #5 失效</h2>
-      <p>你最想做的特色，和你唯一的護城河，走在同一條路上會撞車。</p>
+      <p class="eyebrow"> Contradictions to resolve </p>
+      <h2> Subscription access undermines USD enforcement </h2>
+      <p> The desired subscription feature conflicts with the proposed budget differentiator. </p>
     </div>
 
     <figure>
       <div class="canvas">
-        <svg viewBox="0 0 900 296" role="img" aria-label="上方通道：使用者自己的訂閱 OAuth token 直接進 harness 再到模型，中間的預算閘門是虛線代表失效，因為訂閱沒有用量 API，你看不到花了多少。下方通道：API key 經過你的 gateway 再到模型，預算閘門是實線，每次呼叫都可計量、可攔截。">
+        <svg viewBox="0 0 900 296" role="img" aria-label="Subscription traffic bypasses measurable budget enforcement. API-key traffic through the gateway supports per-call metering and admission.">
 
           <!-- lane A -->
-          <text x="34" y="34" font-size="14" font-weight="700" fill="currentColor" class="c-stop">模式 A · 使用者自己的訂閱</text>
+          <text x="34" y="34" font-size="14" font-weight="700" fill="currentColor" class="c-stop"> Mode A · Customer subscription </text>
 
           <g fill="none" stroke="currentColor" stroke-width="1.5">
             <rect x="34" y="52" width="168" height="60" rx="4"/>
           </g>
-          <text x="118" y="78" font-size="13.5" text-anchor="middle" fill="currentColor">Claude / Codex 訂閱</text>
+          <text x="118" y="78" font-size="13.5" text-anchor="middle" fill="currentColor"> Claude / Codex subscription </text>
           <text x="118" y="98" font-size="12.5" text-anchor="middle" fill="currentColor" class="c-dim m">OAuth token</text>
 
           <g stroke="currentColor" stroke-width="1.5"><line x1="204" y1="82" x2="286" y2="82"/></g>
@@ -445,8 +445,8 @@
           <g fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="5 5" class="c-dim">
             <rect x="310" y="52" width="150" height="60" rx="4"/>
           </g>
-          <text x="385" y="78" font-size="13.5" text-anchor="middle" fill="currentColor" class="c-dim">預算閘門</text>
-          <text x="385" y="98" font-size="12.5" text-anchor="middle" fill="currentColor" class="c-stop">失效</text>
+          <text x="385" y="78" font-size="13.5" text-anchor="middle" fill="currentColor" class="c-dim"> Budget enforcement </text>
+          <text x="385" y="98" font-size="12.5" text-anchor="middle" fill="currentColor" class="c-stop"> Unavailable </text>
 
           <g stroke="currentColor" stroke-width="1.5" stroke-dasharray="5 5" class="c-dim"><line x1="462" y1="82" x2="544" y2="82"/></g>
           <polygon points="544,76 558,82 544,88" fill="currentColor" class="c-dim"/>
@@ -454,22 +454,22 @@
           <g fill="none" stroke="currentColor" stroke-width="1.5">
             <rect x="568" y="52" width="130" height="60" rx="4"/>
           </g>
-          <text x="633" y="88" font-size="13.5" text-anchor="middle" fill="currentColor">模型</text>
+          <text x="633" y="88" font-size="13.5" text-anchor="middle" fill="currentColor"> Model </text>
 
-          <text x="716" y="72" font-size="13" fill="currentColor" class="c-stop">沒有用量 API</text>
-          <text x="716" y="92" font-size="13" fill="currentColor" class="c-dim">你看不到花了多少</text>
+          <text x="716" y="72" font-size="13" fill="currentColor" class="c-stop"> No usable usage API </text>
+          <text x="716" y="92" font-size="13" fill="currentColor" class="c-dim"> Spending cannot be observed </text>
 
           <!-- divider -->
           <line x1="34" y1="146" x2="866" y2="146" stroke="currentColor" stroke-width="1" stroke-dasharray="3 6" class="c-dim"/>
 
           <!-- lane B -->
-          <text x="34" y="184" font-size="14" font-weight="700" fill="currentColor" class="c-plane">模式 B · API key 走你的 gateway</text>
+          <text x="34" y="184" font-size="14" font-weight="700" fill="currentColor" class="c-plane"> Mode B · API key through our gateway </text>
 
           <g fill="none" stroke="currentColor" stroke-width="1.5">
             <rect x="34" y="202" width="168" height="60" rx="4"/>
           </g>
-          <text x="118" y="228" font-size="13.5" text-anchor="middle" fill="currentColor">客戶的 API key</text>
-          <text x="118" y="248" font-size="12.5" text-anchor="middle" fill="currentColor" class="c-dim m">或你的 BYOK</text>
+          <text x="118" y="228" font-size="13.5" text-anchor="middle" fill="currentColor"> Customer API key </text>
+          <text x="118" y="248" font-size="12.5" text-anchor="middle" fill="currentColor" class="c-dim m"> or BYOK configuration </text>
 
           <g stroke="currentColor" stroke-width="1.5"><line x1="204" y1="232" x2="286" y2="232"/></g>
           <polygon points="286,226 300,232 286,238" fill="currentColor"/>
@@ -477,8 +477,8 @@
           <g fill="none" stroke="currentColor" stroke-width="2.5" class="c-plane">
             <rect x="310" y="202" width="150" height="60" rx="4"/>
           </g>
-          <text x="385" y="228" font-size="13.5" text-anchor="middle" fill="currentColor" class="c-plane">預算閘門</text>
-          <text x="385" y="248" font-size="12.5" text-anchor="middle" fill="currentColor" class="c-plane">可計量 · 可攔</text>
+          <text x="385" y="228" font-size="13.5" text-anchor="middle" fill="currentColor" class="c-plane"> Budget enforcement </text>
+          <text x="385" y="248" font-size="12.5" text-anchor="middle" fill="currentColor" class="c-plane"> Metered and enforceable </text>
 
           <g stroke="currentColor" stroke-width="1.5"><line x1="462" y1="232" x2="544" y2="232"/></g>
           <polygon points="544,226 558,232 544,238" fill="currentColor"/>
@@ -486,30 +486,30 @@
           <g fill="none" stroke="currentColor" stroke-width="1.5">
             <rect x="568" y="202" width="130" height="60" rx="4"/>
           </g>
-          <text x="633" y="238" font-size="13.5" text-anchor="middle" fill="currentColor">模型</text>
+          <text x="633" y="238" font-size="13.5" text-anchor="middle" fill="currentColor"> Model </text>
 
-          <text x="716" y="222" font-size="13" fill="currentColor" class="c-plane">每次呼叫可計量</text>
-          <text x="716" y="242" font-size="13" fill="currentColor" class="c-dim">預算與 kill-switch 成立</text>
+          <text x="716" y="222" font-size="13" fill="currentColor" class="c-plane"> Meter each call </text>
+          <text x="716" y="242" font-size="13" fill="currentColor" class="c-dim"> Budgets and stop controls apply </text>
         </svg>
       </div>
-      <figcaption>模式 A 讓使用者省錢，但你的預算功能對它完全失效。兩個都要做，但要在產品裡誠實標示：選 A 就沒有 $ 上限，只剩「跑了幾次 / 跑多久」這種粗粒度的限制。</figcaption>
+      <figcaption> Mode A may reduce customer costs but cannot promise a USD cap. If supported, label it clearly and offer only coarse run-count/duration limits. </figcaption>
     </figure>
   </section>
 
   <!-- ============ preview branching ============ -->
   <section>
     <div class="sec-h">
-      <p class="eyebrow">#3 的機制</p>
-      <h2>branch 進來，preview 出去</h2>
+      <p class="eyebrow"> Preview mechanism </p>
+      <h2> Branch in, preview out </h2>
     </div>
 
     <figure>
       <div class="canvas">
-        <svg viewBox="0 0 900 300" role="img" aria-label="git 的三條 branch 各自帶著自己的 nimplex.toml，nimplex 依 branch 長出三個獨立的 preview 環境，每個環境各自擁有獨立的 secret scope、預算與 trace 流。">
+        <svg viewBox="0 0 900 300" role="img" aria-label="Three Git branches map to isolated preview environments with independent secrets, budgets, and traces.">
 
           <text x="34" y="34" font-size="12.5" fill="currentColor" class="c-dim m">GIT</text>
           <text x="330" y="34" font-size="12.5" fill="currentColor" class="c-dim m">NIMPLEX</text>
-          <text x="700" y="34" font-size="12.5" fill="currentColor" class="c-dim m">各自獨立</text>
+          <text x="700" y="34" font-size="12.5" fill="currentColor" class="c-dim m"> Independent scopes </text>
 
           <!-- main -->
           <circle cx="48" cy="82" r="6" fill="currentColor" class="c-plane"/>
@@ -553,155 +553,155 @@
           <!-- brace / notes -->
           <path d="M 682 62 q 10 0 10 10 L 692 154 q 0 10 10 10 q -10 0 -10 10 L 692 256 q 0 10 -10 10" fill="none" stroke="currentColor" stroke-width="1.5" class="c-dim"/>
           <text x="716" y="130" font-size="13.5" fill="currentColor">secret scope</text>
-          <text x="716" y="154" font-size="13.5" fill="currentColor">預算額度</text>
-          <text x="716" y="178" font-size="13.5" fill="currentColor">trace 流</text>
-          <text x="716" y="202" font-size="13.5" fill="currentColor">skills 版本</text>
+          <text x="716" y="154" font-size="13.5" fill="currentColor"> Budget balance </text>
+          <text x="716" y="178" font-size="13.5" fill="currentColor"> Trace stream </text>
+          <text x="716" y="202" font-size="13.5" fill="currentColor"> Skill versions </text>
         </svg>
       </div>
-      <figcaption>設定進 git 之後，branching 是「免費」得到的 —— 你不用另外設計版本機制。本機的 worktree 跟遠端的 preview 一一對應，開發者的心智模型跟 Vercel 完全一樣。</figcaption>
+      <figcaption> Git-backed configuration supplies version history. Local worktrees and remote previews map one-to-one, following the familiar Vercel model. </figcaption>
     </figure>
   </section>
 
-  <!-- ============ 生命週期 ============ -->
+  <!-- Presentation section -->
   <section>
     <div class="sec-h">
-      <p class="eyebrow">#11 · 後來補的</p>
-      <h2>暫停與重啟</h2>
-      <p>這條表面上是便利功能，實際上是<strong>你護城河的更好版本</strong>。</p>
+      <p class="eyebrow"> Idea 11 · Added later </p>
+      <h2> Pause and resume </h2>
+      <p> Beyond convenience, this can become <strong> a stronger budget-control experience </strong>。</p>
     </div>
 
     <figure>
       <div class="canvas">
-        <svg viewBox="0 0 900 336" role="img" aria-label="sandbox 的四個狀態。running 因為預算用完或人工暫停而進入 paused，加值或手動續跑後回到 running。running 跑完或被 kill 進入 stopped。paused 的 TTL 到期、stopped 的保留期滿，都會進入 destroyed。paused 保住檔案與 agent 對話狀態，丟掉跑到一半的 shell 程序。">
+        <svg viewBox="0 0 900 336" role="img" aria-label="Running can pause/resume or stop. Paused TTL and stopped retention expiry lead to destruction. Pause preserves files/conversation but may discard active processes.">
 
           <!-- running -->
           <g fill="none" stroke="currentColor" stroke-width="2.5" class="c-plane">
             <rect x="50" y="130" width="160" height="76" rx="4"/>
           </g>
           <text x="130" y="164" font-size="16" font-weight="700" text-anchor="middle" fill="currentColor" class="c-plane m">running</text>
-          <text x="130" y="186" font-size="12.5" text-anchor="middle" fill="currentColor" class="c-dim">燒 compute</text>
+          <text x="130" y="186" font-size="12.5" text-anchor="middle" fill="currentColor" class="c-dim"> Consumes compute </text>
 
           <!-- paused -->
           <g fill="none" stroke="currentColor" stroke-width="2.5" class="c-edge">
             <rect x="330" y="130" width="160" height="76" rx="4"/>
           </g>
           <text x="410" y="164" font-size="16" font-weight="700" text-anchor="middle" fill="currentColor" class="c-edge m">paused</text>
-          <text x="410" y="186" font-size="12.5" text-anchor="middle" fill="currentColor" class="c-dim">只剩儲存費</text>
+          <text x="410" y="186" font-size="12.5" text-anchor="middle" fill="currentColor" class="c-dim"> Storage charges remain </text>
 
           <!-- running -> paused -->
           <g stroke="currentColor" stroke-width="1.5" class="c-edge"><line x1="214" y1="152" x2="308" y2="152"/></g>
           <polygon points="308,146 322,152 308,158" fill="currentColor" class="c-edge"/>
-          <text x="264" y="140" font-size="12.5" text-anchor="middle" fill="currentColor" class="c-edge">預算用完 · 人工暫停</text>
+          <text x="264" y="140" font-size="12.5" text-anchor="middle" fill="currentColor" class="c-edge"> Budget exhausted or manually paused </text>
 
           <!-- paused -> running -->
           <g stroke="currentColor" stroke-width="1.5" class="c-plane"><line x1="326" y1="188" x2="232" y2="188"/></g>
           <polygon points="232,182 218,188 232,194" fill="currentColor" class="c-plane"/>
-          <text x="272" y="208" font-size="12.5" text-anchor="middle" fill="currentColor" class="c-plane">加值 · 手動續跑</text>
+          <text x="272" y="208" font-size="12.5" text-anchor="middle" fill="currentColor" class="c-plane"> Add funds or resume manually </text>
 
           <!-- running -> stopped -->
           <g fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="130,128 130,80 618,80"/></g>
           <polygon points="618,74 632,80 618,86" fill="currentColor"/>
-          <text x="374" y="68" font-size="12.5" text-anchor="middle" fill="currentColor" class="c-dim">跑完 · 被 kill</text>
+          <text x="374" y="68" font-size="12.5" text-anchor="middle" fill="currentColor" class="c-dim"> Completed or killed </text>
 
           <!-- stopped -->
           <g fill="none" stroke="currentColor" stroke-width="1.5">
             <rect x="640" y="48" width="170" height="66" rx="4"/>
           </g>
           <text x="725" y="78" font-size="15" font-weight="700" text-anchor="middle" fill="currentColor" class="m">stopped</text>
-          <text x="725" y="99" font-size="12.5" text-anchor="middle" fill="currentColor" class="c-dim">檔案留著，run 沒了</text>
+          <text x="725" y="99" font-size="12.5" text-anchor="middle" fill="currentColor" class="c-dim"> Files retained, execution ended </text>
 
           <!-- paused -> destroyed -->
           <g fill="none" stroke="currentColor" stroke-width="1.5" class="c-dim"><polyline points="410,210 410,252 618,252"/></g>
           <polygon points="618,246 632,252 618,258" fill="currentColor" class="c-dim"/>
-          <text x="516" y="242" font-size="12.5" text-anchor="middle" fill="currentColor" class="c-dim">TTL 到期</text>
+          <text x="516" y="242" font-size="12.5" text-anchor="middle" fill="currentColor" class="c-dim"> TTL expires </text>
 
           <!-- stopped -> destroyed -->
           <g stroke="currentColor" stroke-width="1.5" class="c-dim"><line x1="725" y1="118" x2="725" y2="196"/></g>
           <polygon points="719,196 725,210 731,196" fill="currentColor" class="c-dim"/>
-          <text x="740" y="162" font-size="12.5" fill="currentColor" class="c-dim">保留期滿</text>
+          <text x="740" y="162" font-size="12.5" fill="currentColor" class="c-dim"> Retention ends </text>
 
           <!-- destroyed -->
           <g fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="5 5" class="c-dim">
             <rect x="640" y="212" width="170" height="66" rx="4"/>
           </g>
           <text x="725" y="242" font-size="15" font-weight="700" text-anchor="middle" fill="currentColor" class="c-dim m">destroyed</text>
-          <text x="725" y="263" font-size="12.5" text-anchor="middle" fill="currentColor" class="c-dim">全部清掉</text>
+          <text x="725" y="263" font-size="12.5" text-anchor="middle" fill="currentColor" class="c-dim"> Remove retained state </text>
 
           <!-- legend -->
-          <text x="50" y="286" font-size="13" fill="currentColor" class="c-plane">paused 保住：workspace 檔案 · agent 的對話狀態</text>
-          <text x="50" y="308" font-size="13" fill="currentColor" class="c-edge">paused 丟掉：跑到一半的 shell 程序</text>
+          <text x="50" y="286" font-size="13" fill="currentColor" class="c-plane"> Pause preserves workspace files and agent conversation </text>
+          <text x="50" y="308" font-size="13" fill="currentColor" class="c-edge"> Pause may discard in-flight shell processes </text>
         </svg>
       </div>
-      <figcaption>四個狀態要分乾淨。最常見的 bug 是把 <code>paused</code> 和 <code>stopped</code> 混成一個「停止」—— 前者可以從斷點續跑，後者只能重來。</figcaption>
+      <figcaption> Distinguish four states. A common mistake combines <code>paused</code> and <code>stopped</code> as one stop state, although only one supports continuation. </figcaption>
     </figure>
 
     <div class="points">
       <article class="pt">
-        <div class="pt-h"><span class="tag">為什麼重要</span><h3>把「預算超標」從破壞性事件變成商業事件</h3></div>
-        <p>你現在的 kill-switch 是二選一：讓它跑，或殺掉。<strong>殺掉會丟掉所有進度</strong> —— 對使用者是純粹的損失，對你是純粹的客訴。</p>
-        <p>暫停給了第三個選項：<strong>預算用完時暫停，使用者加值後從斷點續跑。</strong></p>
-        <p class="rec"><b>結果</b> 同一個機制，從「懲罰」變成「收錢的時機」。這比 kill-switch 好得多，而且是同一套 checkpoint 通道就能做到的。</p>
+        <div class="pt-h"><span class="tag"> Why it matters </span><h3> Make budget exhaustion a resumable product event </h3></div>
+        <p> A basic kill switch offers only continue or kill. <strong> Destructive termination can lose progress </strong> and create avoidable customer frustration. </p>
+        <p> Pause provides a third option: <strong> stop at the cap, then continue after a budget increase. </strong></p>
+        <p class="rec"><b> Result </b> The same checkpoint mechanism turns a terminal interruption into a continuation opportunity. </p>
       </article>
 
       <article class="pt">
-        <div class="pt-h"><span class="tag">怎麼做</span><h3>不需要新的子系統，只要把 checkpoint 的回應從布林改成 enum</h3></div>
+        <div class="pt-h"><span class="tag"> Implementation </span><h3> Extend checkpoint responses from boolean to an enum </h3></div>
         <p class="mono" style="color:var(--muted)">{ action: 'continue' | 'pause' | 'stop' | 'await_approval' }</p>
-        <p>SDK 收到 <code>pause</code> 之後的動作序列：</p>
+        <p> After the SDK receives <code>pause</code> , perform the following sequence: </p>
         <ul>
-          <li>呼叫 harness 的 <code>doSuspendTurn()</code>，拿到 <code>ContinueTurnState</code>（規格保證每個 adapter 都有）</li>
-          <li>把那份 state 存進 Console</li>
-          <li>叫 provider 對 sandbox 做 pause 或 snapshot</li>
+          <li> Call the harness's <code>doSuspendTurn()</code> and obtain <code>ContinueTurnState</code> as required by the proposed adapter contract </li>
+          <li> Store that state in the control plane </li>
+          <li> Ask the provider to pause or snapshot the sandbox </li>
         </ul>
-        <p>續跑就是反過來：<code>resumeSession()</code> 還原 sandbox → <code>doStart({ resumeFrom })</code> 重連 → <code>doContinueTurn()</code> 從斷點跑下去。</p>
-        <p class="rec"><b>好處</b> pause、stop、審批全部共用同一條往返，不用為每個功能各拉一套機制。</p>
+        <p> Resume in reverse: <code>resumeSession()</code> restore the sandbox → <code>doStart({ resumeFrom })</code> reconnect → <code>doContinueTurn()</code> continue from the checkpoint. </p>
+        <p class="rec"><b> Benefit </b> Pause, stop, and approvals share one request/response mechanism. </p>
       </article>
 
       <article class="pt warn">
-        <div class="pt-h"><span class="tag">難處</span><h3>provider 支援度不一，而且沒有規格可靠</h3></div>
-        <p>規格層的 <code>HarnessV1SandboxProvider</code> 只有 <code>createSession</code> 和可選的 <code>resumeSession?</code> —— <strong>沒有 pause 動詞</strong>。你等於要自己定義第三個動詞，並且做能力協商。</p>
+        <div class="pt-h"><span class="tag"> Difficulty </span><h3> Provider support differs and the reviewed interface is incomplete </h3></div>
+        <p> The interface-level <code>HarnessV1SandboxProvider</code> provides only <code>createSession</code> and optional <code>resumeSession?</code> —— <strong> without a pause verb </strong> . Define the additional operation and negotiate capabilities explicitly. </p>
         <ul>
-          <li>底層原生支援（Cloudflare DO 本來就會 hibernate、E2B 有 pause）→ 真暫停，幾乎免費</li>
-          <li>不支援 → 降級：存下 workspace 檔案 → 銷毀 sandbox → 續跑時重建並還原</li>
+          <li> Native support, such as DO hibernation or E2B pause, can preserve the environment cheaply </li>
+          <li> Otherwise save workspace files, destroy the sandbox, and reconstruct on continuation </li>
         </ul>
-        <p><strong>降級版的物理極限：檔案可以搬，跑到一半的 process 不能搬。</strong> 所以正在跑的 <code>npm install</code> 會消失，但檔案和 agent 的對話狀態都保得住（後者存在 harness 的 <code>ContinueTurnState</code> 裡，跟 sandbox 無關）。</p>
-        <p class="rec"><b>要守的底線</b> UI 上的暫停鍵，絕對不能在不支援的 provider 上悄悄變成殺掉。能力不足就明講「這個 provider 只能停止並重來」。</p>
+        <p><strong> Fallback preserves files, not an arbitrary running process. </strong> An active <code>npm install</code> may disappear, while files and conversation survive through the harness's <code>ContinueTurnState</code> state outside the sandbox. </p>
+        <p class="rec"><b> Required boundary </b> Never silently turn a Pause button into destructive termination. Explain when a provider supports only stop-and-restart. </p>
       </article>
 
       <article class="pt">
-        <div class="pt-h"><span class="tag">別忘了</span><h3>暫停不等於零成本</h3></div>
-        <p>snapshot 佔儲存空間，多數 provider 照收。使用者會以為「我暫停了就不用付錢」，然後在帳單上被嚇到。</p>
-        <p class="rec"><b>建議</b> Console 上把 paused 的儲存費用單獨列出來，並且給每個 paused sandbox 一個 TTL 加到期通知 —— 否則你會養出一堆沒人記得的殭屍 sandbox，成本慢慢流血。</p>
+        <div class="pt-h"><span class="tag"> Remember </span><h3> Paused does not mean free </h3></div>
+        <p> Snapshots occupy billable storage; make those charges visible. </p>
+        <p class="rec"><b> Recommendation </b> Show paused storage separately and apply TTLs with expiry notifications so forgotten snapshots do not accumulate indefinitely. </p>
       </article>
     </div>
   </section>
 
-  <!-- ============ 漏掉的 ============ -->
+  <!-- Presentation section -->
   <section>
     <div class="sec-h">
-      <p class="eyebrow">你的十點裡沒有</p>
-      <h2>四件該補進去的事</h2>
+      <p class="eyebrow"> Missing from the original ten ideas </p>
+      <h2> Four additions </h2>
     </div>
 
     <div class="points">
       <article class="pt">
-        <div class="pt-h"><span class="tag">補 A</span><h3>Kill-switch：殺掉跑到一半的 run</h3></div>
-        <p>Console 上要有一顆紅色按鈕，而且它必須真的能中止已經在跑的 agent。<strong>這是你相對於 LiteLLM 唯一沒被做掉的差異</strong> —— LiteLLM 只能擋「下一次 model 呼叫」，因為它只在 gateway 那層；你的 SDK 在 harness 迴圈裡面，每個 tool call 都是一個檢查點，停止粒度是次秒級。</p>
-        <p class="rec"><b>但</b> 殺掉只是粗糙版本，<strong>暫停才是你真正要賣的東西</strong> —— 見上一節。</p>
+        <div class="pt-h"><span class="tag"> Addition A </span><h3> Kill switch for active runs </h3></div>
+        <p> Console needs a control that actually interrupts execution. <strong> The proposed distinction from admission-only gateways </strong> is checking inside the harness/tool loop, rather than only denying the next model request; the original design targeted sub-second checks. </p>
+        <p class="rec"><b> However, </b> kill is the basic version; <strong> pause is the more useful continuation feature </strong> , as discussed above. </p>
       </article>
 
       <article class="pt">
-        <div class="pt-h"><span class="tag">補 B</span><h3>審批佇列（pending approvals）</h3></div>
-        <p>「這個 agent 想執行 <code>rm -rf</code> / 想寄這封信 / 想付這筆錢 —— 准不准？」Vercel 的 <code>HarnessV1PendingToolApproval</code> 規格裡已經有這個概念，你的 Console 只要提供收件匣。這是企業客戶的剛需，也是很自然的付費理由。</p>
+        <div class="pt-h"><span class="tag"> Addition B </span><h3> Pending approvals </h3></div>
+        <p> The agent wants to execute <code>rm -rf</code> , send an email, or make a payment: allow it? Vercel's <code>HarnessV1PendingToolApproval</code> already models the request; Console supplies an inbox. The proposal treats this as an enterprise requirement and potential paid feature. </p>
       </article>
 
       <article class="pt">
-        <div class="pt-h"><span class="tag">補 C</span><h3>Egress 政策的設定介面</h3></div>
-        <p>網路白名單要有地方設。規格層（<code>HarnessV1NetworkPolicy</code>）已經定義好 <code>allow-all / deny-all / custom</code> 三種模式加上 host 與 CIDR 清單 —— 你只要做 UI 和存放，不用自己設計。</p>
+        <div class="pt-h"><span class="tag"> Addition C </span><h3> Egress policy configuration </h3></div>
+        <p> Network allowlists need an editor. The reviewed interface ( <code>HarnessV1NetworkPolicy</code> ) already defines <code>allow-all / deny-all / custom</code> three modes plus host/CIDR lists; supply UI and persistence rather than another schema. </p>
       </article>
 
       <article class="pt">
-        <div class="pt-h"><span class="tag">補 D</span><h3>成本歸因報表</h3></div>
-        <p>Trace 是「一條一條看」，報表是「加總起來看」。per-app、per-end-user、per-tool 的花費排行 —— 這是客戶真正會每週打開的那一頁，也是續訂的理由。</p>
+        <div class="pt-h"><span class="tag"> Addition D </span><h3> Cost attribution reports </h3></div>
+        <p> Traces inspect individual executions; reports aggregate spending by app, end user, and tool. This is the proposed recurring management view. </p>
       </article>
     </div>
   </section>
@@ -709,32 +709,32 @@
   <!-- ============ MVP ============ -->
   <section>
     <div class="sec-h">
-      <p class="eyebrow">切線建議</p>
-      <h2>MVP 該包含什麼</h2>
-      <p>判準只有一條：<strong>先做沒人做過的，後做別人也有的。</strong></p>
+      <p class="eyebrow"> Scope recommendation </p>
+      <h2> MVP contents </h2>
+      <p> Prioritization rule: <strong> validate differentiated controls before adding commodity features. </strong></p>
     </div>
 
     <div class="tablewrap">
       <table>
         <thead>
-          <tr><th>階段</th><th>做什麼</th><th>為什麼</th></tr>
+          <tr><th> Phase </th><th> Deliverable </th><th> Reason </th></tr>
         </thead>
         <tbody>
-          <tr><td class="phase p1">MVP</td><td>TOML + CLI push + <code>nimplex dev</code></td><td>沒有本機體驗就沒有採用</td></tr>
-          <tr><td class="phase p1">MVP</td><td><strong>單一</strong> sandbox provider + <strong>單一</strong> harness</td><td>多 provider 是加法題，晚點做不影響架構</td></tr>
-          <tr><td class="phase p1">MVP</td><td><strong>per-end-user 預算 + checkpoint + kill-switch</strong></td><td>唯一沒人做的東西，你的全部理由</td></tr>
-          <tr><td class="phase p1">MVP</td><td><strong>pause / resume</strong>（先做一個原生支援的 provider）</td><td>「暫停後加值續跑」比「殺掉」好賣太多</td></tr>
-          <tr><td class="phase p1">MVP</td><td>基本 trace（樹狀 + 成本欄位）</td><td>資料結構錯了以後改不動</td></tr>
-          <tr><td class="phase p2">下一步</td><td>preview branching · 審批佇列 · egress UI</td><td>形狀好但不緊急</td></tr>
-          <tr><td class="phase p2">下一步</td><td>RBAC · 匿名 user · cron / webhook</td><td>有現成方案可接</td></tr>
-          <tr><td class="phase p2">再下一步</td><td>多 provider · 分析對話 · BYO 訂閱 OAuth</td><td>OAuth 那條要先把 ToS 查清楚</td></tr>
+          <tr><td class="phase p1">MVP</td><td>TOML + CLI push + <code>nimplex dev</code></td><td> Local experience enables adoption </td></tr>
+          <tr><td class="phase p1">MVP</td><td><strong> One </strong> sandbox provider + <strong> One </strong> harness</td><td> Additional providers can follow without changing the architecture </td></tr>
+          <tr><td class="phase p1">MVP</td><td><strong> Per-end-user budget, checkpoints, kill switch </strong></td><td> The original proposal's core differentiated behavior </td></tr>
+          <tr><td class="phase p1">MVP</td><td><strong>pause / resume</strong> Start with one provider supporting native pause </td><td> Budget increase and continuation are more useful than destructive termination </td></tr>
+          <tr><td class="phase p1">MVP</td><td> Basic trace tree with cost fields </td><td> Fix the data structure early </td></tr>
+          <tr><td class="phase p2"> Next </td><td> Preview branches, approval inbox, egress UI </td><td> Useful but not first-order acceptance </td></tr>
+          <tr><td class="phase p2"> Next </td><td> RBAC, anonymous users, cron/webhooks </td><td> Existing integrations can help </td></tr>
+          <tr><td class="phase p2"> Later </td><td> More providers, analysis chat, subscription OAuth </td><td> Verify subscription terms first </td></tr>
         </tbody>
       </table>
     </div>
   </section>
 
   <section class="closing">
-    <p class="kicker">你列的功能，別人大多都有。<br>「對跑到一半的 run 有控制權」—— 繼續、暫停、殺掉 —— 別人沒有。<br>MVP 應該長得像那一件事，其餘全部是它的配套。</p>
+    <p class="kicker"> Most listed features already existed elsewhere in the reviewed ecosystem. <br> The proposal centers on controlling active runs: continue, pause, and terminate. <br> The MVP should demonstrate that behavior, with other features supporting it. Later nimplex decisions refine this historical scope. </p>
   </section>
 
 </div>

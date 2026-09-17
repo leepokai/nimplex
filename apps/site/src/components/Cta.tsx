@@ -2,7 +2,7 @@ import { useRef } from "react";
 import { gsap, MM, SplitText, useGSAP } from "../lib/gsap.ts";
 import { Waitlist } from "../Waitlist.tsx";
 
-/** 收尾 CTA：標題逐字浮現，其餘元素依序上滑。 */
+/** Closing CTA: reveal title characters, then slide remaining elements upward. */
 export function Cta() {
   const root = useRef<HTMLElement>(null);
 

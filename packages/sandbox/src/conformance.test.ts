@@ -1,4 +1,4 @@
-// 兩個內建 provider 都要過同一把尺；沒 docker daemon 時 docker 那組自動 skip。
+// Providers share one contract suite; unavailable infrastructure skips its provider group.
 process.env.NIMPLEX_ALLOW_LOCAL_SANDBOX = "1";
 
 import { daytona } from "@computesdk/daytona";
@@ -9,17 +9,17 @@ import { DockerSandboxProvider } from "./docker.ts";
 import { E2bSandboxProvider } from "./e2b.ts";
 import { LocalSandboxProvider } from "./local.ts";
 
-// local 的 /workspace 是虛擬映射：writeFile/readFile/workdir 會轉成暫存目錄，但 shell 裡的絕對路徑不會——
-// 這是它只能 dev 用的原因之一，明示宣告而不是假裝過關。
+// Local /workspace maps file operations and cwd into a temporary directory, but does not
+// rewrite absolute paths inside shell scripts. Declare this development-only limitation.
 describeSandboxConformance("local", () => new LocalSandboxProvider(), {
   timeoutMs: 30_000,
   absolutePaths: false,
 });
 describeSandboxConformance("docker", () => new DockerSandboxProvider(), { timeoutMs: 180_000 });
-// 沒有 E2B_API_KEY 時整組 skip；有 key 會真的開雲端沙箱（少量費用）
+// E2B skips without a key; configured runs create real paid cloud sandboxes.
 describeSandboxConformance("e2b", () => new E2bSandboxProvider(), { timeoutMs: 180_000 });
 
-// ComputeSDK 走的長尾：沒 key 一樣 skip；有 key 就知道它們跟 docker 差幾條
+// ComputeSDK providers also skip without credentials and otherwise run the same contracts.
 describeSandboxConformance(
   "daytona (via ComputeSDK)",
   () =>

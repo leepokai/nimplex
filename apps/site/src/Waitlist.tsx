@@ -1,17 +1,17 @@
 import { useEffect, useState } from "react";
 
 /**
- * Tally 表單，用 **popup** 而不是 inline embed。
+ * Tally form displayed as a popup.
  *
- * 為什麼不 inline：這頁的主要動作就是 join waitlist。整份表單 inline 嵌進來會撐到
- * 2000px 以上，把 hero 整個吃掉，主要動作反而看不見。popup 讓按鈕維持我們自己的
- * 黑白樣式，表單在 modal 裡跑完整長度。
+ * Joining the waitlist is the main action. An inline form can exceed 2,000 px
+ * and overwhelm the hero, hiding that action. A popup keeps our monochrome
+ * button visible while the modal accommodates the full form.
  *
- * 漸進增強：按鈕本體是一個指向 tally.so/r/<id> 的 <a>，沒有 JS 也能報名；
- * 有 JS 時攔截點擊改開 modal。
+ * Progressive enhancement: the anchor opens tally.so/r/<id> without JavaScript;
+ * when JavaScript is available, intercept clicks to open the modal.
  *
- * 設定：把 https://tally.so/r/<FORM_ID> 的 FORM_ID 放進 apps/site/.env 的
- * VITE_TALLY_FORM_ID。沒設的話顯示設定指引，而不是一個壞掉的按鈕。
+ * Set VITE_TALLY_FORM_ID in apps/site/.env to the FORM_ID from the Tally URL.
+ * Missing configuration displays setup guidance instead of a broken button.
  */
 
 const FORM_ID = import.meta.env.VITE_TALLY_FORM_ID as string | undefined;
@@ -89,7 +89,7 @@ export function Waitlist({ id, label = "Join the waitlist" }: { id?: string; lab
         target="_blank"
         rel="noopener noreferrer"
         onClick={(event) => {
-          if (!ready || !window.Tally) return; // 讓瀏覽器照常開新分頁
+          if (!ready || !window.Tally) return; // Let the browser open the link normally.
           event.preventDefault();
           window.Tally.openPopup(FORM_ID, {
             layout: "modal",

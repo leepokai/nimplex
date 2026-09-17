@@ -1,7 +1,7 @@
-// Better Auth 的四張表（user / session / account / verification）。
-// Console 登入者的「身分憑證」放這裡；與業務表的關聯只有一條：
-// org_members.email = user.email —— auth 層與租戶層刻意鬆耦合，
-// 換掉 auth 方案不動任何業務表。
+// Better Auth user/session/account/verification tables.
+// Human authentication is linked to business data only through email:
+// org_members.email = user.email keeps authentication and tenancy loosely coupled
+// so replacing authentication does not require changing business tables.
 import { boolean, index, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 
 export const user = pgTable("user", {

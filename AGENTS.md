@@ -17,16 +17,30 @@ Before runtime work, read:
 
 Dated documents include historical proposals. Distinguish the latest explicit
 decision from a proposal and from behavior actually implemented in the code.
-The worker runs Pi (`@earendil-works/pi-agent-core`) as the loop kernel with tools on a just-bash in-memory VFS (`apps/worker/src/pi-executor.ts`); one work item drives one turn. Model responses and reservations settle before tools run; each tool result and workspace snapshot commits atomically. Native commands use the configured isolated sandbox with durable dispatch journals. Read `docs/product/2026-09-10-harness-runtime.md` for the implemented recovery contract and acceptance commands.
+The long-term product is a cloud agent platform with many durable sessions.
+Read `docs/product/2026-09-15-cloud-agent-candidates.md` for the confirmed product
+direction and unresolved architecture options, and
+`docs/product/2026-09-15-grok-bot-reference.md` for the bounded reference study.
+Read `docs/product/2026-09-16-cloudflare-think-reference.md` for managed SQLite
+and product overlap; cloud deployment does not universally require PostgreSQL.
+Do not treat candidate designs as implemented or finally selected.
+The current default CLI is a local agent application. Read
+`docs/product/2026-09-13-local-runtime.md` for its implemented behavior before runtime changes.
+`packages/runtime` owns sessions and executes Pi with just-bash/native tools.
+Terminal and headless clients share this runtime; SQLite stores local state.
+`apps/worker` is the existing hosted adapter that uses the shared executor with
+Postgres persistence and lease fencing. Model responses settle before tools;
+tool outcomes and workspace snapshots commit together in either deployment.
 
 ## Working conventions
 
 - Use Traditional Chinese when discussing the project with Kevin.
-- Write code comments, configuration comments, and commit messages in plain English.
-  Keep product documents in Chinese and Markdown.
+- Write all documentation, instruction files, code comments, configuration comments,
+  and commit messages in English. Keep documentation in Markdown. Discussion with
+  Kevin may remain in Traditional Chinese.
 - Preserve existing staged and unstaged work. Scope changes and commits to the task.
 - Change public API shapes in `packages/contracts` first. Keep `core` free of IO and
-  the SDK dependent only on contracts. API and worker coordinate through Postgres.
+  the SDK dependent only on contracts. The optional hosted API and worker coordinate through Postgres.
 - Follow the tenant isolation and credential boundaries in `CLAUDE.md`. Existing
   implementation gaps are not precedents for new code.
 - Put third-party experiments in the ignored root `sandbox/` directory. Never commit
@@ -34,7 +48,44 @@ The worker runs Pi (`@earendil-works/pi-agent-core`) as the loop kernel with too
 - Project skills already live in `.agents/skills/`; `.claude/skills/` points to the
   same files. Do not duplicate or migrate them over themselves.
 
+## Long-term maintainability
+
+- Preserve Pi capability parity as a product requirement. Track actual support and
+  gaps in `docs/product/2026-09-15-pi-compatibility.md`; importing Pi Agent alone
+  does not establish full Pi CLI compatibility.
+- Treat long-term code maintainability as a requirement, not a follow-up task.
+- Keep UI rendering, command definitions, application state, and IO behind clear
+  module boundaries. Reuse existing runtime and contract seams instead of duplicating
+  business rules in clients.
+- Prefer small, cohesive modules and explicit types. Extract shared behavior when
+  it has real callers; avoid speculative abstractions and large command switches.
+- Add behavior-focused tests for important state transitions and failure paths.
+  Update the relevant architecture and usage documents when behavior changes.
+- Remove superseded paths when replacing an implementation. Do not keep placeholder
+  commands or claim a capability that the runtime does not actually enforce.
+
 ## Validation and review
+
+Full behavioral test coverage is required throughout implementation, not deferred
+until the end. Do not take shortcuts by narrowing the requested behavior to the
+cases that are easiest to implement or test.
+
+- Map every requirement and acceptance criterion to executable evidence. Cover
+  normal behavior, boundaries, invalid input, important branches, failure paths,
+  and relevant concurrency, cancellation, ownership and recovery transitions.
+- Add or update tests with each behavior change. Use unit tests for pure logic,
+  integration/conformance tests for real boundaries, and end-to-end tests for
+  complete user workflows. Include actual process-death/restart tests where
+  durability is claimed; mocks alone cannot prove those guarantees.
+- Test observable outcomes and invariants, including absence of duplicate effects,
+  partial commits, cross-tenant access and unauthorized dispatch where applicable.
+  Do not substitute implementation-mirroring assertions or line-coverage numbers
+  for full requirement coverage.
+- Never weaken assertions, silently skip required cases, or change expected behavior
+  merely to make a suite pass. Fix the implementation and retain regression tests.
+- Before claiming completion, audit the full requested scope against the tests
+  actually run. Report uncovered, skipped, unavailable or failing cases explicitly;
+  a green subset does not establish completion, and required gaps remain unfinished.
 
 After code changes, run `pnpm check`, `pnpm lint`, and `pnpm test`, plus the relevant
 integration or conformance checks described in the runbook. Use the fake upstream
@@ -58,3 +109,27 @@ Do not add AI attribution trailers to commit messages.
 `.codex/config.toml` contains project defaults. Model selection, credentials, and
 permissions remain in the user's environment. There are no project Claude MCP
 servers, hooks, custom agents, or slash commands to translate at this time.
+
+## Product positioning reference
+
+Read `docs/product/2026-09-16-positioning-map.md` for Kevin's Pi-based direction
+and the distinctions between Think-like capabilities, Cloudflare infrastructure,
+and adopting the Think harness. Audience and packaging candidates remain open.
+
+## Mandatory durable Pi integration
+
+Kevin confirmed that preserving Pi capabilities while enforcing durable commit,
+ownership, and recovery semantics is a necessary architecture step. Read
+`docs/product/2026-09-16-pi-durable-runtime-requirement.md` before changing Pi
+composition or persistence. Event mirroring alone does not meet this requirement;
+full Pi parity and durability must both be preserved. Implementation remains open.
+
+Implementation sequencing is proposed in
+`docs/product/2026-09-16-durable-pi-implementation-plan.md`. Begin with the pinned
+Pi composition gate; the installed AgentSession event subscription is not an
+awaited database commit boundary. Do not migrate the default before that gate.
+
+Native/browser recovery must follow
+`docs/product/2026-09-16-environment-browser-recovery.md`: preserve supported
+Chrome session state and logs, define real snapshot capabilities, and distinguish
+reattachment, snapshot restoration, reconstruction and unknown external effects.

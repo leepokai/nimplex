@@ -1,17 +1,17 @@
-// ComputeSDK adapter：一個轉接頭，把 ComputeSDK 支援的任何一家沙箱（Daytona / Vercel / Modal / Railway…）
-// 變成 nimplex 的 SandboxProvider。關鍵幾家（docker、e2b）我們直接接；長尾走這裡。
+// ComputeSDK adapter for providers such as Daytona, Vercel, Modal, and Railway.
+// Docker and E2B integrate directly; additional providers share this adapter.
 //
-// 對應關係（port → ComputeSDK）：
+// Port to ComputeSDK mapping:
 //   create  → provider.sandbox.create({ templateId, envs, timeout })   image ≈ templateId
 //   resume  → provider.sandbox.getById(sandboxId)
-//   delete  → provider.sandbox.destroy(sandboxId)                       找不到也吞掉（reaper 會重複呼叫）
+//   delete → provider.sandbox.destroy(sandboxId); missing sandboxes are already deleted.
 //   exec    → sandbox.runCommand(cmd, { cwd, env, timeout, onStdout, onStderr })
 //
-// ComputeSDK 沒有的兩件事，這裡用繞法補：
-//   stdin  → 先 writeFile 成暫存檔，再 `cmd < file`
-//   signal → Promise.race 提前返回並標 timedOut（箱子裡的程序可能還在跑，跟 docker exec 殺 client 端同語意；
-//            worker 之後的 stop()/delete() 會把整個箱子收掉）
-// 每家在 conformance kit 上差幾條，跑一次就知道，不用猜。
+// Workarounds for two missing ComputeSDK capabilities:
+//   stdin → write a temporary file and redirect with cmd < file.
+//   signal → Promise.race returns early with timedOut; the remote process may remain alive.
+//            Subsequent stop/delete removes the entire sandbox.
+// Conformance tests document actual provider differences.
 
 import type {
   ExecArgs,
@@ -23,7 +23,7 @@ import type {
 } from "@nimplex/core";
 import { SANDBOX_SESSION_STATE_VERSION, shellQuote } from "@nimplex/core";
 
-/** 只依賴 ComputeSDK 介面的結構，不 import 它內部的型別路徑——任何 @computesdk/* 的 provider 都對得上。 */
+/** Depend on the public structural interface rather than internal ComputeSDK type paths. */
 export interface ComputeSdkSandbox {
   readonly sandboxId: string;
   runCommand(
@@ -62,14 +62,14 @@ export interface ComputeSdkBackend {
 }
 
 export interface ComputeSdkProviderOptions {
-  /** 在 nimplex 這邊的 provider id（對應 contracts 的 SANDBOX_PROVIDERS） */
+  /** nimplex provider ID, matching contracts SANDBOX_PROVIDERS. */
   backendId: string;
-  /** 延遲建立：沒 key 時不要在 worker 啟動就炸 */
+  /** Lazy construction avoids failing worker startup when keys are absent. */
   backend: () => ComputeSdkBackend;
-  /** 缺 key／設定時回原因；null 表示可用 */
+  /** Missing credential/configuration reason; null means available. */
   unavailableReason: () => string | null;
   defaultTemplate?: string;
-  /** 沙箱壽命上限（ms）；run 結束時 worker 本來就會 delete */
+  /** Maximum sandbox lifetime in milliseconds; terminal runs are also deleted by the worker. */
   lifetimeMs?: number;
 }
 
@@ -180,7 +180,7 @@ export class ComputeSdkSandboxProvider implements SandboxProvider {
     try {
       await sandbox.filesystem.mkdir(workdir);
     } catch (err) {
-      // 建箱後的 setup 失敗要自己收掉，不能把箱子漏在雲端
+      // Clean up if setup fails after creation to avoid leaking a paid sandbox.
       await sandbox.destroy().catch(() => {});
       throw err;
     }
@@ -205,7 +205,7 @@ export class ComputeSdkSandboxProvider implements SandboxProvider {
     return new ComputeSdkSandboxSession(state, sandbox);
   }
 
-  /** 冪等：找不到就當作已經刪掉（reaper 與重領都可能對同一個 state 呼叫兩次）。 */
+  /** Idempotent deletion: missing state is already removed; reapers/reclaims may repeat it. */
   async delete(state: SandboxSessionState): Promise<void> {
     await this.backend()
       .sandbox.destroy(sandboxIdOf(state))

@@ -1,171 +1,151 @@
-# Local dev runbook：服務拓撲、啟動、e2e 驗收
+# Local development runbook: topology, startup, and acceptance
 
-> **2026-09-10 現行驗收**：先 `docker compose up -d`，再 `pnpm e2e`；真 E2B 用 `pnpm e2e:e2b`，真 Haiku + E2B 用 `pnpm e2e:real`。
-> 這些命令自建獨立 DB／API／worker，並自動清理。預算已改為呼叫前預留，恢復邊界已改為 model/tool checkpoint；下方 9/9 的「每 turn 重做、最多超出一次模型費用」描述為歷史行為。
-> 詳見 [2026-09-10 harness runtime](2026-09-10-harness-runtime.md)。
+> The default terminal/headless architecture now follows [the 09-13 local runtime](2026-09-13-local-runtime.md). Hosted API/worker behavior and earlier acceptance records below retain their historical or hosted scope.
 
+> **Current acceptance as of 2026-09-10:** start Postgres with `docker compose up -d`, then run `pnpm e2e`. Use `pnpm e2e:e2b` for real E2B or `pnpm e2e:real` for Haiku + E2B.
+> These commands create and clean up isolated DB/API/worker resources. Accounting now reserves before dispatch, and recovery uses model/tool checkpoints. The older descriptions below of rerunning whole turns and one-call overshoot are historical. See [the runtime contract](2026-09-10-harness-runtime.md).
+> **09-06 removal notice:** console, /gw gateway, harness registry, Managed Agents, and db:seed were removed. Sections mentioning them record earlier behavior. Use the root README for the current shortest startup path.
+> Originally recorded on 2026-09-01 after Better Auth/org keys, /v1 authentication, real console APIs, and 11/11 smoke acceptance. Follows the architecture and SDK documents of the same date.
 
-> **2026-09-06 註**：console、閘道（`/gw`）、harness 註冊表、Managed Agents、`db:seed` 已全部移除，
-> 本文提到它們的段落已過期；現行最短啟動路徑見根目錄 `README.md`。
+## 1. Local topology
 
-> 2026-09-01。記錄本日落地後的**實際可跑狀態**：auth（Better Auth + org API key）接完、
-> `/v1/*` 全面認證、console 接真 API、e2e 冒煙 11/11 通過。
-> 承接 `2026-09-01-architecture.md`（架構切分）與 `2026-09-01-sdk-architecture.md`（SDK 定案）。
+Postgres and per-run Docker sandboxes run in containers. API/worker and the historical console run as local Node processes; deployment containerization is described in architecture §9.
 
----
-
-## 1. 服務拓撲（local dev）
-
-**只有兩樣東西跑在 docker 裡**：Postgres 與「每個 run 的沙箱」。
-api / worker / console 是本機 node process（dev 要熱重載，容器化是部署階段的事，見架構文件 §9）。
-
-| 服務 | 跑在哪 | Port | 啟動指令 | 定義位置 |
+| Service | Location | Port | Command | Definition |
 |---|---|---|---|---|
-| **postgres** | docker（`docker-compose.yml`） | 5433 | `docker compose up -d` | `docker-compose.yml` |
-| **api**（控制面） | 本機 node（tsx） | 8787 | `pnpm --filter @nimplex/api start` | `apps/api` |
-| **worker**（執行面） | 本機 node（tsx） | 無對外 port | `pnpm --filter @nimplex/worker start` | `apps/worker` |
-| **site**（waitlist 首頁，可選） | vite dev server | 5176 | `pnpm --filter @nimplex/site dev` | `apps/site` |
-| **run 沙箱** | docker container（worker 按需開/銷毀） | — | 由 worker 管生死 | `packages/sandbox/src/docker.ts` |
+| Postgres | Docker Compose | 5433 | docker compose up -d | docker-compose.yml |
+| API control plane | Local tsx | 8787 | pnpm --filter @nimplex/api start | apps/api |
+| Worker execution | Local tsx | No public port | pnpm --filter @nimplex/worker start | apps/worker |
+| Optional marketing site | Vite | 5176 | pnpm --filter @nimplex/site dev | apps/site |
+| Run sandbox | Docker, worker-managed | — | Created/deleted on demand | packages/sandbox/src/docker.ts |
 
-- console 的 `/v1`、`/api` 都由 vite proxy 轉到 :8787（`apps/console/vite.config.ts`）——瀏覽器視角同源，cookie 直接生效。
-- worker 與 api **不互相呼叫**，全靠 Postgres 上的 run 狀態機協調（架構不變式，見架構文件 §0/§3）。
-- docker sandbox 的預設 image 是 `node:22-bookworm-slim`（可用 `NIMPLEX_DOCKER_IMAGE` 覆寫）；箱內打回閘道走 `host.docker.internal:8787`。
+- The removed console proxied /v1 and /api to :8787 through Vite for same-origin cookies.
+- Worker and API never call each other; Postgres coordinates run state.
+- Docker's default image is node:22-bookworm-slim, overridable with NIMPLEX_DOCKER_IMAGE. The old gateway path used host.docker.internal:8787; current Pi model calls run in the worker.
 
-## 2. 冷啟動順序
+## 2. Cold start
 
 ```bash
 pnpm install
 docker compose up -d          # Postgres on :5433
-pnpm db:migrate               # schema（含 Tier 0 的 workspace_files）
+pnpm db:migrate               # Includes Tier 0 workspace_files
 pnpm --filter @nimplex/api start &
 pnpm --filter @nimplex/worker start &
 ```
 
-開 <http://localhost:5173> → GitHub 或 Google 登入 → 首次登入自動建 org →「API keys」頁發 `nmx_live_…`。
+The historical onboarding opened localhost:5173, signed in with GitHub/Google, created an organization automatically, and issued an nmx_live key on the API keys page. The console no longer exists; use the README's API onboarding and `nimplex login` for the terminal client.
 
-## 3. `.env` 定義（根目錄；api 啟動時自動載入，已存在的環境變數優先）
+## 3. Root environment file
 
-範本：`.env.example`。實際 `.env` **gitignored**，含 secrets 不進 repo。
+API and worker load `.env` at startup; existing process variables take precedence. `.env.example` is the template; actual `.env` contains secrets and is ignored by Git.
 
-| 變數 | 用途 | 現況（local） |
+| Variable | Purpose | Local state recorded on 09-01 |
 |---|---|---|
-| `DATABASE_URL` | Postgres 連線 | 預設值即 compose 的 :5433 |
-| `NIMPLEX_MASTER_KEY` | BYOK 保險庫 AES-256-GCM 主金鑰 | 未設→開發用固定金鑰（會警告） |
-| `BETTER_AUTH_SECRET` | session 簽章 | ✅ 已生成寫入 |
-| `NIMPLEX_PUBLIC_URL` | 閘道/OAuth callback 的 base URL | 預設 `http://localhost:8787` |
-| `NIMPLEX_TRUSTED_ORIGINS` | 允許打 `/api/auth` 的來源 | 預設含 :5173 與 :8787 |
-| `GITHUB_CLIENT_ID/SECRET` | GitHub 登入 | ✅ 已設（OAuth App「nimplex local dev」，leepokai 帳號下） |
-| `GOOGLE_CLIENT_ID/SECRET` | Google 登入 | ✅ 已設（GCP 專案 `nimplex-dev`，ID `hopeful-seat-507308-v1`） |
-| `NIMPLEX_DEV_EMAIL_AUTH=1` | 開發用 email 註冊/登入後門 | ❌ 已關（e2e 腳本要跑時暫開） |
-| `NIMPLEX_ALLOW_LOCAL_SANDBOX=1` | 無隔離的 local sandbox | ❌ 關（預設） |
+| DATABASE_URL | Postgres connection | Defaults match Compose :5433 |
+| NIMPLEX_MASTER_KEY | AES-256-GCM BYOK master key | Unset used a fixed development key with warning |
+| BETTER_AUTH_SECRET | Session signing | Generated and saved |
+| NIMPLEX_PUBLIC_URL | Public/OAuth callback base URL; formerly gateway too | Default localhost:8787 |
+| NIMPLEX_TRUSTED_ORIGINS | Allowed /api/auth origins | Defaults included :5173 and :8787 |
+| GITHUB_CLIENT_ID/SECRET | GitHub login | Configured in “nimplex local dev” OAuth app under leepokai |
+| GOOGLE_CLIENT_ID/SECRET | Google login | Configured in nimplex-dev, project hopeful-seat-507308-v1 |
+| NIMPLEX_DEV_EMAIL_AUTH=1 | Development email signup/login | Disabled except during E2E |
+| NIMPLEX_ALLOW_LOCAL_SANDBOX=1 | Unisolated local sandbox | Disabled by default |
 
-## 4. Auth 現況（2026-09-01 落地）
+## 4. Authentication recorded on 09-01
 
-- **console 登入**：Better Auth 1.7.2，**只提供 GitHub / Google**。登入頁按鈕由公開端點 `GET /api/auth-providers` 動態決定——沒設憑證的 provider 不出現。
-- **註冊即建 org**：`databaseHooks.user.create.after` 自動建 org + owner membership；同 email 的不同 provider 會被自動連結成同一個 user（已實測，不會裂成兩個 org）。
-- **`/v1/*` 全面認證**：org API key（`Authorization: Bearer nmx_live_…`，sha256 落地、可撤銷、撤銷即 401）或 session cookie。兩種身分打同一組 endpoint（不變式 I5）。
-- **租戶隔離**：所有 run 路由帶 `org_id` 過濾，跨租戶一律 404。
-- ⚠️ **Google 在 Testing 模式**：只有測試使用者名單（目前僅 kevin2005ha@gmail.com）能登入；加人去 GCP「Google Auth Platform → 目標對象」。
-- ⚠️ 上線到 nimplex.dev 時**另建正式 OAuth 憑證**（callback 換網域、Google app 要發布＋驗證），local 這組不上正式環境。
+- Better Auth 1.7.2 console login offered GitHub/Google only. Public GET /api/auth-providers determined available buttons from configured providers.
+- databaseHooks.user.create.after created organization and owner membership. Same-email providers linked to one user, verified without duplicate organizations.
+- Every /v1 route accepted either an org Bearer key or session cookie through the same endpoint. API keys are hashed, revocable, and return 401 immediately after revocation.
+- Every run route scopes by organization; cross-tenant access returns 404.
+- Google was in Testing mode with only kevin2005ha@gmail.com on the test list. Add testers through Google Auth Platform → Audience.
+- Production nimplex.dev needs separate OAuth credentials, production callbacks, and Google publication/verification rather than reusing local credentials.
 
-## 5. e2e 驗收（2026-09-09 改寫：Pi loop + just-bash + Tier 0）
-
-`examples/quickstart/src/e2e.ts`（冒煙腳本，可重複跑）：
+## 5. Historical smoke acceptance, rewritten 09-09
 
 ```bash
-# 需要 api + worker 在跑，且 NIMPLEX_DEV_EMAIL_AUTH=1（跑完關回去）
+# Requires a running API/worker and temporarily enabled development email auth.
 pnpm --filter @nimplex/example-quickstart exec tsx src/e2e.ts
 ```
 
-涵蓋：無身分 401 → 註冊即建 org → 發 API key → BYOK 落地 → sandbox providers →
-**Pi loop 跑完**（假上游腳本 4 次 bash tool_use：5 次 `model.call`、4 個 `tool.result`，每次 1000 in / 500 out，claude-sonnet-5 價 $0.007/次 → $0.035，cap $1）→
-**mid-run 預算殺**（cap $0.02，第 3 次 call 後 $0.021 → `killed(budget_exceeded)`）→ `budget_usd` 必填 → 跨租戶 404 → 撤銷 key 即 401。
+The recorded flow covered unauthenticated 401, signup/org creation, API key issuance, BYOK storage, providers, and a fake Pi loop with four bash tool calls and five model.call events. At the then-used Sonnet-5 prices, 1000 input/500 output tokens cost $0.007 per call, $0.035 total under a $1 cap. The old mid-run test used a $0.02 cap and killed after the third call at $0.021. Required budget, cross-tenant 404, and revoked-key 401 also passed on 09-09. Current reservation-based expectations live in harness-e2e.ts.
 
-最近一次全綠：2026-09-09。
+### 5.0 Fake upstream without real keys
 
-## 5.0 無 key 測試模式：`@nimplex/testkit` 假上游
+The historical E2E/demo scripts could start a fake Anthropic server on :8790 and point BYOK base_url at it. Pi's adapter, worker accounting, budgets, and Tier 0 followed real code paths; only the final model-provider hop was fake.
 
-沒有 `ANTHROPIC_API_KEY` 時 e2e / demo 會**自己起一個假的 Anthropic 上游**（:8790），把 BYOK 的 `base_url` 指過去；
-Pi 的 Anthropic adapter、worker 記帳、預算殺、Tier 0 寫回全部走真實程式碼，只有 `api.anthropic.com` 那一跳是假的。本機驗收**不需要真 key、不花錢**。
+- Official Messages API shapes, including nonstreaming and SSE with usage in message_start/message_delta.
+- toolCalls=n emits bash tool_use while the conversation has fewer than n tool_result blocks, writing `echo "fake step k" > /workspace/step-k.txt`, then ends the turn. Stateless behavior isolates concurrent runs. delayMs gives crash demos time to intervene.
+- Manual server: `pnpm --filter @nimplex/testkit start`; use any fake BYOK key and base_url=http://localhost:8790.
+- Some historical demo modes switched to paid upstream when ANTHROPIC_API_KEY was present, so fixed-cost assertions applied only to fake mode. Current `pnpm e2e` deliberately uses the fake provider for accounting tests regardless of local model credentials.
 
-- 形狀照官方 Messages API（非串流 / 串流 SSE，usage 在 `message_start` + `message_delta`）。
-- `toolCalls: n`：對話裡的 `tool_result` 少於 n 個就回一個 `bash` tool_use（`echo "fake step k" > /workspace/step-k.txt`），否則 `end_turn`——無狀態，同時多個 run 互不干擾。`delayMs`：每次回應加延遲，給 kill -9 demo 留手。
-- 也可獨立起來給手動測試：`pnpm --filter @nimplex/testkit start`，BYOK 放任意 key 並填 `base_url=http://localhost:8790`。
-- 有 `ANTHROPIC_API_KEY` 時自動改走真上游（會花錢；e2e 的數字斷言只在無 key 模式成立）。
+### 5.3 Worker SIGKILL demo, added 09-09
 
-## 5.3 kill -9 demo：`demo-kill.ts`（2026-09-09 新增）
-
-MVP 的主張：run 不因 worker 死掉而死、錢停在上限。
+The claim is recovery after worker death with bounded spending.
 
 ```bash
-# 只起 api（NIMPLEX_DEV_EMAIL_AUTH=1）；不要自己起 worker——腳本會自己起 worker A、殺掉、再起 worker B
+# Start API with development email auth, but no worker; the script manages workers A and B.
 pnpm --filter @nimplex/example-quickstart exec tsx src/demo-kill.ts
-# 真 key 彩排（Haiku，約 $0.006）：
+# Real Haiku rehearsal; approximately $0.006 in the recorded run:
 set -a; source .env; set +a; pnpm --filter @nimplex/example-quickstart exec tsx src/demo-kill.ts
 ```
 
-劇本：建 run（budget $0.20）→ 事件流滾到第 2 次 `model.call` → `SIGKILL` worker A → lease 60s 內到期 → worker B 重領、寫 `run.resumed` → 從 `run_events` 投影 Pi 訊息、從 Tier 0 seed VFS 接著跑 → `run.completed`、spent ≤ 0.20 → `GET /v1/runs/:id/files` 列出 Tier 0 檔案（假上游 4 個 `step-k.txt`；真 key `hello.txt` 含當天日期）。
-被殺那一刻進行中的 turn 沒 commit，worker B 會**重做那個 turn**（多花一次 model call，這就是「最多超出一個 in-flight call」的 overshoot）。
+Create a $0.20 run, wait for its second model.call, SIGKILL A, let the lease expire within 60 seconds, start B, observe run.resumed, rebuild Pi messages from events and VFS from Tier 0, then complete within budget. GET files shows four fake step files or real hello.txt with that day's date. The original implementation replayed an uncommitted turn and could pay for another model request; the 09-10 model/tool checkpoint contract supersedes that behavior.
 
-## 4.1 Sandbox conformance kit（2026-09-02 新增）
+### 4.1 Sandbox conformance, added 09-02
 
-`pnpm vitest run packages/sandbox` 對 local / docker / e2b 三家 provider 跑同一把尺（`@nimplex/testkit` 的
-`describeSandboxConformance`，C0–C10 + C1b）：完整循環、env 注入、workdir、state JSON round-trip 後 resume、
-delete 不需先 resume、stop 後 exec 必失敗、timeout／signal 真的中止、stdout 即時回呼、delete 冪等。
-provider 不可用（沒 docker daemon、沒 `E2B_API_KEY` / `DAYTONA_API_KEY` / `VERCEL_*`）整組自動 skip。E2B 已對真雲跑過 12/12（2026-09-02）；daytona / vercel 透過 ComputeSDK adapter，等 key。**接任何新 provider 先加一行進
-`packages/sandbox/src/conformance.test.ts`，紅了才算知道差在哪。** local 以 `absolutePaths: false` 明示
-它的 `/workspace` 只是虛擬映射。
+`pnpm vitest run packages/sandbox` uses testkit's describeSandboxConformance for local/Docker/E2B and ComputeSDK adapters. C0–C10 plus C1b cover lifecycle, env, working directory, JSON state round-trip/resume, delete without resume, exec failure after stop, real timeout/signal cancellation, live stdout, and idempotent deletion.
 
-## 5.1 / 5.2（已移除）
+Unavailable providers skip: missing Docker daemon or E2B/DAYTONA/VERCEL credentials. Real E2B passed 12/12 on 09-02; Daytona/Vercel awaited keys. Add every provider to conformance.test.ts before assessing its gaps. Local declares absolutePaths:false because /workspace is a virtual mapping.
 
-Managed Agents 路徑與 claude-code × E2B CLI-in-box 組合在 2026-09-06 刪掉（見 `2026-09-06-harness-on-just-bash.md` §6；歷史在 git `0f32657`）。真箱子（Tier 2）路徑在 Slice 2 重接，屆時補回組合驗證。
+### Removed 5.1 / 5.2
 
-## 7. 自架雲端 dev 環境（VPS + docker compose + GitHub Actions，2026-09-03 新增）
+Managed Agents and claude-code × E2B CLI-in-a-box tests were removed on 09-06 (harness decision §6, historical commit 0f32657). Native Tier 2 integration was scheduled for Slice 2 and subsequently implemented in the 09-10 runtime.
 
-上雲後 E2B 的箱子直接打回公網 api，不再需要 tunnel。形狀：一台 VPS（DigitalOcean / Linode，建議 2 vCPU / 4 GB），
-`deploy/docker-compose.yml` 跑 postgres + api + worker + caddy；`.github/workflows/deploy.yml`（`deploy-dev`）在 **push `dev` branch** 時
-build 兩個映像檔推 GHCR，再 ssh 進 VPS `pull → migrate → up`。console 這輪不上（走 SDK 驗證）。
+## 7. Self-hosted cloud development: VPS, Compose, GitHub Actions
 
-**分支策略（2026-09-03 定案）**：日常工作推 `dev`，push 就自動部署到 `api-dev.nimplex.dev`；`main` 保留給正式環境，
-prod 的 workflow 等機器開了再加（同一份 compose，`.env` 換成 api.nimplex.dev + Neon）。功能穩了再 `dev → main`。
+Added 09-03. The historical sandbox could reach a public API without tunnels. One VPS, suggested 2 vCPU/4 GB on DigitalOcean/Linode, runs Postgres/API/worker/Caddy through deploy/docker-compose.yml. The deploy-dev GitHub workflow builds two images, pushes GHCR, then SSH runs pull → migrate → up. Console was excluded, with SDK acceptance instead.
 
-現況：DO droplet `nimplex-dev`（sgp1，s-2vcpu-4gb，IP 168.144.107.105），2026-09-03 第一次部署（commit `0f32657`）全通：
-Caddy 自動拿到憑證、四個 service healthy、雲端跑 `claude-code-e2b.ts` completed（19 秒，$0.049，不需 tunnel）。
+Branch decision: daily work on dev auto-deploys to api-dev.nimplex.dev; main is reserved for production. A future production workflow uses the same Compose with api.nimplex.dev and Neon settings. Promote stable work from dev to main.
+
+Recorded deployment: DO droplet nimplex-dev, sgp1, s-2vcpu-4gb, IP 168.144.107.105. On 09-03 commit 0f32657, Caddy TLS and four healthy services passed; cloud claude-code-e2b.ts completed in 19 seconds at $0.049 without a tunnel.
 
 ```bash
-# ---- VPS 一次性（Ubuntu 24.04）----
+# One-time Ubuntu 24.04 VPS setup
 curl -fsSL https://get.docker.com | sh && usermod -aG docker $USER
 mkdir -p /opt/nimplex && cd /opt/nimplex
-# 放 deploy/docker-compose.yml、deploy/Caddyfile，並依 deploy/.env.example 寫 .env：
-#   NIMPLEX_MASTER_KEY / BETTER_AUTH_SECRET / POSTGRES_PASSWORD 全部現生（openssl rand）
-#   NIMPLEX_PUBLIC_URL=http://<ip>（或網域 + SITE_ADDRESS=網域 讓 Caddy 自動 TLS）
-#   E2B_API_KEY、NIMPLEX_DEV_EMAIL_AUTH=1
+# Copy deploy/docker-compose.yml and Caddyfile; create .env from deploy/.env.example.
+# Generate NIMPLEX_MASTER_KEY, BETTER_AUTH_SECRET, POSTGRES_PASSWORD with openssl rand.
+# Configure NIMPLEX_PUBLIC_URL and SITE_ADDRESS for automatic TLS, plus E2B credentials.
+# Development email signup is optional and must be intentionally enabled.
 echo $GHCR_TOKEN | docker login ghcr.io -u leepokai --password-stdin
 docker compose pull && docker compose run --rm migrate && docker compose up -d
 
-# ---- GitHub repo secrets（之後每次 push main 自動部署）----
-gh secret set DEPLOY_HOST   --body <ip>
-gh secret set DEPLOY_USER   --body <ssh user，需在 docker group>
-gh secret set DEPLOY_SSH_KEY < ~/.ssh/nimplex_deploy   # 私鑰全文
+# Repository secrets for the dev-branch deployment workflow
+gh secret set DEPLOY_HOST --body <ip>
+gh secret set DEPLOY_USER --body <ssh-user-in-docker-group>
+gh secret set DEPLOY_SSH_KEY < ~/.ssh/nimplex_deploy
 
-# ---- 驗證：本機跑組合，只把 base URL 指到雲端 ----
+# Historical combination test, removed on 09-06
 NIMPLEX_BASE_URL=http://<ip> NIMPLEX_API_KEY=nmx_live_... ANTHROPIC_API_KEY=sk-ant-... \
   pnpm --filter @nimplex/example-quickstart exec tsx src/claude-code-e2b.ts
 ```
 
-- 本機驗證（2026-09-03）：`cd deploy && docker compose up --build -d` 全通：migrate + seed、api 經 Caddy 健康、
-  worker 起來、email 註冊發 key、`/v1/sandbox-providers` 在容器內 e2b 可用（docker / local 不可用，符合預期）、內建 loop run 跑完。
-- 映像檔 1.38 GB（整個 workspace 一起裝，因為 lockfile 的 importers 必須跟 workspace 一致）；build 30 秒。要瘦身再用 pnpm deploy。
-- worker 容器裡沒有 docker daemon，sandbox 只能用遠端 provider；要在 VPS 上用 docker provider 得掛 `/var/run/docker.sock`，另議。
-- `NIMPLEX_DEV_EMAIL_AUTH=1` 代表任何拿到 URL 的人都能註冊並用你的 E2B key 開箱：dev 環境別外流 URL，正式環境關掉。
+- Local deploy validation on 09-03 passed build/up, migration/then-existing seed, API health through Caddy, worker startup, signup/key issuance, E2B availability inside containers, unavailable Docker/local as expected, and builtin-loop completion.
+- Images were 1.38 GB because the whole workspace matched lockfile importers; build took 30 seconds. Consider pnpm deploy for slimming later.
+- Worker containers lack a Docker daemon. Local Docker sandboxes on the VPS require a deliberate docker.sock mount; remote providers work without it.
+- Enabling development email auth allows anyone with the URL to register and consume sandbox credentials. Keep that dev endpoint private and disable open signup in production.
 
-## 6. 常見問題
+## 6. Troubleshooting
 
-| 症狀 | 原因 / 解法 |
+| Symptom | Cause / resolution |
 |---|---|
-| api 起不來 `EADDRINUSE :8787` | 舊 process 佔 port：`kill $(lsof -tnP -iTCP:8787 -sTCP:LISTEN)` |
-| console 開在 5174/5175 | 5173 被舊 vite 佔走，同上清掉重啟 |
-| Google 登入 403 `access_denied` | 帳號不在測試使用者名單（§4） |
-| e2e 腳本 sign-up 500/400 | email 後門沒開：`.env` 開 `NIMPLEX_DEV_EMAIL_AUTH=1` 後**重啟 api** |
-| 改了 `.env` 沒生效 | api 是啟動時載入，要重啟 |
-| docker run 卡住 | 先 `docker pull node:22-bookworm-slim`；Docker Desktop 要在跑 |
+| API EADDRINUSE on :8787 | Inspect the old listener with lsof, then stop the identified stale process |
+| Historical console starts on 5174/5175 | An earlier Vite process owns 5173; inspect and restart |
+| Google 403 access_denied | Account absent from the test-user list in §4 |
+| E2E signup 500/400 | Enable NIMPLEX_DEV_EMAIL_AUTH=1 and restart API |
+| .env changes do not apply | Restart API/worker; files load at startup |
+| Docker startup stalls | Ensure Docker Desktop is running and pull node:22-bookworm-slim first |
+
+## 8. Terminal client
+
+With services running, use `nimplex login`, then `nimplex`. `NIMPLEX_ENGINE=pi-harness` opts new sessions into the experimental Pi harness engine described in [the local runtime contract](2026-09-13-local-runtime.md#pi-harness-engine-opt-in-added-2026-09-17); existing sessions keep their recorded engine. `/help` lists commands. Conversations and preferences are stored under the user configuration directory, scoped to API endpoint and organization. Follow-ups seed new runs from the preceding terminal run. `@path` attaches selected local text files; local AGENTS.md/CLAUDE.md are reread on each task. Runtime code changes require service restart unless a separate development watcher is configured.

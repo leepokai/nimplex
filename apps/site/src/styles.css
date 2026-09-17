@@ -1,7 +1,7 @@
 /* ==========================================================================
-   nimplex — 純黑白。
-   沒有任何彩色：強調靠「填滿 vs 描邊」與「反轉」，不靠色相。
-   底層是一張淡格線，所有東西都坐在格子上。
+   nimplex — monochrome.
+   Emphasis uses fill versus outline and inversion rather than hue.
+   A subtle grid provides the common visual foundation.
    ========================================================================== */
 
 :root {
@@ -10,7 +10,7 @@
   --text-2: rgba(255, 255, 255, 0.62);
   --text-3: rgba(255, 255, 255, 0.4);
   --text-4: rgba(255, 255, 255, 0.22);
-  /* 格線比邊框更淡：格線是氛圍，邊框是結構 */
+  /* Grid lines are subtler than structural borders. */
   --grid: rgba(255, 255, 255, 0.055);
   --line: rgba(255, 255, 255, 0.13);
   --line-2: rgba(255, 255, 255, 0.28);
@@ -38,7 +38,7 @@ body {
   font-size: 15px;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
-  /* 全頁格線：整個設計的地板 */
+  /* Page-wide background grid. */
   background-image:
     linear-gradient(to right, var(--grid) 1px, transparent 1px),
     linear-gradient(to bottom, var(--grid) 1px, transparent 1px);
@@ -155,7 +155,7 @@ h3 {
   font-size: 13px;
 }
 
-/* ---------- 小零件：pill / chip ---------- */
+/* ---------- Small components: pill / chip ---------- */
 .pill {
   display: inline-flex;
   align-items: center;
@@ -183,7 +183,7 @@ h3 {
   padding: 3px 9px;
   white-space: nowrap;
 }
-/* 虛線 = 還沒接上。用線型區分，不用顏色 */
+/* Dashed lines identify disconnected state without relying on color. */
 .chip.off {
   border-style: dashed;
   color: var(--text-4);
@@ -237,7 +237,7 @@ h3 {
   margin: 26px auto 0;
   max-width: 16ch;
 }
-/* 第一行退到 62%、第二行留白 —— insforge 用顏色分層，這裡用明度 */
+/* First line at 62% brightness, with space before the second; hierarchy through luminance. */
 .hero h1 .soft {
   color: var(--text-2);
 }
@@ -259,7 +259,7 @@ h3 {
   color: var(--text-3);
 }
 
-/* ---------- 相容列 ---------- */
+/* ---------- Compatibility row ---------- */
 .strip {
   border-top: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
@@ -285,7 +285,7 @@ h3 {
   color: var(--text-2);
 }
 
-/* ---------- 硬格線的功能格 ---------- */
+/* ---------- Features with structural grid lines ---------- */
 .head-c {
   text-align: center;
   margin-bottom: 56px;
@@ -325,9 +325,9 @@ h3 {
   font-size: 11.5px;
   color: var(--text-4);
 }
-/* 撞頂那一刻整段反轉：difference 混合模式一個屬性就把文字、線、背景一起翻過來 */
-/* z-index 蓋過 .nav(60)：撞頂時連頂欄一起反轉。
-   刻意不加 isolation，讓 difference 能跟底下的 nav 一起混合。 */
+/* At the cap, difference blending inverts text, borders, and background together. */
+/* Above .nav (60), so the cap effect also inverts the navigation.
+   Omit isolation so difference blending includes the navigation underneath. */
 .tl-flip {
   position: absolute;
   inset: 0;
@@ -337,7 +337,7 @@ h3 {
   pointer-events: none;
 }
 
-/* ---------- 橫向釘住的三插槽 ---------- */
+/* ---------- Horizontally pinned provider slots ---------- */
 .slots-sec {
   position: relative;
   overflow: hidden;
@@ -490,7 +490,7 @@ h3 {
   }
 }
 
-/* ---------- 行動選單 ---------- */
+/* ---------- Mobile navigation ---------- */
 .menu-toggle {
   display: inline-block;
   font-family: var(--mono);
@@ -569,7 +569,7 @@ footer {
   }
 }
 
-/* ---------- swap：釘住 + scrub，只有三行在換 ---------- */
+/* ---------- Swap: pinned scrub with three changing lines ---------- */
 .swap-sec {
   position: relative;
   min-height: 100dvh;
@@ -600,7 +600,7 @@ footer {
 .swap-code .ln.dim {
   color: var(--text-3);
 }
-/* 會變的那三行永遠有一道左標線：捲之前就看得出「只有這裡會動」 */
+/* A persistent left marker identifies the three values that change during scrolling. */
 .swap-code .swap-line {
   border-left-color: var(--line-2);
 }

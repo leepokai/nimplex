@@ -1,6 +1,6 @@
 /**
- * drizzle 0.45 起所有 query 失敗都包成 DrizzleQueryError，真正的 Postgres 錯誤在 cause。
- * 要看 SQLSTATE（23505 唯一衝突、22023 參數無效…）一律經過這裡，不要直接讀 err.code。
+ * Drizzle 0.45 wraps query failures in DrizzleQueryError; the Postgres error is in cause.
+ * Extract SQLSTATE here (23505 unique violation, 22023 invalid parameter), not via err.code.
  */
 export function pgErrorCode(err: unknown): string | null {
   let current: unknown = err;

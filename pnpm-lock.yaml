@@ -73,6 +73,40 @@ importers:
         specifier: ^7.0.2
         version: 7.0.2
 
+  apps/cli:
+    dependencies:
+      '@earendil-works/pi-ai':
+        specifier: 0.85.1
+        version: 0.85.1(ws@8.21.0)(zod@4.4.3)
+      '@earendil-works/pi-coding-agent':
+        specifier: 0.85.1
+        version: 0.85.1(ws@8.21.0)(zod@4.4.3)
+      '@earendil-works/pi-tui':
+        specifier: 0.85.1
+        version: 0.85.1
+      '@nimplex/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@nimplex/runtime':
+        specifier: workspace:*
+        version: link:../../packages/runtime
+      tsx:
+        specifier: ^4.23.12
+        version: 4.23.12
+    devDependencies:
+      '@nimplex/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@nimplex/testkit':
+        specifier: workspace:*
+        version: link:../../packages/testkit
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+
   apps/site:
     dependencies:
       '@gsap/react':
@@ -109,12 +143,6 @@ importers:
       '@earendil-works/pi-agent-core':
         specifier: 0.85.1
         version: 0.85.1(ws@8.21.0)(zod@4.4.3)
-      '@earendil-works/pi-ai':
-        specifier: 0.85.1
-        version: 0.85.1(ws@8.21.0)(zod@4.4.3)
-      '@earendil-works/pi-coding-agent':
-        specifier: 0.85.1
-        version: 0.85.1(ws@8.21.0)(zod@4.4.3)
       '@nimplex/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
@@ -124,15 +152,15 @@ importers:
       '@nimplex/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@nimplex/runtime':
+        specifier: workspace:*
+        version: link:../../packages/runtime
       '@nimplex/sandbox':
         specifier: workspace:*
         version: link:../../packages/sandbox
       drizzle-orm:
         specifier: ^0.45.2
         version: 0.45.2(@cloudflare/workers-types@5.20260823.1)(@opentelemetry/api@1.9.1)(kysely@0.29.5)(postgres@3.4.9)(sql.js@1.14.2)
-      just-bash:
-        specifier: 3.4.2
-        version: 3.4.2
       postgres:
         specifier: ^3.4.9
         version: 3.4.9
@@ -158,6 +186,9 @@ importers:
       '@nimplex/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@nimplex/runtime':
+        specifier: workspace:*
+        version: link:../../packages/runtime
       '@nimplex/sandbox':
         specifier: workspace:*
         version: link:../../packages/sandbox
@@ -234,6 +265,43 @@ importers:
       tsx:
         specifier: ^4.23.12
         version: 4.23.12
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+
+  packages/runtime:
+    dependencies:
+      '@earendil-works/pi-agent-core':
+        specifier: 0.85.1
+        version: 0.85.1(ws@8.21.0)(zod@4.4.3)
+      '@earendil-works/pi-ai':
+        specifier: 0.85.1
+        version: 0.85.1(ws@8.21.0)(zod@4.4.3)
+      '@earendil-works/pi-coding-agent':
+        specifier: 0.85.1
+        version: 0.85.1(ws@8.21.0)(zod@4.4.3)
+      '@nimplex/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@nimplex/core':
+        specifier: workspace:*
+        version: link:../core
+      '@nimplex/sandbox':
+        specifier: workspace:*
+        version: link:../sandbox
+      just-bash:
+        specifier: 3.4.2
+        version: 3.4.2
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@nimplex/testkit':
+        specifier: workspace:*
+        version: link:../testkit
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
@@ -2013,6 +2081,7 @@ packages:
   '@smithy/node-http-handler@4.12.0':
     resolution: {integrity: sha512-0mq1pHadfyXCYCqm2cNpbjNIT+fbaUpNxewZb/YNr2L0IrEVMOb8gM/Fl4K6XvHCW3uSNDFwPl/+iKm0bx9jYg==}
     engines: {node: '>=18.0.0'}
+    deprecated: Depreacted due to a memory leak issue https://github.com/smithy-lang/smithy-typescript/issues/2258
 
   '@smithy/node-http-handler@4.7.3':
     resolution: {integrity: sha512-/jPhevcTFPMVl6KNjbaI47iOg1zxC7IsnX4PQDGVZKMFceOXtB8IEYaB7a9VvkP/3oC60WzTeKocvSI7vLT0vA==}

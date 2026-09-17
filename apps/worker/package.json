@@ -10,16 +10,14 @@
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "0.85.1",
-    "@earendil-works/pi-ai": "0.85.1",
-    "@earendil-works/pi-coding-agent": "0.85.1",
     "@nimplex/contracts": "workspace:*",
     "@nimplex/core": "workspace:*",
     "@nimplex/db": "workspace:*",
     "@nimplex/sandbox": "workspace:*",
     "drizzle-orm": "^0.45.2",
-    "just-bash": "3.4.2",
     "postgres": "^3.4.9",
-    "zod": "^4.4.3"
+    "zod": "^4.4.3",
+    "@nimplex/runtime": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",

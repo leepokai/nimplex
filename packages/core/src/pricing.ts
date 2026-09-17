@@ -1,19 +1,19 @@
-// 價格表：計量與試算共用同一份資料。
+// Shared price data for accounting and estimates.
 //
-// 這是**資料**不是邏輯——之後改成資料庫裡可版本化的表，介面不動。
-// 找不到的 model 一律走 FALLBACK_RATE（刻意訂得貴），並標記 estimated：
-// 寧可提早殺掉，也不要因為不認得的 model 而讓美元上限變成假的。
+// Prices are data; a future versioned DB table can preserve this interface.
+// Estimates for unknown models use an intentionally expensive FALLBACK_RATE.
+// Paid runtime dispatch separately requires a known rate before making a request.
 
 import type { ModelProvider } from "@nimplex/contracts";
 
 export interface TokenRate {
-  /** 每 1M input token 的美元價 */
+  /** USD per million input tokens. */
   inputPerMtok: number;
-  /** 每 1M output token 的美元價 */
+  /** USD per million output tokens. */
   outputPerMtok: number;
-  /** 快取寫入倍率（相對 input） */
+  /** Cache-write multiplier relative to input price. */
   cacheWriteMultiplier?: number;
-  /** 快取讀取倍率（相對 input） */
+  /** Cache-read multiplier relative to input price. */
   cacheReadMultiplier?: number;
 }
 
@@ -26,14 +26,14 @@ export interface TokenUsage {
 
 export interface CostBreakdown {
   costUsd: number;
-  /** true = 用 fallback 價估的，不是表上的真價 */
+  /** True when using a fallback estimate rather than a listed rate. */
   estimated: boolean;
   rate: TokenRate;
 }
 
 const ANTHROPIC_DEFAULTS = { cacheWriteMultiplier: 1.25, cacheReadMultiplier: 0.1 } as const;
 
-/** 2026-08-31 的第一方定價。改價時連同日期一起更新。 */
+/** First-party prices recorded on 2026-08-31; update this date with price changes. */
 const ANTHROPIC_RATES: Record<string, TokenRate> = {
   "claude-fable-5": { inputPerMtok: 10, outputPerMtok: 50, ...ANTHROPIC_DEFAULTS },
   "claude-mythos-5": { inputPerMtok: 10, outputPerMtok: 50, ...ANTHROPIC_DEFAULTS },
@@ -55,18 +55,19 @@ const OPENAI_RATES: Record<string, TokenRate> = {
 const PRICES: Record<ModelProvider, Record<string, TokenRate>> = {
   anthropic: ANTHROPIC_RATES,
   openai: OPENAI_RATES,
-  // OpenRouter 會在回應裡直接給實際成本，價格表只是它回不出來時的保險。
+  // OpenRouter reports actual cost; listed rates are a fallback when unavailable.
   openrouter: {},
+  "openai-codex": {},
 };
 
-/** 不認得的 model 用這個價估：貴到讓上限依然有意義。 */
+/** Conservative estimate for unrecognized models; not a paid-dispatch authorization. */
 export const FALLBACK_RATE: TokenRate = { inputPerMtok: 15, outputPerMtok: 75 };
 
 export function lookupRate(provider: ModelProvider, model: string): TokenRate | null {
   const table = PRICES[provider];
   const exact = table[model];
   if (exact) return exact;
-  // provider 前綴（OpenRouter 慣例 "anthropic/claude-sonnet-4.5"）與日期後綴都試著剝掉
+  // Normalize provider prefixes (OpenRouter) and dated model suffixes.
   const bare = model.includes("/") ? (model.split("/").at(-1) ?? model) : model;
   const normalized = bare.replace(/\./g, "-").replace(/-\d{8}$/, "");
   for (const candidates of Object.values(PRICES)) {

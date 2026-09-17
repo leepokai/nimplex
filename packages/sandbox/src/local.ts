@@ -1,11 +1,11 @@
-// local provider：直接在主機上開一個暫存工作目錄跑指令。
+// Local provider executes commands in a temporary directory on the host.
 //
-// 只給開發用，預設關閉：使用者上傳的 harness 是任意 shell 指令，
-// 在主機上跑等於沒有隔離。要打開必須明確設 NIMPLEX_ALLOW_LOCAL_SANDBOX=1。
+// Development only, disabled by default. Arbitrary shell runs without isolation,
+// so enable it explicitly with NIMPLEX_ALLOW_LOCAL_SANDBOX=1.
 //
-// 已知限制（conformance kit 以 absolutePaths:false 宣告）：/workspace 只是虛擬映射——
-// writeFile / readFile / exec 的 workdir 會轉到暫存目錄，但 shell 指令裡寫死的 /workspace/... 絕對路徑
-// 在 host 上並不存在。會用絕對路徑讀寫的 harness（Claude Code 之類）在 local 上行為與 docker 不同。
+// Declared absolutePaths:false: /workspace is a virtual mapping for file operations
+// and exec cwd, not a real host directory. Absolute paths embedded in shell scripts
+// therefore behave differently from isolated Docker or cloud sandboxes.
 
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -36,7 +36,7 @@ export class LocalSandboxSession implements SandboxSession {
     return root;
   }
 
-  /** 沙箱裡的路徑（/workspace/...）對映到主機暫存目錄，且不准逃出去。 */
+  /** Map /workspace paths into the temporary host directory without escaping it. */
   protected hostPath(path: string): string {
     const relative = isAbsolute(path)
       ? path.startsWith(this.state.workdir)

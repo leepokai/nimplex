@@ -1,74 +1,67 @@
-# Console IA 定義（2026-09-01）
+# Console information architecture (2026-09-01)
 
-> 承接 `2026-09-01-sdk-architecture.md` 的定位修訂（OpenRouter for cloud agents）。
-> 本文定義 console 的每一個 tab 是什麼、真假狀態、以及背後缺哪個 API。
-> 鐵則不變（08-27 §5）：console 只打公開 API、每個改狀態的操作旁邊都有「複製這次呼叫」。
+> Follows the OpenRouter-for-cloud-agents positioning in `2026-09-01-sdk-architecture.md`.
+> Defines each tab, its implementation status, and missing API support.
+> The 08-27 §5 rule remains: the console uses only public APIs, with “Copy this call” beside every state-changing action.
+> **Historical:** the console, gateway, and tool registries described here were removed on 2026-09-06.
 
-## Tab 總表
+## Tab inventory
 
-| 分組 | Tab | 狀態 | 資料來源 | 缺的後端 |
+| Group | Tab | Status at the recorded date | Data source | Missing backend |
 |---|---|---|---|---|
-| 執行 | **Runs** | ✅ 真 | `runs.list/kill/cancel/events`（SSE 即時）；2026-09-03 起沒 run 時是空狀態，不再塞示意 run | — |
-| 執行 | **Usage** | ✅ 真（2026-09-03） | `usage.summary()` → `GET /v1/usage`（day / harness / external_user_id / model 分桶） | — |
-| 執行 | **跑前試算** | 🟢 半真 | `models.list()` 真價格 + 手抄機時常數 | price registry 進 DB、版本化 |
-| 三插槽 | Harness | ✅ 真 | 既有；2026-09-03 起上傳表單開放完整 manifest（env / output / workdir / timeout），可編輯、可覆寫內建 | — |
-| 三插槽 | LLM provider | ✅ 真 | 既有（org-scope only） | — |
-| 三插槽 | Sandbox | ✅ 真 | 既有 | — |
-| 工具 | **Skills** | ✅ 真（registry） | `skills.list/get/upload/delete` → `/v1/skills` | 建 run 帶 `skills: [slug]` 的沙箱注入路徑 |
-| 工具 | **MCP servers** | ✅ 真（registry） | `mcpServers.list/get/put/delete` → `/v1/mcp-servers` | 建 run 帶 `mcp_servers: [slug]` 的注入路徑；broker 憑證解析 |
-| 組織 | **API keys** | ✅ 真 | `apiKeys.list/create/revoke` | — |
-| 組織 | **Members** | ✅ 真 | `members.list/add/setRole/remove` | 邀請流（目前直接加 email） |
-| topbar | **Org switcher** | ✅ 真 | `orgs.list/create` + `x-nimplex-org` header | auth 上線後 org 改由 key/session 決定 |
+| Execution | **Runs** | ✅ Real | `runs.list/kill/cancel/events`, live SSE; since 2026-09-03, no runs shows an empty state instead of sample runs | — |
+| Execution | **Usage** | ✅ Real since 2026-09-03 | `usage.summary()` → `GET /v1/usage`, bucketed by day/harness/external_user_id/model | — |
+| Execution | **Estimate before running** | 🟢 Partially real | Real `models.list()` prices and manually maintained compute constants | Versioned DB price registry |
+| Three slots | Harness | ✅ Real | Since 2026-09-03, full manifest upload (env/output/workdir/timeout), editing, and built-in overrides | — |
+| Three slots | LLM provider | ✅ Real | Existing organization-scoped implementation | — |
+| Three slots | Sandbox | ✅ Real | Existing implementation | — |
+| Tools | **Skills** | ✅ Real registry | `skills.list/get/upload/delete` → `/v1/skills` | Sandbox injection for run `skills: [slug]` |
+| Tools | **MCP servers** | ✅ Real registry | `mcpServers.list/get/put/delete` → `/v1/mcp-servers` | Run injection for `mcp_servers: [slug]` and broker credential resolution |
+| Organization | **API keys** | ✅ Real | `apiKeys.list/create/revoke` | — |
+| Organization | **Members** | ✅ Real | `members.list/add/setRole/remove` | Invitations; currently adds emails directly |
+| Top bar | **Organization switcher** | ✅ Real | `orgs.list/create` and `x-nimplex-org` | After authentication, derive organization from key/session |
 
-## 各 tab 功能定義
+## Tab definitions
 
-### Runs（observability 核心）
-run 列表（狀態、harness、model×sandbox、spent/budget、時間），active run 2 秒輪詢、
-終態 15 秒。點開看即時事件流（SSE + Last-Event-ID 續傳，SDK 同一條路），
-`external_user_id` 標籤與 metering 模式顯示在 detail。兩個動詞分開：
-**Cancel**（優雅收尾）／**Kill**（銷毀沙箱）——對映 API 的兩個 primitive。
+### Runs: observability core
+
+List status, harness, model × sandbox, spent/budget, and duration. Poll active runs every two seconds and terminal runs every fifteen. Details show live SSE with `Last-Event-ID` resume using the same SDK path, the `external_user_id` label, and metering mode. Keep **Cancel** (graceful completion) and **Kill** (destroy sandbox) separate, matching the two API primitives.
 
 ### Usage
-花費 rollup：今日／本月卡 + 按 harness、按 `external_user_id` 標籤分組。
-資料層已就緒（`usage_events` 每筆掛 run/provider/標籤），缺 rollup endpoint。
-定位語：「錶與 harness 無關」在這頁被看見。
 
-### 跑前試算（OpenRouter 的比價體驗）
-輸入預估 token 量與時長 → 全部 model × sandbox 組合的成本由低到高排。
-model 單價與計量共用同一份價格表（`GET /v1/models`）；機時目前是近似常數，
-待 price registry 版本化。**預設視圖 token 為主、機時為輔**（08-27 §4.4 的鐵律）。
+Spending rollups: today/month cards and grouping by harness and `external_user_id`. The original design noted that `usage_events` already carried run/provider/labels but lacked a rollup endpoint; the 09-03 inventory above records its later implementation. This page makes harness-independent metering visible.
 
-### Skills（agent 用的）
-skill = 一個資料夾 + `SKILL.md`。上傳進 org registry，建 run 帶 `skills: ["slug"]`，
-supervisor 在沙箱裡放進該 harness 的 skills 目錄——跨 harness 同一份 skill 沿用。
-與「使用者拿來管 nimplex 的 skill」（AgentConnect 安裝卡）刻意分開，不混頁。
+### Estimate before running: OpenRouter-style comparison
 
-### MCP servers（agent 用的）
-agent 在沙箱內連得到的 MCP endpoint 白名單（未來 egress allowlist 的一部分）。
-這是「原生工具橋接」入口：客戶把自己產品的 MCP server 掛進來，agent 能操作宿主產品。
-auth 只收 broker 引用，明文不落地不進箱。建 run 帶 `mcp_servers: ["slug"]`。
-頁尾另放「用你的 AI 工具管 nimplex」卡（`@nimplex/mcp`）——兩個 MCP 語意在同頁分區、不混淆。
+Enter estimated tokens and duration, then sort all model × sandbox combinations by cost. Model prices share the accounting table exposed by `GET /v1/models`; compute prices remain approximate constants until the price registry is versioned. **Tokens dominate the default view; compute is secondary**, following 08-27 §4.4.
+
+### Skills used by agents
+
+A skill is a directory plus `SKILL.md`. Upload it to the organization registry and pass `skills: ["slug"]` when creating a run. The supervisor installs it into the selected harness's skills directory so one skill works across harnesses. Keep this separate from skills users install to manage nimplex through the AgentConnect card.
+
+### MCP servers used by agents
+
+An allowlist of MCP endpoints reachable by the sandboxed agent, eventually part of egress policy. This is the native product tool bridge: a customer's MCP server lets the agent operate its host product. Authentication accepts only broker references; plaintext is neither stored nor placed in the sandbox. Runs specify `mcp_servers: ["slug"]`.
+
+A separate footer card, “Manage nimplex with your AI tools,” advertises `@nimplex/mcp`. These two MCP roles occupy distinct areas of the same page.
 
 ### API keys
-org 程式化身分：建立時明文只顯示一次、hash 落地、列表只有 last4、可撤銷。
-**per-key limit 是未來的花費控制掛點**（OpenRouter 模式：要 per-user 管控就發 per-user 的 key）。
+
+Organization programmatic identity: display plaintext once at creation, store a hash, list only last4, and support revocation. **Per-key limits are the future spending-control extension point**, following OpenRouter's pattern of issuing individual keys for per-user control.
 
 ### Members
-console 登入者（owner／admin／member）。權責：owner 管帳與成員、admin 管三插槽與 key、
-member 唯讀＋開 run。「人」只有這層——終端使用者由客戶自理。
 
-### Org switcher（topbar）
-`GET/POST /v1/orgs` + `x-nimplex-org` header（middleware 驗證存在）。選擇存
-localStorage、切換整頁重載；存的 org 失效時自動退回 default 自救。
-auth 上線後 header 讓位給 key/session 的 org 綁定。
+Console users are owners, admins, or members. Owners manage billing/membership; admins manage the three slots and keys; members read and create runs. Human identities exist at this layer; customers manage their own end users.
 
-## 從示意轉真的順序
+### Organization switcher
 
-1. ✅ `api_keys` + Bearer middleware（2026-09-01）
-2. ✅ `GET /v1/usage` rollup（2026-09-03；`usage_records` 分桶加總，tz 由呼叫端帶）
-3. ✅ `/v1/skills`、`/v1/mcp-servers` registry（2026-09-03；表 + CRUD，PUT 冪等）
-4. ✅ Members（2026-09-01，Better Auth 接線）
+`GET/POST /v1/orgs` with `x-nimplex-org`, validated by middleware. Store selection in localStorage and reload on switching; fall back to the default organization if the stored selection becomes invalid. Once authentication is enabled, key/session organization binding supersedes the header-only mechanism.
 
-console 已無示意資料。剩下的是 registry 的「用」而不是「管」：
-`createRunRequest` 收 `skills` / `mcp_servers`，worker 開箱時把 skill 檔放進 harness 的 skills 目錄、
-把 MCP endpoint 寫進 harness 的設定（每家 harness 格式不同，先做 claude-code）。
+## Replacing mock data
+
+1. ✅ `api_keys` and Bearer middleware, 2026-09-01.
+2. ✅ `GET /v1/usage` rollup, 2026-09-03; bucketed `usage_records` with caller-supplied timezone.
+3. ✅ `/v1/skills` and `/v1/mcp-servers`, 2026-09-03; tables, CRUD, and idempotent PUT.
+4. ✅ Members with Better Auth integration, 2026-09-01.
+
+At that checkpoint, the console no longer used mock data. The remaining work was consuming registry entries: accept `skills` / `mcp_servers` in `createRunRequest`, install skill files during sandbox creation, and write MCP endpoints into harness-specific configuration, starting with claude-code.

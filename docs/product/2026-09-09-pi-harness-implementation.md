@@ -1,17 +1,12 @@
-# 2026-09-09 · Pi + just-bash harness：實作建議
+# 2026-09-09 · Pi + just-bash harness: implementation proposal
 
-> 歷史規劃文件。2026-09-10 的實作與驗收狀態以 [harness runtime](2026-09-10-harness-runtime.md) 為準。
+> Historical planning document. The [harness runtime](2026-09-10-harness-runtime.md) records the implementation and acceptance state as of 2026-09-10.
 
-本文根據目前 working tree、9/6 第 7 節定案、9/9 demo 計畫與上游文件整理。
-以下是實作建議；已驗證既有 Pi spike 的假上游呼叫與 usage，正式 harness 尚未實作。
-不把建議當作 Kevin 已拍板的新決策。
+This proposal draws on the working tree, the 09-06 §7 decision, the 09-09 demo plan, and upstream documentation. The existing Pi spike verified fake-upstream calls and usage; the production harness had not yet been implemented at the point described here. Recommendations are not additional decisions approved by Kevin.
 
-## 產品邊界
+## Product boundary
 
-建議把 nimplex 做成「以 Pi 為 agent kernel、具備持久化工作區的可恢復 runtime」。
-Pi 負責模型與工具的對話迴圈；just-bash 負責虛擬 shell；nimplex 負責每一步的
-持久化、執行所有權、預算、取消與恢復。第一個可展示成果是 worker 死掉後，
-新 worker 能從已提交的訊息與檔案繼續完成工作。
+Build nimplex as a recoverable runtime with Pi as its agent kernel and a durable workspace. Pi owns the model/tool conversation loop, just-bash supplies the virtual shell, and nimplex owns step durability, execution ownership, budgets, cancellation, and recovery. The first demonstrable result is another worker finishing a task from committed messages and files after the original worker dies.
 
 ```text
 SDK → API → Postgres ← worker / nimplex harness → Pi → model provider
@@ -23,147 +18,107 @@ SDK → API → Postgres ← worker / nimplex harness → Pi → model provider
                     Tier 2: SandboxProvider
 ```
 
-Tier 0 是 durable workspace。VFS 是執行中的副本，Postgres 裡已提交的版本才可
-用來恢復。工具環境不繼承 worker 的 provider key 或完整 process.env。
+Tier 0 is the durable workspace. The VFS is an execution copy; only committed Postgres state is recoverable. Tools must not inherit provider keys or the worker's complete `process.env`.
 
-## 現有程式碼的接點與缺口
+## Existing integration points and gaps
 
-| 位置 | 目前行為 | Pi 接入前要補的事 |
+| Location | Behavior at this checkpoint | Required before Pi integration |
 | --- | --- | --- |
-| `packages/core/src/executor.ts` | `step()` 回傳整批 events、cost、next；沒有 signal 或中途 checkpoint | 定義可等待的持久化介面、AbortSignal 與每個執行邊界的責任 |
-| `apps/worker/src/index.ts` | 固定呼叫 stub；lease 60 秒；結果回來才寫 events | heartbeat、失去 lease 就取消、執行期間檢查 kill、每次持久化驗 fence |
-| 同上：`processStep()` | 執行後才結算，且 complete 分支先於 exceeded | 執行前預留預算；終態及 kill 的競爭以交易/CAS 決定 |
-| `packages/db/src/events.ts` | 事件序號與內容分兩個 query；呼叫端可傳交易 | 關鍵提交強制放同一交易，並與 workspace/usage/checkpoint 一起提交 |
-| `packages/db/src/schema.ts` | 有 runs、work_items、events、usage_records、reserved_usd | 補 workspace 版本、工具執行識別與預留/結算的去重紀錄 |
-| `apps/api/src/app.ts` | 初始工作 payload 是 stub 的 `{ step: 1 }` | 改成有版本的 harness 啟動契約，讓新 worker 能正確還原 |
-| `packages/testkit/src/fake-anthropic.ts` | 已有假上游 | 補腳本化工具呼叫、usage、延遲、中斷與重試情境 |
+| `packages/core/src/executor.ts` | `step()` returns one batch of events, cost, and next work; no signal or intermediate checkpoint | Awaitable persistence interface, AbortSignal, and explicit execution boundaries |
+| `apps/worker/src/index.ts` | Fixed stub, 60-second lease, events written only after execution | Heartbeat, cancellation on lease loss, kill checks during execution, fencing on every commit |
+| `processStep()` in the same file | Post-execution settlement; completion checked before budget excess | Reserve before execution; resolve terminal/kill races with transactions or CAS |
+| `packages/db/src/events.ts` | Sequence allocation and insertion are separate queries; callers can pass a transaction | Require critical writes to share a transaction with workspace, usage, and checkpoints |
+| `packages/db/src/schema.ts` | Runs, work_items, events, usage_records, reserved_usd | Workspace versions, tool execution IDs, and deduplicated reservation/settlement records |
+| `apps/api/src/app.ts` | Initial stub payload `{ step: 1 }` | Versioned harness startup contract that replacement workers can restore |
+| `packages/testkit/src/fake-anthropic.ts` | Existing fake upstream | Scripted tools, usage, delays, interruption, and retry scenarios |
 
-不要把整次 `agent.prompt()` 塞進目前的 `step()` 然後最後一次寫 DB。
-Pi 可能跑很多輪，期間 lease 過期、取消無法傳遞、已做的檔案修改也沒有提交邊界。
+Do not place an entire `agent.prompt()` inside the existing `step()` and write the DB only at the end. Pi can run many rounds while leases expire, cancellation cannot propagate, and file changes lack commit boundaries.
 
-## Pi 接法：先完成小型可行性試驗
+## Pi integration: complete a small feasibility spike first
 
-目前已有 `sandbox/pi-spike/spike.ts` 與安裝好的依賴：Pi 0.85.1、just-bash 3.4.2，
-四個工具的 VFS adapter 也已寫好。沿用這份試驗補驗收，再加入正式 workspace 依賴。
-優先使用
-`@earendil-works/pi-agent-core` 的 `Agent` 與 `pi-ai`；按需取用 coding-agent
-的工具工廠，不先導入整套 CLI session、擴充載入與本機設定。
+`sandbox/pi-spike/spike.ts`, Pi 0.85.1, just-bash 3.4.2, and four VFS tool adapters already exist. Extend that spike with acceptance checks before adding production workspace dependencies. Prefer `Agent` from `@earendil-works/pi-agent-core` and `pi-ai`; use coding-agent tool factories as needed without importing the entire CLI session, extension loader, or local settings system.
 
-本次以假 key、明確指定 localhost base URL 執行既有 spike：假上游收到一次請求，
-Pi 回傳 input=1000、output=500 的 usage。`hello.txt` 沒建立，因為目前假上游只回
-文字、不發 tool calls。這證明 headless/base URL/usage 路徑可用，尚未證明四工具、
-恢復或取消。輸出裡的 cost 使用 spike 的手填價格，不是實際支出或正式帳本驗證。
+The existing spike was run with a fake key and explicit localhost base URL. The upstream received one request, and Pi reported input=1000/output=500. No `hello.txt` was created because the fake upstream then emitted text only, without tool calls. This verifies headless operation, base URL overrides, and usage, not tools, recovery, or cancellation. Its printed cost uses manually entered spike prices and is neither real spending nor a production-ledger test.
 
-上游 `Agent` 支援自訂 `streamFn`、messages、sequential tools，以及會等待的
-async subscribers。可用這些邊界接持久化。低階 `agentLoop()` 的 iterator
-是觀察事件流，不會等你的 async consumer 完成才進入下一階段，不宜直接當 DB barrier。
-[`Agent` 官方文件](https://github.com/earendil-works/pi/blob/main/packages/agent/README.md)
+Upstream `Agent` supports custom `streamFn`, messages, sequential tools, and awaited async subscribers. These can form persistence barriers. The lower-level `agentLoop()` iterator observes events without waiting for an async consumer before advancing, so it should not be used directly as a database barrier. See the [official Agent documentation](https://github.com/earendil-works/pi/blob/main/packages/agent/README.md).
 
-試驗通過條件：
+Spike acceptance:
 
-1. 無 CLI、無真人 key，透過自訂 base URL 連到假 Anthropic 上游並讀取 usage。
-2. 四個工具 `read/write/edit/bash` 都操作同一份 just-bash VFS，不碰 host workspace。
-3. assistant 完整訊息持久化之後工具才開始；工具提交之後下一個模型請求才開始。
-4. 從保存的完整 messages 建立新的 Agent 能繼續，tool call/result ID 不變。
-5. `AbortSignal` 能停止 model stream 和工具；有 timeout，失敗不繼續自動呼叫模型。
+1. Connect to a fake Anthropic server through a custom base URL without a CLI or real key, and extract usage.
+2. All four tools—read/write/edit/bash—operate on the same just-bash VFS, never the host workspace.
+3. Tools start only after the full assistant message is durable; the next model request starts only after tool commits.
+4. A new Agent can continue from saved complete messages with unchanged tool call/result IDs.
+5. AbortSignal stops model streams and tools; timeouts work, and failures do not trigger automatic model calls.
 
-`createBashTool(cwd, { operations })` 的替換點確實存在，但仍要檢查周邊行為：
-目前上游 wrapper 會建立 shell env，長輸出也可能卸載到 host 暫存檔。adapter 必須
-自行建立最小 env，輸出引用必須能跨 worker 讀取；必要時用自訂 AgentTool 包 just-bash。
-[`BashOperations` 原始碼](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/src/core/tools/bash.ts)
+The `createBashTool(cwd, { operations })` extension point exists, but surrounding behavior also matters: the upstream wrapper builds a shell environment and may offload large output to host temporary files. The adapter must create a minimal environment and make output references readable across workers. If necessary, wrap just-bash in a custom AgentTool. See [BashOperations source](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/src/core/tools/bash.ts).
 
-## MVP 的持久化邊界
+## MVP persistence boundaries
 
-先限制同一 run 的工具循序執行。建議一次 claim 驅動至一個 Pi turn 結束，以
-`shouldStopAfterTurn` 停下；turn 內仍然在模型與每個工具之間提交 checkpoint。
-claim 重新領取時以持久化 phase 判斷是補做 pending tool 還是開始下一個 model call，
-不能無條件重跑整個 turn。這會改變目前 work item 的語意，必須先更新 contracts/port。
+Initially execute tools sequentially within each run. Let a claim drive one Pi turn, stopping with `shouldStopAfterTurn`, while committing checkpoints between the model and each tool. On reclaim, durable phase determines whether to finish pending tools or start a new model request; never unconditionally replay the turn. This changes work-item semantics, so update contracts/ports first.
 
-1. **呼叫模型之前**：交易內驗證 org、run 狀態、lease owner/fence；建立 call ID 並預留額度。
-2. **模型回應完成**：保存完整 assistant message、tool calls、provider metadata、usage，
-   結算 reservation 並提交待執行的工具識別。SSE 的文字 delta 不能代替這份完整記錄。
-3. **工具開始前**：記錄穩定的 tool call ID、輸入與執行狀態。
-4. **工具結束後**：在一個短交易中驗 fence、workspace version 與 run 狀態，原子提交
-   檔案差異、tool result、checkpoint 和下一步。不要在整段工具執行期間持有 DB 交易。
-5. **繼續對話**：從已提交 log 投影 messages。assistant 留有 pending tools 時，先補齊
-   對應結果，再繼續 Pi；不能只拿最後一條事件直接 `continue()`。
+1. **Before the model:** transactionally validate organization, run status, lease owner/fence; create a call ID and reserve funds.
+2. **After the complete response:** save assistant message, tool calls, provider metadata, and usage; settle the reservation and commit pending tool identities. SSE text deltas cannot substitute for this record.
+3. **Before each tool:** record stable call ID, input, and execution status.
+4. **After each tool:** in a short transaction, validate fence, workspace version, and run status; atomically commit file deltas, tool result, checkpoint, and next work. Do not hold a transaction throughout tool execution.
+5. **Continuation:** project messages from committed logs. Complete pending assistant/tool pairs before continuing Pi; the final event alone is insufficient for `continue()`.
 
-MVP 可用 workspace_files 整檔儲存：至少包含 org/run/path、檔案種類、內容 bytes、
-必要 metadata，另有 workspace revision。每次工具使用私有 VFS，執行後 diff 整批提交。
-讀取與變更都以 org 隔離；刪除、rename、空目錄、binary 與 symlink 要明訂支援範圍。
-不要把 `sqlite` 寫出的 binary DB 用 UTF-8 字串保存。
+The MVP can store full files in workspace_files, including organization/run/path, entry type, content bytes, required metadata, and workspace revision. Each tool uses a private VFS and commits its resulting diff as a batch. Scope reads and changes by organization. Define support for deletion, rename, empty directories, binary files, and symlinks explicitly; never store a SQLite binary database as UTF-8 text.
 
-這個 MVP 的真相是「已提交 event log + 同步提交的 workspace state」。若尚未保存
-完整 write deltas，就不能聲稱任意歷史檔案版本都能只靠 log 重建；歷史 snapshot/replay
-是之後的工作。
+The MVP source of truth is the committed event log plus atomically committed workspace state. Without complete write deltas, it cannot claim arbitrary historical files are reconstructible from logs alone. Historical snapshots and replay can follow later.
 
-恢復時：
+Recovery rules:
 
-- 已有 tool result 的工具：讀回結果，不再執行。
-- 純 VFS 工具執行中死亡、沒有提交：丟掉私有副本，從上一個 workspace revision 重做。
-- 模型已受理但回應未保存：標記未知結果，保留 reservation；不可假設呼叫免費失敗。
-- 未來真箱子或外部寫入工具結果未知：需 idempotency key 或查詢外部狀態；不能盲目重播。
+- Tools with committed results: reuse results without execution.
+- Uncommitted pure VFS execution: discard the private copy and rerun from the previous workspace revision.
+- Accepted model request without a saved response: mark unknown and retain the reservation; do not assume a free failure.
+- Future native/external writes with unknown outcomes: use idempotency keys or inspect external state, never blind replay.
 
-因此恢復承諾是「從已提交的執行邊界繼續」，不是恰好從被殺掉的那個 token 繼續。
+The promise is continuation from committed execution boundaries, not from the exact token interrupted by a crash.
 
-## 美元硬上限要先定義清楚
+## Define the USD cap precisely
 
-目前程式碼只保證步驟後停止；例如餘額 $0.01，下一步花 $0.12，結算時已經超額。
-最後一步又可能先走 completed。現有 stub 驗收不能證明真 LLM 的硬上限。
+At this checkpoint, the code stops only after a step. A $0.01 balance can fund a $0.12 step and already be exceeded at settlement; a final step may even take the completion branch first. Stub acceptance does not prove a hard cap for real LLM calls.
 
-建議第一版只支援能計算保守價格上界的模型與計費項目：
+Initially support only models and charge categories with conservative computable bounds:
 
-- 原子計算 `available = budget - settled - reserved`。
-- 每次送出前預留輸入成本上界、輸出上限與適用的其他收費；依額度限制 max output tokens。
-- 若無法給出輸入/其他費用的保守上界，就不宣稱該模型有嚴格成本保證。
-- 以 call ID 去重結算；重試也必須有自己的 reservation，避免 SDK 隱藏重試繞過預算。
-- crash 或取消不代表 provider 沒收費；結果未知的 reservation 不直接釋放，先 reconciliation。
-- 超額、使用者 kill、正常完成都必須在同一終態協調規則下判定，避免互相覆寫。
+- Compute `available = budget - settled - reserved` atomically.
+- Reserve input bounds, output caps, and applicable extra charges before dispatch; restrict max output tokens to available funds.
+- Do not promise strict bounds for a model whose input or other charges cannot be conservatively bounded.
+- Deduplicate settlement by call ID. Every retry needs its own reservation; hidden SDK retries must not bypass budgets.
+- Crashes and cancellation do not imply zero provider charges. Keep unknown reservations until reconciliation.
+- Budget excess, user kill, and normal completion share one terminal coordination rule so they cannot overwrite each other.
 
-這裡保證的範圍先是支援模型的 LLM 成本。真箱子的存活費、儲存與網路成本若未納入，
-UI/文件須清楚標示。USD 精度、進位與安全餘量也要一致。
+The initial guarantee covers supported-model LLM cost. If sandbox lifetime, storage, or networking is excluded, say so in UI/docs. Use consistent USD precision, rounding, and safety margins.
 
-## just-bash 與後續升級
+## just-bash and escalation
 
-just-bash 提供可替換 FS、執行資源上限與可選網路，但完整 native binary 執行仍需
-真正的 sandbox。依固定版本確認限制參數並實測取消；MVP 先關閉網路與額外執行器。
-[`just-bash` 官方文件](https://github.com/vercel-labs/just-bash/blob/main/packages/just-bash/README.md)
+just-bash provides replaceable filesystems, execution limits, and optional networking; arbitrary native binaries still require a real sandbox. Verify limit options and cancellation against the pinned version. Disable networking and optional executors for the MVP. See [official just-bash documentation](https://github.com/vercel-labs/just-bash/blob/main/packages/just-bash/README.md).
 
-9/6 的「先試 Tier 1，失敗再升 Tier 2」應修正為**執行前路由**。例如：
+Revise the 09-06 “try Tier 1, then escalate on failure” idea to **route before execution**. For example:
 
 ```bash
 echo one >> a.txt; npm test
 ```
 
-若先執行前半段，再把整句丟進真箱子，`one` 會被寫兩次。Slice 2 應在執行前
-保守判斷整段指令的能力需求；無法判斷的動態 shell 直接走已授權的真箱子或回傳
-明確的不支援結果。不能僅憑 exit code 非零就升級。能力路由也不能取代 sandbox 邊界。
+Running the first half locally and then replaying the full script remotely appends `one` twice. Slice 2 should conservatively determine whole-script capabilities before execution. Unknown dynamic shell must use an authorized real sandbox or return an explicit unsupported result. A nonzero exit code alone must never trigger escalation. Capability routing does not replace sandbox isolation.
 
-同步先做單一 writer 與明確 checkpoint，包含 dirty/untracked/deleted/binary 檔案；
-只做 git commit/checkout 不足以代表整份工作區。generation 表示執行環境替換，
-workspace revision 表示檔案版本，兩者分開。
+Start synchronization with a single writer and explicit checkpoints including dirty, untracked, deleted, and binary files. Git commit/checkout alone does not represent the full workspace. Keep sandbox generation (environment replacement) separate from workspace revision (file version).
 
-## 交付順序與驗收
+## Delivery order and acceptance
 
-| 順序 | 交付 | 必須通過 |
+| Order | Deliverable | Required acceptance |
 | --- | --- | --- |
-| 1 | Pi adapter 試驗，固定版本 | 假上游、四工具、usage、async barrier、重建 messages、取消 |
-| 2 | durable workspace + just-bash | write/delete/rename/binary 後重建一致；提交前 crash 不留半套檔案 |
-| 3 | worker + checkpoint + budget | heartbeat；lease 被接管後舊 worker 寫入被拒；reservation/settle 去重 |
-| 4 | 自動 crash demo | 工具前、執行中、提交後各 kill 一次，append 不重複；SSE 續傳；低預算不發出付不起的 call |
-| 5 | Slice 2 真箱子 | 執行前路由、檔案同步、generation、environment.reset |
-| 6 | Slice 3 context 管理 | compaction checkpoint、原始訊息/工具輸出歸檔、分頁讀取 |
+| 1 | Pinned Pi adapter spike | Fake upstream, four tools, usage, async barriers, message reconstruction, cancellation |
+| 2 | Durable workspace and just-bash | Consistent write/delete/rename/binary restore; no partial state after pre-commit crashes |
+| 3 | Worker, checkpoints, budgets | Heartbeat, stale-worker write rejection after takeover, reservation/settlement deduplication |
+| 4 | Automated crash demo | Kill before/during/after tools without duplicate append; resumable SSE; no unaffordable calls |
+| 5 | Slice 2 native sandbox | Pre-execution routing, file synchronization, generation, environment.reset |
+| 6 | Slice 3 context management | Compaction checkpoints, raw message/tool archives, pagination |
 
-對 9/14 demo，集中做前四項。第一個任務應可自動展示：建立並修改檔案 → worker
-被 kill -9 → 另一個 worker 接手 → 完成且檔案不重複、事件不丟失、預算帳本一致。
-模型呼叫未知結果的成本情境另外注入故障驗證，不能只在安全時機殺 worker 就宣稱全面恢復。
+For the 09-14 demo, focus on the first four. Automatically create/edit files, SIGKILL the worker, take over, and complete with no duplicate file changes, lost events, or accounting inconsistency. Separately inject failures for unknown model outcomes; killing only at safe moments does not demonstrate full recovery.
 
-正式程式碼先放 `apps/worker/src/harness/`，ports 和純投影函式放 core，持久化放 db，
-事件 schema 放 contracts；等有第二個真正使用者再拆 `packages/harness`。
+Start production code under `apps/worker/src/harness/`, ports and pure projections in core, persistence in db, and event schemas in contracts. Extract `packages/harness` only when a second real consumer exists.
 
-## Codex 專案設定
+## Codex project configuration
 
-已建立根目錄 `AGENTS.md` 與 `.codex/config.toml`。AGENTS 明確讀取共用 CLAUDE.md
-及其參考文件；模型、權限與憑證沿用個人設定。既有 `.agents/skills` 已是 Codex 原生
-位置，無需再複製。Claude 專案沒有 MCP、hooks、自訂 agents 或 commands 可遷移。
-Codex review 不冒充原專案規定的 Opus commit 前 review。
+Root `AGENTS.md` and `.codex/config.toml` were created. AGENTS explicitly reads shared CLAUDE.md and its references; model, permissions, and credentials remain personal settings. `.agents/skills` is already Codex-native and needs no duplication. The Claude project has no MCP servers, hooks, custom agents, or commands to migrate. A Codex review does not satisfy the project's pre-commit Opus review requirement.

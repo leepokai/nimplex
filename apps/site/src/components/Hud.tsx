@@ -2,8 +2,8 @@ import { useRef } from "react";
 import { gsap, MM, ScrollTrigger, useGSAP } from "../lib/gsap.ts";
 
 /**
- * 右下角讀數：目前章節 + 全頁捲動進度。
- * 只在桌機出現——手機螢幕上它會擋住內容，而且沒有滑鼠停留的閱讀節奏。
+ * Bottom-right readout: current section and overall scroll progress.
+ * Desktop only; on mobile it obscures content without the same pointer-driven pacing.
  */
 export function Hud() {
   const root = useRef<HTMLDivElement>(null);
@@ -15,17 +15,17 @@ export function Hud() {
         const label = root.current?.querySelector<HTMLElement>("[data-hud-label]");
         const bar = root.current?.querySelector<HTMLElement>("[data-hud-bar]");
 
-        // 章節都在 Hud 的 DOM 之外，不能靠 useGSAP 的 scope 選取
+        // Sections lie outside the HUD DOM and cannot use the useGSAP scope.
         for (const sec of document.querySelectorAll<HTMLElement>("[data-section]")) {
           ScrollTrigger.create({
             trigger: sec,
             start: "top 55%",
             end: "bottom 55%",
-            // Hud 比章節先掛載，它的 trigger 也就比 pin 先建立。
-            // refreshPriority 負值 = 最後才重新量測，這樣 pin 撐出來的高度已經算進去了。
+            // HUD mounts before sections, so its trigger precedes their pin setup.
+            // A negative refreshPriority measures last, including the added pin height.
             refreshPriority: -1,
-            // 用 onEnter/onEnterBack 而不是 onToggle：釘住的章節會讓下一段同時「active」，
-            // 取最後進入的那一段才符合捲動方向
+            // onEnter/onEnterBack follows scroll direction; onToggle can mark overlapping
+            // pinned sections active simultaneously.
             onEnter: () => {
               if (label) label.textContent = sec.dataset.section ?? "";
             },
@@ -35,9 +35,9 @@ export function Hud() {
           });
         }
 
-        // 進度不能用 self.progress：這個 trigger 建立時 pin 還不存在，
-        // end 會停在「加 pin 之前」的頁高，捲到一半就先跑到 100%。
-        // 綁在 documentElement 上當更新的節拍器，數字每次都現算。
+        // self.progress uses an end measured before pinning and reaches 100% too early.
+        // Use the document trigger only as an update clock, recalculating actual
+        // document progress on every update.
         ScrollTrigger.create({
           trigger: document.documentElement,
           start: "top top",

@@ -153,6 +153,70 @@ try {
   const compacted =
     await db.client`select payload from events where run_id = ${run.id} and type = 'context.checkpoint'`;
   assert.ok(compacted.length > 0, "long histories must create context checkpoints");
+  const continued = await client
+    .agent({
+      model: { provider: "anthropic", id: "claude-haiku-4-5" },
+      instructions: "Continue the conversation",
+      budgetUsd: 0.2,
+    })
+    .generate({ prompt: "Now inspect the result", parentRunId: run.id });
+  assert.equal(continued.run.status, "completed", diagnostic);
+  assert.equal(await read(client, continued.run.id, "/workspace/renamed.txt"), "second\n");
+  assert.deepEqual(
+    [...(await client.runs.readFile(continued.run.id, "/workspace/binary.dat"))],
+    [0, 255, 1],
+  );
+  assert.equal(
+    continued.events.filter((e) => e.type === "tool.result").length,
+    0,
+    "historical tools must not execute again",
+  );
+  assert.equal(continued.run.spent_usd, 0.0035, "new run charges only new model calls");
+  const branch = await client
+    .agent({
+      model: { provider: "anthropic", id: "claude-haiku-4-5" },
+      instructions: "Branch the conversation",
+      budgetUsd: 0.2,
+    })
+    .generate({
+      prompt: "Use attached input",
+      parentRunId: run.id,
+      attachments: [{ path: "/workspace/renamed.txt", content: "branch only" }],
+    });
+  assert.equal(await read(client, branch.run.id, "/workspace/renamed.txt"), "branch only");
+  assert.equal(
+    await read(client, run.id, "/workspace/renamed.txt"),
+    "second\n",
+    "fork must not mutate its source",
+  );
+  const otherTenant = await tenant("fork-isolation", fake.url);
+  await assert.rejects(
+    () =>
+      otherTenant
+        .agent({
+          model: { provider: "anthropic", id: "claude-haiku-4-5" },
+          instructions: "cross tenant",
+          budgetUsd: 0.2,
+        })
+        .stream({ parentRunId: run.id, prompt: "go" }),
+    (error: unknown) => error instanceof NimplexError && error.status === 404,
+  );
+  const readOnly = await client
+    .agent({
+      model: { provider: "anthropic", id: "claude-haiku-4-5" },
+      instructions: "Plan only",
+      budgetUsd: 0.2,
+    })
+    .generate({ prompt: "Plan", executionMode: "read_only" });
+  assert.equal(readOnly.run.status, "completed", diagnostic);
+  assert.deepEqual(
+    await client.runs.files(readOnly.run.id),
+    [],
+    "read-only mode must prevent all scripted write/edit/bash effects",
+  );
+  console.log(
+    "PASS conversation continuation, binary workspace forks, tenant isolation and enforced read-only tools",
+  );
   const archiveFake = await startFakeAnthropic(0, {
     script: [
       { name: "bash", input: { command: "printf '%050000d' 0" } },

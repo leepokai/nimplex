@@ -1,6 +1,6 @@
-// CloudAgent 單元測試：用「路由表」假 fetch 模擬控制面，驗證
-// (1) create run 的 body 是 settings 與 call options 的正確合併
-// (2) generate() 全流程：建立 → 吃事件流 → 等終態 → 還原文字
+// Test CloudAgent through an injected route-table fetch implementation:
+// (1) merge fixed settings with call options when creating runs;
+// (2) generate creates, streams, waits for terminal state, and reconstructs text.
 import { describe, expect, it } from "vitest";
 import { CloudAgent, extractText } from "./agent.ts";
 import { Transport } from "./http.ts";
@@ -75,7 +75,7 @@ describe("CloudAgent", () => {
 
     const body = bodies["POST /v1/runs"] as Record<string, unknown>;
     expect(body.input).toBe("hi");
-    expect(body.budget_usd).toBe(0.5); // per-call 覆寫贏
+    expect(body.budget_usd).toBe(0.5); // Per-call values override agent defaults.
     expect((body.metadata as Record<string, unknown>).agent_id).toBe("unit-test");
 
     expect(result.run.status).toBe("completed");

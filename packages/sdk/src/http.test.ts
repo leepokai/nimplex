@@ -1,11 +1,11 @@
-// Transport 單元測試：不起 server、不用 mock 套件——
-// Transport 本來就接受注入的 fetch，這個 seam 就是為了可測性留的。
+// Transport tests use its injected fetch seam without a server or mocking package.
+// This boundary supports deterministic protocol and failure-path tests.
 import { describe, expect, it } from "vitest";
 import { NimplexError, Transport } from "./http.ts";
 
 type Call = { url: URL; init: RequestInit };
 
-/** 假 fetch：記下每個請求，交給 handler 決定回什麼。 */
+/** Record requests and delegate responses to the supplied handler. */
 function fakeFetch(handler: (call: Call, index: number) => Response | Promise<Response>) {
   const calls: Call[] = [];
   const fn = (async (input: URL | string, init?: RequestInit) => {
@@ -25,9 +25,9 @@ function json(body: unknown, status = 200): Response {
 }
 
 /**
- * 把 SSE frame 字串串成 streaming body；abortMidway=true 時吐完才斷線（模擬網路中斷）。
- * 用 pull-based：error() 會丟棄佇列中未讀的 chunk，start() 裡一次 enqueue 完再 error
- * 的話 frame 根本到不了讀取端。
+ * Build a streaming body from SSE frames; optionally fail after emitting them.
+ * Use pull-based delivery because error() discards unread queued chunks;
+ * enqueueing everything in start() and then failing would hide frames from readers.
  */
 function sseResponse(frames: string[], { abortMidway = false } = {}): Response {
   const encoder = new TextEncoder();
@@ -113,7 +113,7 @@ describe("Transport.sse", () => {
 
   it("中途斷線會帶 Last-Event-ID 自動重連續傳（exclusive 語意）", async () => {
     const { fn, calls } = fakeFetch((_call, index) => {
-      // 第一條連線：吐 seq 0..1 之後斷線；第二條：從 2 續傳後乾淨關閉
+      // First connection emits seq 0–1 and fails; the second resumes at 2 and closes cleanly.
       if (index === 0) {
         return sseResponse([frame(0, "run.created", {}), frame(1, "message.delta", {})], {
           abortMidway: true,
@@ -129,7 +129,7 @@ describe("Transport.sse", () => {
     expect(seqs).toEqual(["0", "1", "2"]);
     expect(calls.length).toBe(2);
     const retryHeaders = calls[1]?.init.headers as Record<string, string>;
-    expect(retryHeaders["Last-Event-ID"]).toBe("1"); // 從斷點之後接，不重放
+    expect(retryHeaders["Last-Event-ID"]).toBe("1"); // Resume strictly after the cursor.
   });
 
   it("HTTP 層錯誤（401 等）不重試，直接拋 NimplexError", async () => {
@@ -138,19 +138,19 @@ describe("Transport.sse", () => {
 
     const err = await (async () => {
       for await (const _ of t.sse("/v1/runs/r1/events")) {
-        // 不應該有事件
+        // No events expected.
       }
     })().catch((e: unknown) => e);
 
     expect((err as NimplexError).code).toBe("invalid_api_key");
-    expect(calls.length).toBe(1); // 沒有重試
+    expect(calls.length).toBe(1); // No retry.
   });
 
   it("options.after 會變成第一條連線的 Last-Event-ID", async () => {
     const { fn, calls } = fakeFetch(() => sseResponse([frame(8, "run.completed", {})]));
     const t = new Transport({ baseUrl: "http://api.test", fetch: fn });
     for await (const _ of t.sse("/v1/runs/r1/events", { after: 7 })) {
-      // 消化完
+      // Drain the stream.
     }
     const headers = calls[0]?.init.headers as Record<string, string>;
     expect(headers["Last-Event-ID"]).toBe("7");

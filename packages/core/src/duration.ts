@@ -1,6 +1,6 @@
-// max_duration_seconds 的判斷（純函式）。
-// metering=none 的唯一上限就是時間；metering=exact / provider_reported 也可以疊一層時間上限。
-// 誰執行：worker 的看門狗（沙箱路徑、managed-agent 路徑）與內建 loop 的每一步。
+// Pure max_duration_seconds checks.
+// Duration limits complement model budgets and remain independent of model usage.
+// The worker checks them during execution and through its watchdog.
 
 export function durationExceeded(
   startedAt: Date | string | null | undefined,

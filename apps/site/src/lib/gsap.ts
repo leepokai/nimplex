@@ -5,8 +5,8 @@ import { SplitText } from "gsap/SplitText";
 
 gsap.registerPlugin(ScrollTrigger, SplitText, useGSAP);
 
-// 背景分頁的 rAF 被節流時直接跳到正確時間點；回到前景才恢復平滑
-// （不做的話切回分頁會看到動畫「跳格」補回落後的時間）
+// Catch up to the correct time after background-tab rAF throttling, then resume
+// smooth foreground playback instead of replaying delayed animation frames.
 if (typeof document !== "undefined") {
   const syncLag = () =>
     document.hidden ? gsap.ticker.lagSmoothing(0) : gsap.ticker.lagSmoothing(500, 33);
@@ -14,7 +14,7 @@ if (typeof document !== "undefined") {
   document.addEventListener("visibilitychange", syncLag);
 }
 
-/** gsap.matchMedia 常用條件：動畫一律要有 reduced-motion 的靜態版本 */
+/** Shared matchMedia conditions; every animation needs a reduced-motion fallback. */
 export const MM = {
   motionOk: "(prefers-reduced-motion: no-preference)",
   desktop: "(min-width: 1024px) and (prefers-reduced-motion: no-preference)",

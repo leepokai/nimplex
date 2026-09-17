@@ -2,6 +2,7 @@ import type { ModelProvider, SandboxSpec, WorkspaceMetadata } from "@nimplex/con
 import type { SandboxSessionState } from "@nimplex/core";
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   customType,
   index,
   integer,
@@ -31,7 +32,7 @@ export const orgs = pgTable("orgs", {
   createdAt: createdAt(),
 });
 
-// Console 登入者。與 end_users 無任何繼承關係——這是刻意的（spec Q4）。
+// Human organization members are independent of end-user attribution records.
 export const orgMembers = pgTable(
   "org_members",
   {
@@ -48,8 +49,8 @@ export const orgMembers = pgTable(
   (t) => [uniqueIndex("org_members_org_email").on(t.orgId, t.email)],
 );
 
-// 2026-09-01 起降級為歸因標籤桶：external_user_id 只進帳目與稽核，
-// 誰是客戶的使用者由客戶自理。「人」的身分層只有 org_members。
+// Since 2026-09-01, external_user_id is an accounting/audit attribution label.
+// Customers manage their own users; org_members is the human identity layer.
 export const endUsers = pgTable(
   "end_users",
   {
@@ -57,7 +58,7 @@ export const endUsers = pgTable(
     orgId: uuid("org_id")
       .notNull()
       .references(() => orgs.id, { onDelete: "cascade" }),
-    /** 客戶系統裡的 user id */
+    /** User identifier in the customer system. */
     externalId: text("external_id").notNull(),
     displayName: text("display_name"),
     metadata: jsonb("metadata"),
@@ -66,9 +67,9 @@ export const endUsers = pgTable(
   (t) => [uniqueIndex("end_users_org_external").on(t.orgId, t.externalId)],
 );
 
-// 程式化身分：org API key（SDK / CI / 客戶後端用）。
-// 明文只在建立當下回傳一次，落地只有 sha256——DB 外洩不足以冒用任何 key（不變式 I3 同款）。
-// 未來的花費控制掛點是 per-key limit（OpenRouter 模式），欄位先不建、掛點留在這張表。
+// Organization API keys for SDKs, CI, and customer backends.
+// Return plaintext once and store SHA-256 only; a DB leak alone cannot impersonate keys.
+// Future per-key spending limits belong here; no speculative fields yet.
 export const apiKeys = pgTable(
   "api_keys",
   {
@@ -81,14 +82,14 @@ export const apiKeys = pgTable(
     last4: text("last4").notNull(),
     createdAt: createdAt(),
     lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
-    /** 撤銷＝標記不刪列：稽核要能回答「這把 key 曾經存在過」 */
+    /** Retain revoked rows to preserve evidence that a key existed. */
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
   },
   (t) => [uniqueIndex("api_keys_hash").on(t.keyHash), index("api_keys_org").on(t.orgId)],
 );
 
-// 插槽 1：BYOK 保險庫。明文永不落地，只存 AES-256-GCM 密文。
-// 解析優先序 end_user > org —— 同一個 org 底下每個終端使用者可以燒自己的帳。
+// BYOK vault stores AES-256-GCM ciphertext, never plaintext.
+// Legacy end-user scope remains in storage; the public BYOK API is organization-scoped.
 export const providerKeys = pgTable(
   "provider_keys",
   {
@@ -96,14 +97,14 @@ export const providerKeys = pgTable(
     orgId: uuid("org_id")
       .notNull()
       .references(() => orgs.id, { onDelete: "cascade" }),
-    /** null ＝ org 層預設 */
+    /** Null denotes the organization default. */
     endUserId: uuid("end_user_id").references(() => endUsers.id, { onDelete: "cascade" }),
     provider: text("provider").$type<ModelProvider>().notNull(),
     ciphertext: text("ciphertext").notNull(),
     iv: text("iv").notNull(),
     tag: text("tag").notNull(),
     last4: text("last4").notNull(),
-    /** 覆寫上游 base URL（自架 proxy、Azure 等） */
+    /** Override upstream base URL for compatible providers or self-hosted proxies. */
     baseUrl: text("base_url"),
     createdAt: createdAt(),
   },
@@ -124,7 +125,7 @@ export const runs = pgTable(
     orgId: uuid("org_id")
       .notNull()
       .references(() => orgs.id, { onDelete: "cascade" }),
-    /** NOT NULL：沒有無主的 run */
+    /** Required: every run belongs to an organization. */
     endUserId: uuid("end_user_id")
       .notNull()
       .references(() => endUsers.id),
@@ -133,16 +134,16 @@ export const runs = pgTable(
     })
       .notNull()
       .default("queued"),
-    /** 插槽 1：走哪一家、哪個 model */
+    /** Selected model provider and model ID. */
     modelProvider: text("model_provider").$type<ModelProvider>().notNull().default("anthropic"),
     model: text("model").notNull(),
-    /** 插槽 3：跑在哪個 sandbox provider */
+    /** Selected sandbox provider. */
     sandbox: jsonb("sandbox").$type<SandboxSpec>().notNull(),
-    /** provider 端的箱子 id，給人看的 */
+    /** Human-readable provider sandbox ID. */
     sandboxRef: text("sandbox_ref"),
     /**
-     * 可序列化的 sandbox session state（OpenAI agents-core 的作法）。
-     * worker 無狀態、隨時可死——任何一個 worker 讀到這欄都能接回同一個箱子把它砍掉。
+     * Serializable sandbox session state, following OpenAI agents-core.
+     * A replacement worker can reconnect and destroy the same environment.
      */
     sandboxState: jsonb("sandbox_state").$type<SandboxSessionState>(),
     /** { instructions, input, credentials } */
@@ -150,10 +151,10 @@ export const runs = pgTable(
     /** Hard USD cap: the run is killed once spend reaches it. */
     budgetUsd: usd("budget_usd"),
     spentUsd: usd("spent_usd").notNull().default(sql`0`),
-    /** 已發出但還沒結算的預留額度（併發保險） */
+    /** Outstanding unsettled reservations. */
     reservedUsd: usd("reserved_usd").notNull().default(sql`0`),
     maxDurationSeconds: integer("max_duration_seconds"),
-    /** 事件序號計數器，appendRunEvents 用原子遞增分配 seq */
+    /** Atomic event sequence counter used by appendRunEvents. */
     eventSeq: integer("event_seq").notNull().default(0),
     workspaceRevision: integer("workspace_revision").notNull().default(0),
     workspaceMetadata: jsonb("workspace_metadata").$type<WorkspaceMetadata>().notNull().default({}),
@@ -171,7 +172,7 @@ export const runs = pgTable(
   ],
 );
 
-// append-only 事件流。SSE 以 (run_id, seq) 續傳（Last-Event-ID = seq）。
+// Append-only events resume by (run_id, seq), with Last-Event-ID equal to seq.
 export const events = pgTable(
   "events",
   {
@@ -204,8 +205,8 @@ export const workspaceFiles = pgTable(
   (t) => [primaryKey({ columns: [t.runId, t.path] })],
 );
 
-// 工作佇列：loop 的每一步都是一個可領取的 work item（Omnara 模式）。
-// lease + fence 防止卡住又醒來的 worker 雙寫（Rakazo/Omnara 同款）。
+// Work queue: each loop step is claimable work, following Omnara.
+// Leases and fencing reject late writes from workers that recover after takeover.
 export const workItems = pgTable(
   "work_items",
   {
@@ -253,7 +254,7 @@ export const modelCalls = pgTable(
   (t) => [index("model_calls_run").on(t.orgId, t.runId)],
 );
 
-// 每一分錢都掛在 end_user 上——可轉售計量的基礎（Omnara 只記 token，這裡記美元）。
+// USD usage records retain attribution for customer accounting and exports.
 export const usageRecords = pgTable(
   "usage_records",
   {
@@ -272,12 +273,12 @@ export const usageRecords = pgTable(
   },
   (t) => [
     index("usage_org_end_user_time").on(t.orgId, t.endUserId, t.createdAt),
-    /** 帳務 rollup（GET /v1/usage）按 org × 時間窗口掃，不經 end_user */
+    /** Organization/time index for accounting rollups independent of end-user labels. */
     index("usage_org_time").on(t.orgId, t.createdAt),
   ],
 );
 
-// append-only 稽核：憑證 × 花費 × 動作。
+// Append-only audit records connect credentials, spending, and actions.
 export const auditEvents = pgTable(
   "audit_events",
   {
@@ -285,7 +286,7 @@ export const auditEvents = pgTable(
     orgId: uuid("org_id")
       .notNull()
       .references(() => orgs.id, { onDelete: "cascade" }),
-    /** nullable：org 層動作沒有 end user */
+    /** Organization-level actions have no end-user attribution. */
     endUserId: uuid("end_user_id").references(() => endUsers.id),
     runId: uuid("run_id").references(() => runs.id, { onDelete: "set null" }),
     actor: text("actor").notNull(),
@@ -294,4 +295,92 @@ export const auditEvents = pgTable(
     createdAt: createdAt(),
   },
   (t) => [index("audit_org_time").on(t.orgId, t.createdAt)],
+);
+
+// Pi AgentHarness storage, organization-scoped. Rows mirror the local SQLite adapter:
+// JSON payloads stay as text so digests and journal replay are byte-stable, and the
+// immutable commit journal can rebuild every projection table.
+const piScope = {
+  orgId: uuid("org_id")
+    .notNull()
+    .references(() => orgs.id, { onDelete: "cascade" }),
+  sessionId: text("session_id").notNull(),
+};
+export const piSessions = pgTable(
+  "pi_sessions",
+  {
+    ...piScope,
+    format: text("format").notNull(),
+    nextSeq: integer("next_seq").notNull(),
+    stats: text("stats").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.orgId, t.sessionId] })],
+);
+export const piEntries = pgTable(
+  "pi_entries",
+  {
+    ...piScope,
+    id: text("id").notNull(),
+    parentId: text("parent_id"),
+    seq: integer("seq").notNull(),
+    timestamp: bigint("timestamp", { mode: "number" }).notNull(),
+    type: text("type").notNull(),
+    customType: text("custom_type"),
+    data: text("data").notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.orgId, t.sessionId, t.id] }),
+    uniqueIndex("pi_entries_seq").on(t.orgId, t.sessionId, t.seq),
+    index("pi_entries_type").on(t.orgId, t.sessionId, t.type, t.seq),
+  ],
+);
+export const piCommits = pgTable(
+  "pi_commits",
+  {
+    ...piScope,
+    commitId: uuid("commit_id").notNull(),
+    firstSeq: integer("first_seq").notNull(),
+    lastSeq: integer("last_seq").notNull(),
+    digest: text("digest").notNull(),
+    data: text("data").notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.orgId, t.sessionId, t.commitId] }),
+    uniqueIndex("pi_commits_first_seq").on(t.orgId, t.sessionId, t.firstSeq),
+  ],
+);
+export const piUsage = pgTable(
+  "pi_usage",
+  {
+    ...piScope,
+    id: text("id").notNull(),
+    seq: integer("seq").notNull(),
+    data: text("data").notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.orgId, t.sessionId, t.id] }),
+    uniqueIndex("pi_usage_seq").on(t.orgId, t.sessionId, t.seq),
+  ],
+);
+export const piValues = pgTable(
+  "pi_values",
+  {
+    ...piScope,
+    namespace: text("namespace").notNull(),
+    key: text("key").notNull(),
+    seq: integer("seq").notNull(),
+    data: text("data").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.orgId, t.sessionId, t.namespace, t.key] })],
+);
+export const piLists = pgTable(
+  "pi_lists",
+  {
+    ...piScope,
+    namespace: text("namespace").notNull(),
+    key: text("key").notNull(),
+    seq: integer("seq").notNull(),
+    data: text("data").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.orgId, t.sessionId, t.namespace, t.key, t.seq] })],
 );

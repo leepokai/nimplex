@@ -6,9 +6,9 @@ import { auditEvents, runs } from "./schema.ts";
 export type RunRow = typeof runs.$inferSelect;
 
 /**
- * 軟殺：把 run 標成 killed 並寫事件。
- * 硬殺（destroy 沙箱）由 worker 看到狀態改變後執行——
- * 兩層刻意分開，因為閘道不見得跟沙箱在同一個程序裡。
+ * Persist a killed run and its event immediately.
+ * The worker observes durable state and destroys the sandbox separately;
+ * API cancellation must not depend on sandbox-provider availability.
  */
 export async function killRun(
   db: Db,
@@ -27,7 +27,7 @@ export async function killRun(
         sql`${runs.id} = ${run.id} and ${runs.orgId} = ${run.orgId} and ${runs.status} in ('queued','running','awaiting_input')`,
       )
       .returning({ id: runs.id, spentUsd: runs.spentUsd, budgetUsd: runs.budgetUsd });
-    if (!updated) return; // 已經是終態，不重複寫事件
+    if (!updated) return; // Already terminal; do not duplicate events.
     const spentUsd = updated.spentUsd;
     const budgetUsd = updated.budgetUsd;
     await appendRunEvents(tx, run, [
@@ -44,7 +44,7 @@ export async function killRun(
   });
 }
 
-/** 原子加減預留額度（併發保險）。 */
+/** Atomically adjust reservations for concurrent admission. */
 export async function adjustReserved(
   executor: DbExecutor,
   runId: string,

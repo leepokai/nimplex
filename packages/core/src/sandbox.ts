@@ -1,17 +1,17 @@
-// 插槽 3：sandbox port。
+// Sandbox provider port.
 //
-// 形狀刻意對齊 OpenAI Agents SDK 的 `SandboxClient` / `SandboxSession`
-// （@openai/agents-core 的 dist/sandbox/），因為它已經解掉一個我們一定會遇到的問題：
+// Follows OpenAI Agents SDK SandboxClient/SandboxSession
+// (@openai/agents-core dist/sandbox) for a shared requirement:
 //
-//   **session state 必須可序列化、可跨程序 resume。**
+// Session state must serialize and resume across processes.
 //
-// nimplex 的 worker 是無狀態的（隨時可死、隨處可復原），
-// 所以「誰砍得掉這個箱子」不能靠記憶體裡的 handle——
-// 箱子的身分要寫進 runs.sandbox_state，任何一個 worker 讀到都能接回去砍。
-// 這也是 budget kill-switch 的硬殺路徑能成立的前提。
+// Workers are replaceable, so cleanup must not rely on an in-memory handle.
+// Persist sandbox identity in runs.sandbox_state so another worker can reconnect
+// and destroy the environment after reading durable state.
+// Budget cancellation depends on this hard-kill path.
 //
-// 同樣沿用它的兩個慣例：backendId 當 provider 身分、state 帶版本號可演進。
-// 刻意**不**抄的：整套 Manifest / snapshot / pathGrants —— MVP 用不到。
+// Also retain backendId provider identity and versioned state.
+// Omit the broader Manifest/snapshot/pathGrants machinery until needed.
 
 export const SANDBOX_SESSION_STATE_VERSION = 1;
 
@@ -25,9 +25,9 @@ export class SandboxMissingError extends Error {
 
 export interface SandboxSessionState {
   version: number;
-  /** provider 身分，對應 SandboxProvider.backendId */
+  /** Provider identity matching SandboxProvider.backendId. */
   backendId: string;
-  /** provider 自己的欄位（容器 id、工作目錄…）；resume 只靠這裡 */
+  /** Provider-specific container IDs, directories, and other resume data. */
   providerState: Record<string, unknown>;
   workdir: string;
   environment: Record<string, string>;
@@ -57,12 +57,12 @@ export interface SandboxSession {
   exec(args: ExecArgs): Promise<ExecResult>;
   writeFile(path: string, contents: string): Promise<void>;
   readFile(path: string): Promise<string>;
-  /** 硬殺原語：整個箱子消失。刻意不提供「殺掉單一 process」。 */
+  /** Hard-kill primitive: destroy the entire sandbox, not a single process. */
   stop(): Promise<void>;
 }
 
 export interface SandboxCreateArgs {
-  /** 取名與稽核用；provider 不一定會用到 */
+  /** Naming/audit label; providers may ignore it. */
   label: string;
   image?: string;
   cpu?: number;
@@ -75,16 +75,16 @@ export interface SandboxCreateArgs {
 export interface SandboxProvider {
   readonly backendId: string;
   /**
-   * 缺少必要設定（API key、docker 沒開…）時回傳原因。
-   * API 在建 run 時就先問一次，讓錯誤出現在建立階段而不是跑到一半。
+   * Return a reason for missing configuration, credentials, or infrastructure.
+   * The API checks availability during creation to fail before execution.
    */
   unavailableReason(): string | null | Promise<string | null>;
   create(args: SandboxCreateArgs): Promise<SandboxSession>;
-  /** 用序列化的 state 接回既有箱子（換一個 worker 程序也接得回來） */
+  /** Reconnect to an existing sandbox from serialized state on any worker. */
   resume(state: SandboxSessionState): Promise<SandboxSession>;
   /** Optional idle suspension. resume() must make a paused session executable again. */
   pause?(state: SandboxSessionState): Promise<void>;
-  /** 不需要先 resume 就能砍掉——worker 看到 run 被殺時走這條 */
+  /** Delete without first resuming; used by terminal-run cleanup. */
   delete(state: SandboxSessionState): Promise<void>;
 }
 

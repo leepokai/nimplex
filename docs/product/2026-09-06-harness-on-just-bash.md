@@ -1,105 +1,108 @@
-# 2026-09-06 · harness 建在 just-bash 上：調研結論與定案前提
+# 2026-09-06 · Building a harness on just-bash: research and decision prerequisites
 
-> 承接 memory 的 09-06 修訂（開源可自架 coding agent 雲端 runtime）。本日 Kevin 提出：專案切換為「自己做一個 harness，搭在 just-bash 上，目標是最完善的 cloud agent harness 系統，比 Vercel 的 just-bash 方案多做 sandbox resume 管理，並參考 Apache Maka 的 log-is-the-runtime」。
-> 本文回答六個問題，並記錄同日完成的程式碼刪減。**定案項目待 Kevin 拍板**，見文末。
+> Follows the 09-06 memory revision toward an open-source, self-hostable coding-agent cloud runtime. Kevin proposed building a custom harness on just-bash, with more complete sandbox resume management than Vercel's offering and inspiration from Apache Maka's “Log Is the Runtime.”
+> This document answers six questions and records that day's code removal. Initially pending decisions appear near the end; §7 records Kevin's final direction.
+> Research descriptions reflect the date of this document. The [09-10 runtime contract](2026-09-10-harness-runtime.md) describes the later implementation.
 
 ---
 
-## 1. just-bash 是不是「已被探索出的最優環境」？
+## 1. Is just-bash the optimal environment already discovered?
 
-**不是最優解，是分層設計裡最便宜的那一層。** 證據全部來自第一手：
+It is the cheapest tier of a layered design, not a universal optimum. The reviewed evidence came from primary sources:
 
-- **Vercel 自己的定位**：`@ai-sdk/sandbox-just-bash` 標 experimental，README 明講「This provider does not expose ports, so it cannot be used with features that require actual network sandboxes」；just-bash README 的 Security Model 最後一條是「Use Vercel Sandbox if you need a full VM with arbitrary binary execution」；`Sandbox` 相容 API 的說明是「Start with just-bash for development and testing, swap in a real sandbox when you need a full VM」。`@ai-sdk/harness-pi` 文件把 `sandbox-vercel` 與 `sandbox-just-bash` 當可互換的兩個後端。
-- **做得到**：60+ 指令（`grep/rg/sed/awk/jq/sqlite3/yq/xan/tar/gzip/curl`）、bash 語法（pipe、redirect、function、loop）、四種 FS（`InMemoryFs` / `OverlayFs` / `ReadWriteFs` / `MountableFs`）、可選 `python3`（CPython → WASM）與 `js-exec`（QuickJS），`defineCommand` 自訂指令、`AbortSignal` 取消、執行上限（`executionLimits`）。版本 3.4.2，仍標 beta；4.2k 星、每日 commit、主要由 Vercel CTO cramforce 維護。
-- **做不到**：原生 binary、`npm install` / `pip install`、開 port、真程序；**沒有 `git`**（issue #83，維護者回「I heard it is very slow, but otherwise yes. Want to give it a go?」，社群另做了 `just-git` shim）；Python 在瀏覽器版不可用（#121）。
-- **沒有的、而你要做的**：README 對 VFS 的 snapshot / serialize / persist 隻字未提——InMemoryFs 隨程序死。要「跨 worker resume」就得自己把檔案樹持久化。
-- **社群**（HN 「Just-bash: Bash for Agents」124 分 69 則）：simonw 支持 bash 介面因「訓練資料最多，小模型也行」；resonious 指出 agent 常在 quoting/escaping 上浪費 token；真正上線的使用者 cjbell88（Elixir 移植）說「in-memory 換來瞬間啟動與零同步問題，但若要給 agent 真 Python 大概得換真箱子，介面已解耦讓換得便宜」。Reddit 無實質討論串。
+- **Vercel's positioning:** `@ai-sdk/sandbox-just-bash` was experimental and explicitly lacked exposed ports and full network-sandbox features. The just-bash security documentation directed arbitrary binary execution to Vercel Sandbox. Its compatible Sandbox API encouraged starting with just-bash and switching to a real VM when needed; harness-pi treated both backends as interchangeable.
+- **Supported:** 60+ commands including grep/rg/sed/awk/jq/sqlite3/yq/xan/tar/gzip/curl; pipes, redirects, functions, and loops; InMemoryFs/OverlayFs/ReadWriteFs/MountableFs; optional CPython-WASM python3 and QuickJS js-exec; defineCommand extensions, AbortSignal, and executionLimits. Version 3.4.2 remained beta, with roughly 4.2k stars, daily commits, and primary maintenance by Vercel CTO cramforce.
+- **Unsupported:** arbitrary native binaries, npm/pip installation, listening ports, and real processes. Git was absent (issue #83); a maintainer noted a possible implementation's slowness and invited a contribution, while the community built a just-git shim. Browser Python was unavailable (#121).
+- **Missing durability:** the README did not describe VFS snapshot/serialization/persistence. InMemoryFs dies with its process; cross-worker resume requires our own durable file tree.
+- **Community:** the HN “Just-bash: Bash for Agents” discussion had 124 points and 69 comments. simonw favored bash's extensive training data and small-model compatibility; resonious noted token waste from quoting/escaping; production user cjbell88's Elixir port gained instant startup and avoided synchronization but would need a real sandbox for native Python, with interfaces already separated for that change. No substantive Reddit discussion was found.
 
-**對 coding agent 的結論**：探索、讀碼、改檔、跑 jq/sqlite 這類資料處理在 VFS 內即可；build / test / install 一定要升級到真箱子。**完整方案 = just-bash 第一層 + 真箱子第二層 + 兩層共用一份工作區（git 同步）**。單層 just-bash 不是完整方案，Vercel 自己也沒把它當完整方案賣。
+For coding agents, exploration, reading/editing, and jq/sqlite processing fit the VFS; build/test/install require native execution. The proposed complete design is just-bash plus a real sandbox sharing one workspace, initially envisioned through Git synchronization. Vercel did not present just-bash alone as a complete native coding environment.
 
-## 2. 誰在做這件事
+## 2. Related systems
 
-| 誰 | 東西 | 架構 | 狀態 / resume |
-|---|---|---|---|
-| **Cloudflare** | **Project Think**（2026-04 Agents Week；roadmap 在 cloudflare/agents #1439）。Kevin 記的「project think」就是它 | 「execution ladder」：**Tier 0 durable VFS（SQLite + R2）** → Tier 1 Dynamic Worker（V8 isolate 內跑 LLM 生成的 JS，即 Code Mode）→ Tier 2 npm → Tier 3 headless browser → **Tier 4 full Sandbox（真容器，與 Tier 0 工作區雙向同步）** | Tier 0 就是「持久化的工作區」；沒有 bash 模擬器，綁 CF 平台 |
-| **Vercel** | just-bash、bash-tool（AI SDK tool）、`@ai-sdk/harness-pi`、`@ai-sdk/sandbox-{just-bash,vercel}`、eve（durable agent framework） | Pi 在 host 程序跑，sandbox 只當遠端 FS + shell（`PiRemoteOps` 九個方法：`paths/readBuffer/writeFile/editFile/listDirectory/findFiles/grepFiles/access/exec`） | `pi-resume-state.ts` 把 Pi 的 session `.jsonl` **複製進箱子**私有目錄，換箱時拉回；`HarnessV1Session` 有 `doSuspendTurn / doDetach / doStop / doDestroy` |
-| **Apache Maka**（incubating） | 本機優先的 agent workspace（Electron + TUI + CLI 都是 Runtime Host 的薄客戶端）；發起人 jackwener（Arrow/DataFusion/Doris PMC），非公司捐贈 | 工具跑在本機程序，靠 Seatbelt / bubblewrap / AppContainer 限制 | **只做 log**：`runtime_events`（SQLite，`event_seq`、`highWater`、digest）、compaction checkpoint、`ContextOffloadStore`；**工作區快照（Phase 4）未實作**，`.maka-workspace.json` 只存 UUID 證明「同一個工作區」，不證明檔案內容 |
-| Anthropic Managed Agents | 託管 | Session＝durable event log、Harness 無狀態、Sandbox 不信任、無憑證 | session 撐過 harness/container 死亡 |
-| OpenAI Codex cloud | 託管、closed | 每 task 一個 microVM，loop 在 OpenAI 端 | — |
-| microVM 廠 | E2B、Fly Sprites、Blaxel、Runloop、Morph、Daytona | 真 VM，比的是 snapshot / pause / resume 速度 | E2B pause 1s resume；Sprites 閒置睡、~$0；Blaxel <25ms 喚醒 |
-| 其他 | Omnara（自稱 open-source alternative to Managed Agents）、Pi / oh-my-pi / OpenClaw、WASM 類（wasmer/WASIX、v86、Runno、Conch） | — | — |
-
-**看板上的縫**：Cloudflare 的 Tier 0（durable VFS）+ Tier 4（雙向同步的真箱子）正是 Kevin 要的「sandbox resume 管理」的形狀，但綁 CF；Vercel 有分層卻沒有 durable VFS、日記在箱子裡；Maka 有日記卻沒有世界狀態。**三者的交集——日記在家 + VFS 快照 + 分層升級——目前沒有開源可自架的實作。**
-
-## 3. Maka 的〈Log Is the Runtime〉
-
-已記入 memory（reference）與本文。三句話：
-
-1. `State(n) = Apply(Snapshot(k), Log[k+1..n])`——agent 狀態是 append-only `RuntimeEvent` log 的**投影**，UI、下一次 model context、終態判定、crash recovery 各自是同一份 log 的不同投影函式。
-2. compaction 只改「模型怎麼讀 log」不改 log；checkpoint 記 `highWater` + digest，丟了可重算。
-3. 大 tool result 走「先歸檔、再換 placeholder」，模型要細節再分頁讀；log 永遠留原文。
-
-對 nimplex 的意義：這正是 `run_events`（Postgres、seq 游標、SSE 續傳）已經有的骨架；缺的是投影函式（context 重建、continuation）與 Maka 明說沒做的部分——**世界狀態**。這就是第 4 節。
-
-## 4. 比 Vercel 的 just-bash 方案多做什麼
-
-| 能力 | Vercel（harness-pi + sandbox-just-bash） | nimplex 要做 |
+| Project | Product and architecture | State / resume at the research date |
 |---|---|---|
-| 日記在哪 | `.jsonl` 複製進箱子；箱子死＝日記跟著死 | **日記在家**：Postgres `run_events`，箱子可丟 |
-| VFS 持久化 | 無（InMemoryFs 隨程序死） | **VFS 快照**（generation k）+ log 重放；`sandbox_generation` 進每條事件 |
-| 分層 | just-bash / Vercel Sandbox 二選一 | **tiered**：VFS 第一層，需要 build/test 才開真箱子，工作區用 git 同步 |
-| 環境丟失 | 無兜底 | 三層：`provider.resume` → 快照/pause → `environment.reset` 進 model context |
-| 錢 | 無 | per-run USD 硬上限 + mid-run kill（已有） |
-| 事件續傳 | 無 | SSE `Last-Event-ID`（已有） |
-| 大輸出 | 無 | Maka 式 tool-result offload（placeholder + 分頁讀） |
+| **Cloudflare Project Think** | Announced during April 2026 Agents Week; roadmap cloudflare/agents #1439. Execution ladder: Tier 0 durable VFS (SQLite + R2), Tier 1 Dynamic Worker running generated JS in V8 isolates, Tier 2 npm, Tier 3 browser, Tier 4 full Sandbox synchronized with Tier 0 | Durable workspace from Tier 0; no bash emulator; Cloudflare-specific |
+| **Vercel** | just-bash, bash-tool, harness-pi, sandbox-just-bash/vercel, and eve. Pi runs on the host; sandbox supplies remote FS/shell through nine PiRemoteOps methods: paths/readBuffer/writeFile/editFile/listDirectory/findFiles/grepFiles/access/exec | pi-resume-state.ts copies session JSONL into a private sandbox directory and retrieves it when replacing sandboxes; HarnessV1Session supports suspend-turn, detach, stop, destroy |
+| **Apache Maka**, incubating | Local-first workspace; Electron, TUI, and CLI are thin Runtime Host clients. Initiated by jackwener, an Arrow/DataFusion/Doris PMC member, rather than a corporate donation. Local tools constrained by Seatbelt/bubblewrap/AppContainer | runtime_events in SQLite with event_seq/highWater/digest, compaction checkpoints, ContextOffloadStore. Workspace snapshots (Phase 4) were unimplemented; `.maka-workspace.json` proves workspace identity through UUID, not file content |
+| **Anthropic Managed Agents** | Hosted loop; durable session event log, stateless harness, untrusted credential-free sandbox | Session survives harness/container death |
+| **OpenAI Codex cloud** | Hosted closed system; a microVM per task, loop on OpenAI's side | Not assessed |
+| **MicroVM vendors** | E2B, Fly Sprites, Blaxel, Runloop, Morph, Daytona; compete on snapshot/pause/resume | Reported claims: E2B approximately one-second resume; Sprites idle sleep with near-zero idle cost; Blaxel under 25 ms wake |
+| **Others** | Omnara's open-source Managed Agents alternative; Pi/oh-my-pi/OpenClaw; WASM systems including wasmer/WASIX, v86, Runno, Conch | Not assessed in detail |
 
-## 5. 要不要建在 Pi 上
+The proposed gap: Cloudflare had durable VFS plus synchronized native execution but platform dependence; Vercel had tiers without durable VFS and stored sessions inside sandboxes; Maka had durable logs without workspace snapshots. The research did not identify an open-source self-hostable implementation combining logs outside sandboxes, VFS snapshots, and tiered execution.
 
-**建議：用 Pi 當 loop kernel，不 fork、不自寫 loop。** 理由：
+## 3. Maka's “Log Is the Runtime”
 
-- Pi 已搬到 `@earendil-works/*`（0.85.1，2026-09-05 發）、MIT、約 10 萬星、每日更新。`pi-agent-core` 的 `Agent` class 可在自己的程序內驅動（`streamFn / convertToLlm / beforeToolCall / afterToolCall`），事件流完整；`agentLoop` / `agentLoopContinue` 是更低階的 generator。
-- **正式掛點就是為這件事設計的**：`createBashTool(cwd, { operations })`、`createReadTool(cwd, { operations })` 等，型別化的 `BashOperations / ReadOperations / EditOperations / GrepOperations / FindOperations / LsOperations`；官方 containerization 文件的 Gondolin 範例就是「Pi 在 host、工具進 micro-VM」。Vercel `harness-pi` 的 `PiRemoteOps` 照抄形狀、把後端換成 nimplex 的分層即可。
-- compaction（`session_before_compact` 可自訂摘要器）、session `.jsonl`（tree、`SessionManager.inMemory(cwd?)`）都現成。
+Recorded in memory and here:
 
-反方與對策：
+1. `State(n) = Apply(Snapshot(k), Log[k+1..n])`. Agent state is a projection of append-only RuntimeEvents. UI, model context, terminal decisions, and crash recovery are separate projections of the same log.
+2. Compaction changes how models read logs, not the logs themselves. A highWater/digest checkpoint can be recomputed if lost.
+3. Archive large tool results before substituting a reference; models paginate details when needed, while logs retain the original output.
 
-- Pi 的 session 格式與事件是 Pi 的，不是 nimplex 的 log → 做「Pi events → `run_events`」翻譯層（與之前 `managed-agent.ts` 同構），日記仍在家；Pi 重啟時用 `SessionManager.inMemory` 從 `run_events` 投影回 Pi 的 entries。
-- 若要 Maka 級的 context 投影（compaction checkpoint 帶 digest、tool result prune）：先用 Pi 的掛鉤做，真不夠再自寫——不要一開始就自寫 loop。
+nimplex already had the skeleton in Postgres `run_events`, sequence cursors, and SSE resume. Missing pieces were context/continuation projections and the world state Maka explicitly had not implemented, addressed next.
 
-## 6. 本日已刪什麼、留什麼
+## 4. What nimplex adds to Vercel's just-bash design
 
-**刪（`git rm`，已 stage 未 commit；歷史在 `0f32657`）**：`apps/runtime`（CF 原型）、`apps/console`（管理台）、`packages/gateway`（`/gw` BYOK 代理、reserve/settle 帳本）、CLI-in-box harness 路徑（`harness-executor.ts`、`core/harness.ts`、`builtin-harnesses.ts`、`gateway-urls.ts`、`api/harnesses.ts`、`db/harness-registry.ts`、`bootstrap.ts`、`seed.ts`）、Managed Agents 路徑（`managed-agent-executor.ts`、`core/managed-agent.ts`）、tool registry（`api/registries.ts`、skills / mcp_servers）、usage rollup（`api/usage.ts`）、`examples/quickstart/src/claude-code-e2b.ts`。DB：migration `0006` drop `harnesses / managed_agent_refs / skills / mcp_servers / credential_refs` 五張表與 `runs.{harness,metering,run_token_hash,sandbox_token_hash}`。contracts：拿掉 harness manifest、metering、usage、skills、mcp；`budget_usd` 改必填。
+| Capability | Reviewed Vercel harness-pi + sandbox-just-bash | Proposed nimplex |
+|---|---|---|
+| Log location | JSONL copied into sandbox, vulnerable to sandbox loss | Postgres run_events outside disposable sandboxes |
+| VFS persistence | InMemoryFs dies with the process | Generation-k snapshots and log replay; sandbox_generation in events |
+| Tiers | Choose just-bash or Vercel Sandbox | VFS first, native build/test on demand, shared workspace initially envisioned via Git |
+| Environment loss | No reviewed fallback | provider.resume → snapshot/pause → environment.reset in model context |
+| Spending | No reviewed USD enforcement | Existing per-run USD caps and mid-run kill |
+| Event resume | No reviewed resumable stream | Existing SSE Last-Event-ID |
+| Large output | No reviewed durable offload | Maka-style archive references and pagination |
 
-**留**：api（auth、org / api key / member、BYOK provider key、runs、SSE）、worker（lease+fence、預算硬上限、kill、reaper、stub executor）、contracts、core（budget / pricing / status / duration / sandbox port / RunExecutor / shellQuote）、db、sandbox（docker / e2b / computesdk / local + conformance）、sdk、testkit（假 Messages API 上游 + conformance kit）、deploy / Dockerfile / workflow、**apps/site**（沒刪：nimplex.dev 從這個 repo 的 `apps/site` 部署，刪了 Vercel build 會壞——要不要留是 Kevin 的決定）。
+## 5. Build on Pi?
 
-**驗證**：`pnpm check` 10/10、`pnpm test` 31 passed、`pnpm lint` 乾淨、e2e 冒煙（註冊 → 發 key → BYOK → 跑完 $0.60 → 預算殺 $0.36 → budget_usd 必填 → 租戶隔離 → 撤銷 401）全過。程式碼從 13.3k 行降到 5.6k 行。
+**Recommendation: use Pi as the loop kernel without forking or rewriting it.**
 
-## 待 Kevin 定案
+- Pi had moved to `@earendil-works/*`, version 0.85.1 released 2026-09-05, MIT licensed, roughly 100k stars, and daily updates. Its in-process Agent exposes streamFn/convertToLlm/beforeToolCall/afterToolCall and full events; agentLoop/agentLoopContinue are lower-level generators.
+- Official extension points fit this use: createBashTool/createReadTool and typed Bash/Read/Edit/Grep/Find/Ls operations. The Gondolin containerization example runs Pi on the host and tools in a microVM. Adapt the same PiRemoteOps shape to nimplex's tiers.
+- Existing compaction hooks, `session_before_compact`, session JSONL trees, and `SessionManager.inMemory(cwd?)` reduce reinvention.
 
-1. Pi 當 kernel（第 5 節建議）還是自寫 loop。→ **2026-09-09 定案：Pi 當 kernel**（Kevin 當日指示「在 Pi 上搭 just-bash harness」；決策閘四項在 `sandbox/pi-spike/` 30 分鐘內全通，Slice 1 同日落地，見 `2026-09-09-mvp-demo-plan.md`）。
-2. `apps/site` 留在 repo 還是搬走。
-3. `end_users` 表與 `runs.end_user_id` 仍在（09-01 已降級為歸因標籤）；要不要順手改成 `runs.external_user_id text`。
-4. 第一週交付物是否維持 memory 的順序：`mode: box` + 日記在家 + kill → generation + `environment.reset` + pause/resume → tiered（just-bash 第一層）。
+Risks and responses:
+
+- Pi sessions/events are not nimplex's canonical log. Translate Pi events into run_events, analogous to the former managed-agent.ts, and project them back into in-memory Pi entries after restart.
+- Try Pi hooks first for digest-verified compaction and tool-result pruning. Add custom projection machinery only when those hooks prove insufficient; do not begin by rewriting the loop.
+
+## 6. Removed and retained that day
+
+**Removed** (git rm, staged but not yet committed at the time; historical implementation at `0f32657`): apps/runtime Cloudflare prototype, apps/console, packages/gateway with BYOK proxy and accounting ledger, CLI-in-a-box files (harness-executor.ts, core/harness.ts, builtin-harnesses.ts, gateway-urls.ts, api/harnesses.ts, db/harness-registry.ts, bootstrap.ts, seed.ts), Managed Agents executor/core, tool registry api/registries.ts with skills/mcp_servers, api/usage.ts rollups, and examples/quickstart/src/claude-code-e2b.ts. Migration 0006 dropped harnesses, managed_agent_refs, skills, mcp_servers, credential_refs, and runs.harness/metering/run_token_hash/sandbox_token_hash. Contracts removed harness manifests, metering, usage, skills, and MCP; budget_usd became required.
+
+**Retained:** API auth/org/API keys/members/BYOK/runs/SSE; worker leases/fences/budgets/kill/reaper/stub; contracts; core budget/pricing/status/duration/sandbox port/RunExecutor/shellQuote; db; Docker/E2B/ComputeSDK/local providers and conformance; SDK; fake Messages/conformance testkit; deployment/Dockerfile/workflow. **apps/site stayed** because nimplex.dev deployed from it and deletion would break Vercel builds; its long-term location remained Kevin's decision.
+
+**Validation at that checkpoint:** pnpm check 10/10, 31 tests passed, lint clean, and smoke flow passed: signup → key → BYOK → $0.60 completion → $0.36 budget kill → required budget → tenant isolation → revoked-key 401. Code shrank from 13.3k to 5.6k lines.
+
+## Decisions pending Kevin's approval
+
+1. Pi kernel or custom loop? **Resolved 2026-09-09: Pi kernel.** Kevin requested the just-bash harness on Pi; four spike gates passed in 30 minutes and Slice 1 landed that day. See `2026-09-09-mvp-demo-plan.md`.
+2. Keep apps/site in this repo or move it?
+3. Replace the remaining end_users table and runs.end_user_id, downgraded to attribution on 09-01, with `runs.external_user_id text`?
+4. Keep the original delivery order: box mode/logs/kill → generation/reset/pause/resume → just-bash tiers?
 
 ---
 
-## 7. 定案：走 ladder（Kevin，2026-09-06）
+## 7. Final decision: execution ladder (Kevin, 2026-09-06)
 
-Kevin 拍板採用 Cloudflare Project Think 的 execution ladder 模式。nimplex 的階梯照「這一步需要什麼能力」排，每層都要能自架：
+Kevin selected the Project Think-style ladder, ordered by each step's capability requirements, with every tier self-hostable:
 
-| 層 | 後端 | 做什麼 | 成本 |
+| Tier | Backend | Responsibility | Cost |
 |---|---|---|---|
-| **Tier 0 · durable workspace** | Postgres 檔案樹快照 + `run_events` 裡的 write/edit 事件；`Files(n) = Apply(Snapshot(k), Writes[k+1..n])` | 檔案的唯一真相，永遠存在 | 零 |
-| **Tier 1 · just-bash** | worker 程序內，FS 掛在 Tier 0 上 | read / grep / edit / jq / sqlite / awk，可選 QuickJS、CPython-WASM | 零、毫秒 |
-| **Tier 2 · 真箱子** | 現有 `SandboxProvider` port（docker+gVisor 自架、E2B / Sprites / Blaxel 雲端） | git、npm / pip、build、test、網路；惰性開箱、用完 pause；git 與 Tier 0 同步；每次開箱 `generation+1` | 用到才付 |
+| **Tier 0: durable workspace** | Postgres file snapshots plus write/edit events; `Files(n) = Apply(Snapshot(k), Writes[k+1..n])` | Authoritative durable files | No incremental sandbox charge |
+| **Tier 1: just-bash** | Worker process with FS backed by Tier 0 | read/grep/edit/jq/sqlite/awk, optional QuickJS and CPython-WASM | No sandbox charge, millisecond startup |
+| **Tier 2: native sandbox** | Existing SandboxProvider; self-hosted Docker+gVisor or cloud E2B/Sprites/Blaxel | git, npm/pip, builds, tests, networking; lazy creation, pause when idle, synchronization with Tier 0, generation increment on replacement | Pay when used |
 
-CF 的 npm 層與 browser 層 v1 不做。
+Cloudflare's separate npm/browser tiers are excluded from v1.
 
-不變式：
-1. **Tier 0 是真相，箱子是快取**：箱子死只丟可重建物（`node_modules` 靠 prebuild image 補），檔案從 Tier 0 重放。
-2. **升級由 runtime 決定，不由模型決定**：每個 bash 呼叫先試 Tier 1；不支援的指令、明確清單（git / npm / node / make / 非白名單 curl）或需要網路才升 Tier 2，並寫 `tier.escalated` 事件。
+Invariants:
 
-交付順序改為：
-- **Slice 1**：Tier 0 快照表 + just-bash 掛 Tier 0 + Pi remote ops → Pi events 翻成 `run_events` → `kill -9` worker 後另一個 worker 從最後一條事件接著跑（不需任何 sandbox provider）。
-- **Slice 2**：Tier 2 升級路徑（接現有 docker / E2B）、git 同步、generation、`environment.reset`。
-- **Slice 3**：Maka 式投影：compaction checkpoint 帶 digest、大 tool result 卸載。
+1. **Tier 0 is authoritative; sandboxes are caches.** Sandbox loss discards reconstructible state such as node_modules supplied by prebuild images; files restore from Tier 0.
+2. **The runtime decides escalation.** The original decision proposed trying Tier 1 first, escalating unsupported commands, git/npm/node/make/non-allowlisted curl, or network requirements, and recording tier.escalated. The 09-09 proposal later corrected this to whole-script routing before execution to avoid duplicate side effects.
+
+Revised delivery order:
+
+- **Slice 1:** Tier 0 snapshot table, just-bash backing, Pi remote operations, Pi-to-run_events translation, and cross-worker SIGKILL recovery without a sandbox provider.
+- **Slice 2:** Tier 2 through existing Docker/E2B, workspace synchronization initially proposed through Git, generation, and environment.reset.
+- **Slice 3:** Maka-style context projection, digest checkpoints, and large tool-result offload.

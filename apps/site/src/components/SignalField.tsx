@@ -13,9 +13,9 @@ type Node_ = {
 };
 
 /**
- * 背景訊號場：小方塊緩慢上飄，偶爾一顆「被路由出去」（往右上加速並拖出尾跡）。
- * 這是整頁唯一的環境動畫，所以它必須便宜：捲出視口就停畫、背景分頁停畫、
- * reduced-motion 只畫一張靜態幀。
+ * Ambient squares drift upward; occasional routed nodes accelerate upward/right with trails.
+ * Keep this ambient animation inexpensive: pause offscreen or in background tabs,
+ * and draw only a static frame for reduced motion.
  */
 export function SignalField({ className = "" }: { className?: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -54,7 +54,7 @@ export function SignalField({ className = "" }: { className?: string }) {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       for (const n of nodes) {
         ctx.globalAlpha = n.routing ? Math.min(1, n.alpha * 2.2) : n.alpha;
-        // 全站只有黑白：被路由的節點靠「更亮 + 拖尾」區分，不靠色相
+        // Monochrome throughout: routed nodes differ by brightness and trails, not hue.
         ctx.fillStyle = "#ffffff";
         ctx.fillRect(Math.round(n.x), Math.round(n.y), n.size, n.size);
         if (n.routing) {

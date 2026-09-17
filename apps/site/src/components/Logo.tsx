@@ -1,28 +1,28 @@
 import { useId } from "react";
 
 /**
- * nimplex 的標記：三股匯成一股。
+ * nimplex mark: three input paths merge into one output.
  *
- * 線寬全程固定（1024 座標系下 76），不做粗細變化 —— 之前那版從髮絲漲到粗桿，
- * 落差太大、縮到小尺寸時細端會先消失。統一線寬在 16px 也還是同一個形狀。
+ * Constant stroke width (76 in a 1024-unit viewBox) preserves small-size legibility.
+ * The earlier thin-to-thick design lost its narrow ends when reduced;
  *
- * 幾何以 1024×1024 正方形為準（app icon / avatar 用），站上的 lockup 用同一組
- * 路徑的緊裁視窗，所以兩者永遠是同一個東西，不是兩份各自維護的檔案。
+ * Square geometry supports app icons/avatars. The site lockup tightly crops
+ * the same paths so both uses share one maintained shape.
  *
- * 漸層方向有意義：輸入端最暗、匯流後最亮。用 currentColor，深底白、淺底黑。
+ * Inputs are darkest and the merged output brightest; currentColor adapts to backgrounds.
  */
 /**
- * 三股輸入（上下走曲線、中間直進）與匯流後的輸出，全部在同一個 d 裡。
- * 不可以拆成多個 <path>：不同元素的半透明描邊會在交會處互相合成，疊出一個亮點。
- * 同一元素內的自我重疊只算一次。
+ * Curved upper/lower inputs, straight middle input, and output share one path.
+ * Separate translucent paths would composite at intersections into bright spots;
+ * self-overlap within a single element paints only once.
  */
 export const LOGO_PATH =
   "M168 232C380 232 400 470 556 512M168 512H856M168 792C380 792 400 554 556 512";
 
 export const LOGO_STROKE = 76;
-/** 正方形畫布（含 round cap 後上下左右留白對稱） */
+/** Square canvas with symmetric margins including round caps. */
 export const LOGO_SQUARE = "0 0 1024 1024";
-/** 緊裁視窗：把 round cap 也算進去的實際外框 */
+/** Tight bounds including round caps. */
 export const LOGO_TIGHT = "130 194 764 636";
 
 const HEIGHT = 20;

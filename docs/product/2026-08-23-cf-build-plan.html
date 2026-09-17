@@ -1,4 +1,4 @@
-<title>nimplex 開工計畫</title>
+<title> nimplex build plan </title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@700;900&family=Noto+Sans+TC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
   :root {
@@ -192,160 +192,160 @@
 <div class="wrap">
 
 <header>
-  <p class="eyebrow">Build Plan · 內部工作文件</p>
-  <h1>nimplex 開工計畫</h1>
-  <p class="standfirst">把 Omnara 的完整架構攤開，標出哪些區塊被 Cloudflare 平台直接吃掉、哪些換成現成原語、剩下真正要動手蓋的是什麼——以及按什麼順序動工。</p>
-  <p class="meta">2026-08-23 · 依據：Omnara 原始碼解剖（45 萬行）＋ CF computer/Think/Flue 三篇原文 ＋ 已定案決策（CF-first、前端先行、contracts-first）</p>
+  <p class="eyebrow"> Build Plan · Historical internal document </p>
+  <h1> nimplex build plan </h1>
+  <p class="standfirst"> Map Omnara's architecture to Cloudflare: what the platform replaces, what becomes an existing primitive, what remains ours to build, and in what order. </p>
+  <p class="meta"> 2026-08-23 · Based on Omnara's 450,000-line source review, the computer/Think/Flue articles, and the then-approved Cloudflare-first, frontend-first, contracts-first decisions. Later runtime decisions supersede this plan. </p>
 </header>
 
 <section id="map">
   <p class="tag">The Map</p>
-  <h2>一張圖：Omnara 的區塊，各自的命運</h2>
-  <p>Omnara 用約 45 萬行 Go（含測試）蓋了四層。在 Cloudflare 上重新疊一次，<strong>大約七成的工程量直接消失或變成平台原語</strong>——剩下的三成，才是使用者付錢的產品層。</p>
+  <h2> One map: what happens to each Omnara component </h2>
+  <p> Omnara built four layers in roughly 450,000 lines of Go including tests. Rebuilding on Cloudflare, <strong> roughly 70% of the effort disappears or becomes platform primitives </strong> ; the remaining 30% is the product layer customers pay for. </p>
   <div class="legend">
-    <span class="l-gone">灰·刪除線＝消失（平台吃掉，一行都不用寫）</span>
-    <span class="l-cf">橘＝換成 CF 原語（接上就用）</span>
-    <span class="l-you">綠＝你要蓋（產品層）</span>
+    <span class="l-gone"> Gray / struck out: replaced entirely by the platform </span>
+    <span class="l-cf"> Orange: replaced by Cloudflare primitives </span>
+    <span class="l-you"> Green: product code we build </span>
   </div>
 
   <div class="band">
-    <p class="band-title">Omnara 第 1 層 · 控制平面</p>
+    <p class="band-title"> Omnara layer 1 · Control plane </p>
     <div class="chips">
-      <div class="chip gone"><span class="name">Redis 喚醒 pub/sub＋presence</span><small>DO 可定址，問題不存在</small></div>
-      <div class="chip gone"><span class="name">maintenance 收屍/對帳迴圈</span><small>平台保證取代人工兜底</small></div>
-      <div class="chip gone"><span class="name">compose 拓撲（PG/Valkey/MinIO/nginx)</span><small>wrangler deploy 取代</small></div>
-      <div class="chip cf">Postgres 事件日誌＋佇列<small>→ DO SQLite（per-agent 天生隔離）</small></div>
+      <div class="chip gone"><span class="name"> Redis wakeup pub/sub and presence </span><small> Addressable Durable Objects remove the routing problem </small></div>
+      <div class="chip gone"><span class="name"> Maintenance reaping/reconciliation loops </span><small> Platform guarantees replace manual recovery </small></div>
+      <div class="chip gone"><span class="name"> Compose topology: Postgres/Valkey/MinIO/nginx </span><small> Replaced by wrangler deploy </small></div>
+      <div class="chip cf"> Postgres event log and queue <small> → DO SQLite with per-agent isolation </small></div>
       <div class="chip cf">cron_triggers<small>→ Cron Triggers / DO alarms</small></div>
-      <div class="chip you">API contract（OpenAPI 政策表）<small>你的版本：contracts 套件＝脊椎</small></div>
-      <div class="chip you">Org/Project 多租戶＋RBAC<small>你的版本再加一層 end_user</small></div>
+      <div class="chip you"> API contract: OpenAPI policy table <small> Our version: contracts package as the foundation </small></div>
+      <div class="chip you"> Org/project tenancy and RBAC <small> Add the end_user dimension </small></div>
     </div>
   </div>
 
   <div class="band">
-    <p class="band-title">Omnara 第 2 層 · 執行引擎</p>
+    <p class="band-title"> Omnara layer 2 · Execution engine </p>
     <div class="chips">
-      <div class="chip gone"><span class="name">worker claim loop＋runtime 租約</span><small>DO 單線程序列化取代 SKIP LOCKED</small></div>
-      <div class="chip gone"><span class="name">手刻 model 層（~4,400 行）</span><small>AI SDK＋AI Gateway</small></div>
-      <div class="chip gone"><span class="name">手刻 MCP client（2,513 行）</span><small>官方 MCP SDK</small></div>
-      <div class="chip cf">durable turn 狀態機<small>→ Think fibers（stash/recover）</small></div>
-      <div class="chip cf">compaction／會話持久化<small>→ Session API（樹狀·可 fork）</small></div>
-      <div class="chip you">工具權限 allow/ask/deny＋durable 審批<small>Omnara 驗證過的設計，照抄形狀</small></div>
-      <div class="chip you">custom 工具（外部補結果）<small>＝你的原生工具橋接，掛點照搬</small></div>
+      <div class="chip gone"><span class="name"> Worker claim loop and runtime leases </span><small> DO serialization replaces SKIP LOCKED </small></div>
+      <div class="chip gone"><span class="name"> Custom model layer, about 4,400 lines </span><small>AI SDK＋AI Gateway</small></div>
+      <div class="chip gone"><span class="name"> Custom MCP client, 2,513 lines </span><small> Official MCP SDK </small></div>
+      <div class="chip cf"> Durable turn state machine <small>→ Think fibers（stash/recover）</small></div>
+      <div class="chip cf"> Compaction and session persistence <small> → Tree-based, forkable Session API </small></div>
+      <div class="chip you"> Tool allow/ask/deny policies and durable approvals <small> Reuse Omnara's validated interface shape </small></div>
+      <div class="chip you"> Custom tools with externally supplied results <small> Our native product tool bridge </small></div>
     </div>
   </div>
 
   <div class="band">
-    <p class="band-title">Omnara 第 3 層 · 機器層（整層消失）</p>
+    <p class="band-title"> Omnara layer 3 · Machine management, replaced entirely </p>
     <div class="chips">
-      <div class="chip gone"><span class="name">omnarad daemon＋自我更新</span><small>不需要裝任何東西到任何機器</small></div>
-      <div class="chip gone"><span class="name">daemon WS hub＋offer/accept 協議</span><small>DO hibernation 連線即定址</small></div>
-      <div class="chip gone"><span class="name">runner 子程序＋SQLite outbox</span><small>Sandbox API 直接給結果</small></div>
-      <div class="chip gone"><span class="name">machinepool＋3 家供應商對帳</span><small>平台自己管機器生命週期</small></div>
-      <div class="chip cf">執行環境<small>→ @cloudflare/computer（isolate/container/browser 一個 exec()）</small></div>
-      <div class="chip cf">瀏覽器能力<small>→ Browser Run＋playwright-mcp（a11y tree，Omnara 沒有）</small></div>
+      <div class="chip gone"><span class="name"> omnarad daemon and self-updates </span><small> No installation on customer machines </small></div>
+      <div class="chip gone"><span class="name"> Daemon WebSocket hub and offer/accept protocol </span><small> Addressable DO hibernating connections </small></div>
+      <div class="chip gone"><span class="name"> Runner subprocess and SQLite outbox </span><small> Sandbox API returns results directly </small></div>
+      <div class="chip gone"><span class="name"> Machine pool and reconciliation across three providers </span><small> Platform owns machine lifecycle </small></div>
+      <div class="chip cf"> Execution environment <small> → @cloudflare/computer: one exec() over isolates/containers/browsers </small></div>
+      <div class="chip cf"> Browser capabilities <small> → Browser Run and playwright-mcp accessibility trees, absent from the reviewed Omnara </small></div>
     </div>
   </div>
 
   <div class="band">
-    <p class="band-title">Omnara 第 4 層 · 產品表面</p>
+    <p class="band-title"> Omnara layer 4 · Product surface </p>
     <div class="chips">
-      <div class="chip gone"><span class="name">SSRF 防禦工程大半</span><small>isolate 出生無網路，capability 白名單</small></div>
-      <div class="chip you">Console 前端<small>你現在動工中</small></div>
-      <div class="chip you">SDK（server＋client 兩隻）<small>Omnara 只有 codegen 副產品，你做成產品</small></div>
-      <div class="chip you">Secrets 注入（不經過模型）<small>縮小版：綁 CF Secrets Store</small></div>
-      <div class="chip you">Slack 等整合<small>後置，不進 MVP</small></div>
+      <div class="chip gone"><span class="name"> Much of the SSRF defense layer </span><small> Isolates start without networking; allow capabilities explicitly </small></div>
+      <div class="chip you"> Console frontend <small> Current implementation work </small></div>
+      <div class="chip you"> Server and client SDKs <small> Make the SDK a product rather than a code-generation byproduct </small></div>
+      <div class="chip you"> Secret injection outside model context <small> Smaller integration through CF Secrets Store </small></div>
+      <div class="chip you"> Slack and other integrations <small> Deferred beyond MVP </small></div>
     </div>
   </div>
 
   <div class="band">
-    <p class="band-title">第 5 層 · Omnara 沒有的（你的護城河）</p>
+    <p class="band-title"> Layer 5 · Proposed differentiation beyond Omnara </p>
     <div class="chips">
-      <div class="chip you"><span class="star">★</span> per-end-user 計費＋美元硬上限<small>爆額度可終止跑中 run——代理型工具做不到</small></div>
-      <div class="chip you"><span class="star">★</span> per-end-user 憑證隔離（鑰匙櫃）<small>org key 永不進前端，end-user 短效 token</small></div>
-      <div class="chip you"><span class="star">★</span> per-end-user 網控（egress allowlist）<small>宣告格式一次定好，先在應用層強制</small></div>
-      <div class="chip you"><span class="star">★</span> end-user SDK（嵌進客戶的產品）<small>整個定位的核心介面</small></div>
+      <div class="chip you"><span class="star">★</span> Per-end-user billing and USD caps <small> Terminate active runs when budgets are exhausted </small></div>
+      <div class="chip you"><span class="star">★</span> Per-end-user credential isolation <small> Org keys stay off frontends; use short-lived user tokens </small></div>
+      <div class="chip you"><span class="star">★</span> Per-end-user egress allowlists <small> Define policy once, enforce at the application layer initially </small></div>
+      <div class="chip you"><span class="star">★</span> End-user SDK embedded in customer products <small> The central product interface </small></div>
     </div>
   </div>
 </section>
 
 <section id="deleted">
   <p class="tag">What You Skip</p>
-  <h2>省下了什麼：量化對照</h2>
-  <p>這張表是「不用做清單」。每一列都是 Omnara 實際寫了、而你一行都不用寫的子系統。</p>
+  <h2> Engineering saved: a comparison </h2>
+  <p> Each row is a subsystem Omnara implemented that this proposal delegates to the platform. </p>
   <div class="tbl-scroll"><table>
-    <thead><tr><th>Omnara 花掉的</th><th>規模感</th><th>你改用</th></tr></thead>
+    <thead><tr><th> Omnara investment </th><th> Scale </th><th> Replacement </th></tr></thead>
     <tbody>
-      <tr><td class="k">機器層全套（omnarad·machinedaemon·machinepool·daemonprotocol）</td><td>它最難的分散式工程：runner 子程序、lock-fd 存活證明、本地 outbox、PTY 跨平台、3 家供應商對帳</td><td class="cfv">@cloudflare/computer ＋ Sandbox ＋ Browser Run</td></tr>
-      <tr><td class="k">工作認領（SKIP LOCKED·租約·收屍）</td><td>worker/maintenance 兩個服務的存在理由</td><td class="cfv">DO 單線程序列化＋alarms（平台保證）</td></tr>
-      <tr><td class="k">WebSocket 所有權（hub·presence·Lua CAS）</td><td>多副本連線路由的整套舞蹈</td><td class="cfv">DO 可定址＋WebSocket hibernation</td></tr>
-      <tr><td class="k">model＋MCP 手刻層</td><td>~7,000 行，還要自己追協定演進</td><td class="cfv">AI SDK＋官方 MCP SDK＋AI Gateway</td></tr>
-      <tr><td class="k">turn 狀態機＋崩潰恢復</td><td>kernel 的核心複雜度</td><td class="cfv">Think fibers（stash / onFiberRecovered）</td></tr>
-      <tr><td class="k">基礎設施運維（PG·Redis·MinIO·nginx·migrate）</td><td>compose 六個服務＋24 個 migrations</td><td class="cfv">wrangler deploy（唯一要管的 schema 是 DO 裡你自己的表）</td></tr>
+      <tr><td class="k"> Machine stack: omnarad/machinedaemon/machinepool/daemonprotocol </td><td> Runner subprocesses, lock-fd liveness, local outboxes, cross-platform PTYs, three-provider reconciliation </td><td class="cfv">@cloudflare/computer ＋ Sandbox ＋ Browser Run</td></tr>
+      <tr><td class="k"> Work claiming: SKIP LOCKED, leases, reaping </td><td> The purpose of worker and maintenance services </td><td class="cfv"> Serialized DO execution and alarms </td></tr>
+      <tr><td class="k"> WebSocket ownership: hub/presence/Lua CAS </td><td> Routing connections across replicas </td><td class="cfv"> Addressable DOs and WebSocket hibernation </td></tr>
+      <tr><td class="k"> Custom model and MCP layers </td><td> About 7,000 lines plus protocol maintenance </td><td class="cfv"> AI SDK, official MCP SDK, AI Gateway </td></tr>
+      <tr><td class="k"> Turn state machine and crash recovery </td><td> Core kernel complexity </td><td class="cfv">Think fibers（stash / onFiberRecovered）</td></tr>
+      <tr><td class="k"> Infrastructure operations: PG/Redis/MinIO/nginx/migrations </td><td> Six Compose services and 24 migrations </td><td class="cfv"> wrangler deploy; maintain only application schemas inside DOs </td></tr>
     </tbody>
   </table></div>
-  <p>代價同樣寫明：<strong>放棄 `docker compose up` 式自架</strong>（self-host 重新定義為 deploy-to-your-CF-account）、放棄 BYO machine、承受 computer 的 early-preview API 變動。這些已在 8/22 決策時接受。</p>
+  <p> Tradeoffs: <strong> Give up Docker Compose self-hosting </strong> ; redefine self-hosting as deployment into a customer's Cloudflare account, omit BYO machines, and accept early-preview computer API changes. These tradeoffs were accepted on 08-22. </p>
 </section>
 
 <section id="build">
   <p class="tag">What You Build</p>
-  <h2>你真正要蓋的五樣東西</h2>
+  <h2> Five things we actually build </h2>
   <ul class="tight">
-    <li><strong>Contracts（脊椎）</strong>：`packages/contracts` 升格為正式 wire spec。每個資源帶 <code>end_user</code> 維度、每個 run 帶預算欄位——這是日後最難補的，day one 進去。CF 的型別不得滲入。</li>
-    <li><strong>Console（動工中）</strong>：end-user 清單與用量、run 時間軸（SSE）、審批收件匣、額度與硬上限設定、憑證管理。先打 mock。</li>
-    <li><strong>Runtime（`apps/runtime`，一個 wrangler 專案）</strong>：每個 (end_user, session) 一個 DO；裡面 Think＋computer Workspace＋工具集；每次模型/工具呼叫過你的「三道閘」——電表（計費）、門禁（權限）、鑰匙櫃（憑證）——然後才放行。爆額度＝DO 內直接終止 run，這是你跟所有代理型工具的分界線。</li>
-    <li><strong>End-user SDK 兩隻</strong>：Server SDK（org key，開 session、發 token）＋ Client SDK（end-user 短效 token，org key 永不進前端）。從 contracts 生成再手工打磨 DX。</li>
-    <li><strong>原生工具橋接</strong>：照抄 Omnara custom-tool 形狀——工具標 ready、外部經 <code>SubmitToolCallResult</code> 補結果，讓客戶把自己產品的功能註冊成 agent 工具。</li>
+    <li><strong> Contracts: the foundation </strong> : promote packages/contracts to the wire specification. Every resource includes <code>end_user</code> scope and every run carries budget fields from day one. Keep Cloudflare types out. </li>
+    <li><strong> Console: in progress </strong> : end-user usage, SSE run timelines, approvals, budgets/caps, and credentials. Start with mocks. </li>
+    <li><strong> Runtime: apps/runtime, one Wrangler project </strong> : one DO per user/session with Think, computer Workspace, and tools. Model/tool calls pass metering, permission, and credential checks before admission. Exhausted budget stops execution inside the DO. </li>
+    <li><strong> Two end-user SDKs </strong> : Server SDK uses org keys to create sessions/issue tokens; Client SDK uses short-lived user tokens. Generate from contracts, then refine developer experience. </li>
+    <li><strong> Native product tool bridge </strong> : reuse Omnara's custom-tool shape, mark tools ready, and submit external results through <code>SubmitToolCallResult</code> so customers can expose their product's functions as agent tools. </li>
   </ul>
 </section>
 
 <section id="phases">
   <p class="tag">Sequence</p>
-  <h2>建議動工順序</h2>
-  <p>每一階都有一句話驗收，過了才進下一階。時程不寫死——你是一個人，順序比日期重要。</p>
+  <h2> Recommended build order </h2>
+  <p> Each phase has an acceptance statement. Prioritize sequence over fixed dates for a solo project. </p>
   <div class="phases">
     <div class="phase now">
       <span class="no">P0</span>
-      <h4>Contracts 定形＋mock server<span class="badge">先做這個</span></h4>
-      <p>把 end_user、session、run、budget、credential、tool-policy 六個資源的 contract 用 zod/OpenAPI 定下來；一個 in-memory Hono server 照 contract 回假資料。</p>
-      <p class="accept"><b>驗收：</b>console 和未來的 runtime 都只 import contracts，換 base URL 即切換 mock/真後端。</p>
+      <h4> Contracts and mock server <span class="badge"> Start here </span></h4>
+      <p> Define end_user/session/run/budget/credential/tool-policy with Zod/OpenAPI; serve conforming mock data through an in-memory Hono server. </p>
+      <p class="accept"><b> Acceptance: </b> Console and runtime import only contracts; switching base URL selects mock or real backend. </p>
     </div>
     <div class="phase now">
       <span class="no">P1</span>
-      <h4>Console 前端邏輯<span class="badge">你的現任務</span></h4>
-      <p>對著 mock 做四個核心畫面：run 時間軸（SSE）、end-user 用量與硬上限、審批收件匣（allow/ask/deny）、憑證管理。這同時是產品驗證素材。</p>
-      <p class="accept"><b>驗收：</b>用 mock 資料能完整走一遍「end user 發起 → 燒錢 → 碰上限 → 審批」的故事。</p>
+      <h4> Console application logic <span class="badge"> Current task </span></h4>
+      <p> Build run timelines, user usage/caps, allow/ask/deny approvals, and credentials against mocks; use them for product validation too. </p>
+      <p class="accept"><b> Acceptance: </b> Mock data demonstrates user initiation, spending, budget exhaustion, and approval. </p>
     </div>
     <div class="phase">
       <span class="no">P2</span>
-      <h4>Runtime 最小可跑</h4>
-      <p>`apps/runtime`：一個 DO agent＋computer Workspace＋兩三個工具（exec、web）＋SSE 回 console。電表先做「計數＋超額即停」最粗版。</p>
-      <p class="accept"><b>驗收：</b>console 換掉 mock 後不改一行；跑中 run 燒爆假額度時被當場終止。</p>
+      <h4> Minimal working runtime </h4>
+      <p> One DO agent, computer Workspace, two or three exec/web tools, and SSE back to console. Begin with simple usage counting and immediate budget stops. </p>
+      <p class="accept"><b> Acceptance: </b> Replace the mock without changing console code; an active run stops when its fake budget is exhausted. </p>
     </div>
     <div class="phase">
       <span class="no">P3</span>
-      <h4>三道閘做實</h4>
-      <p>權限 ask → durable 審批（人隔天批、run 原地續）；per-end-user 憑證注入（不經過模型）；egress allowlist v0（應用層強制，宣告格式定好）。</p>
-      <p class="accept"><b>驗收：</b>一個未授權工具呼叫會停在收件匣，批准後從斷點繼續。</p>
+      <h4> Implement the three enforcement checks </h4>
+      <p> Durable ask approvals resume even the next day; inject per-user credentials outside model context; define and enforce application-level egress allowlists. </p>
+      <p class="accept"><b> Acceptance: </b> An unauthorized tool waits in the inbox and resumes from the interruption after approval. </p>
     </div>
     <div class="phase">
       <span class="no">P4</span>
-      <h4>SDK＋開源故事</h4>
-      <p>兩隻 SDK 打包、一個嵌入範例（假的客戶 app）、README＋deploy-to-your-CF-account 指南。這時才算「可被整合」。</p>
-      <p class="accept"><b>驗收：</b>陌生開發者照 README 三十分鐘內在自己的 app 跑起第一個 end-user agent。</p>
+      <h4> SDK and open-source delivery </h4>
+      <p> Package both SDKs, an embedded customer-app example, README, and deploy-to-your-Cloudflare-account guide. </p>
+      <p class="accept"><b> Acceptance: </b> A new developer runs an end-user agent in their app within thirty minutes using the README. </p>
     </div>
   </div>
 </section>
 
 <section id="guardrails">
   <p class="tag">Guardrails</p>
-  <h2>護欄與不做清單</h2>
-  <div class="guard"><b>computer 是 early preview。</b>它的 API 只出現在 `apps/runtime` 內部，永不出現在 contracts——它變版時你只改一個資料夾。</div>
-  <div class="guard"><b>CF 正在往上爬</b>（Flue 只是第一個房客）。你的防禦是速度＋end-user 原語深度，不是功能廣度——P0–P4 以外的每件事都是干擾。</div>
-  <div class="guard"><b>不做：</b>泛用管理面（AI Gateway 的地盤）、桌面 GUI computer-use（spec 本來就 beta flag）、Slack 等整合、harness marketplace（Phase 2 後置）、BYO machine。</div>
+  <h2> Boundaries and exclusions </h2>
+  <div class="guard"><b> computer is early preview. </b> Keep its API inside apps/runtime and out of contracts so upgrades affect one directory. </div>
+  <div class="guard"><b> Cloudflare is moving up the stack </b> ; Flue is the first consumer. Speed and depth of end-user primitives are the defense; work outside P0–P4 distracts from it. </div>
+  <div class="guard"><b> Excluded: </b> Generic management competing with AI Gateway, desktop GUI computer use beyond a beta flag, Slack integrations, Phase 2 marketplace, and BYO machines. </div>
 </section>
 
 <footer>
-  <p>依據文件：〈<a href="https://claude.ai/code/artifact/e83fa955-1a29-4d77-a2fe-8dfe428a67f7">Omnara 架構解剖</a>〉·〈<a href="https://claude.ai/code/artifact/a3f2a171-106c-4f0c-8042-0d734d069afc">Cloudflare 的電腦計畫</a>〉·〈<a href="https://claude.ai/code/artifact/9dba35b4-1c41-491d-b256-746ca2102dbf">Isolate 小隔間</a>〉。決策紀錄：2026-08-22 CF-first＋前端先行＋contracts-first。本檔在 docs/product/，屬內部產品文件。</p>
+  <p> Sources: <a href="https://claude.ai/code/artifact/e83fa955-1a29-4d77-a2fe-8dfe428a67f7"> Omnara architecture review </a>〉·〈<a href="https://claude.ai/code/artifact/a3f2a171-106c-4f0c-8042-0d734d069afc"> Cloudflare's computer project </a>〉·〈<a href="https://claude.ai/code/artifact/9dba35b4-1c41-491d-b256-746ca2102dbf"> Isolate compartments </a> . Decisions: 2026-08-22 Cloudflare-first, frontend-first, contracts-first. Historical internal product document. </p>
 </footer>
 
 </div>

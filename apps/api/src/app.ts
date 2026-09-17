@@ -27,6 +27,7 @@ import {
   providerKeys,
   type RunRow,
   runs,
+  saveWorkspace,
   seal,
   transcriptEventPayload,
   workItems,
@@ -38,8 +39,9 @@ import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { type Auth, authProviderStatus } from "./auth.ts";
 import { PG_UNIQUE_VIOLATION, pgErrorCode } from "./pg-errors.ts";
+import { prepareRunSeed, RunSeedError } from "./run-seed.ts";
 
-/** 兩種程式化身分：org API key（SDK / CI）與 console session（Better Auth cookie）。 */
+/** Two identities: organization API keys (SDK/CI) and Better Auth session cookies. */
 type Identity =
   | { kind: "api_key"; orgId: string; keyId: string }
   | { kind: "session"; userId: string; email: string };
@@ -49,15 +51,15 @@ export function createApp(db: Db, auth: Auth) {
 
   app.get("/health", (c) => c.json({ ok: true }));
 
-  // Better Auth：console 登入／註冊／session 全走這裡。
+  // Better Auth login, signup, and session endpoints.
   app.on(["POST", "GET"], "/api/auth/*", (c) => auth.handler(c.req.raw));
 
-  // 公開端點：哪些登入方式已設定（AuthScreen 據此渲染按鈕，不用寫死）。
+  // Public provider availability lets clients render only configured login options.
   app.get("/api/auth-providers", (c) => c.json(authProviderStatus()));
 
-  // ---- 認證：/v1/* 一律要有身分 ----
-  // Bearer nmx_live_…（org API key）或 Better Auth session cookie。
-  // Console 能做的事 = SDK 能做的事（不變式 I5）——兩種身分打的是同一組 endpoint。
+  // Authentication: every /v1 endpoint requires an identity.
+  // Accept an nmx_live organization Bearer key or Better Auth session cookie.
+  // Both identities use the same public endpoints (invariant I5).
   app.use("/v1/*", async (c, next) => {
     const header = c.req.header("authorization");
     if (header?.startsWith("Bearer ")) {
@@ -69,7 +71,7 @@ export function createApp(db: Db, auth: Auth) {
         return c.json({ error: "invalid_api_key", detail: "API key 不存在或已撤銷" }, 401);
       }
       c.set("identity", { kind: "api_key", orgId: row.orgId, keyId: row.id });
-      // 熱路徑外的順手帳：更新失敗不影響請求
+      // Best-effort bookkeeping outside the critical request path.
       void db
         .update(apiKeys)
         .set({ lastUsedAt: new Date() })
@@ -96,8 +98,8 @@ export function createApp(db: Db, auth: Auth) {
   });
 
   // ---- organizations ----
-  // 註冊在 org 上下文 middleware 之前：就算 header 指到進不去的 org，
-  // console 也還列得出清單、自救得回來。
+  // Register before organization middleware so clients can recover their organization
+  // selection even when the requested organization is inaccessible.
   app.get("/v1/orgs", async (c) => {
     const identity = c.get("identity");
     if (identity.kind === "api_key") {
@@ -126,8 +128,8 @@ export function createApp(db: Db, auth: Auth) {
     return c.json(toOrgResponse(row), 201);
   });
 
-  // org 上下文：API key 綁死自己的 org；session 依成員資格解析，
-  // x-nimplex-org header 只在使用者是該 org 成員時生效。
+  // API keys are bound to their organization; session access depends on membership.
+  // Honor x-nimplex-org only when the user belongs to that organization.
   app.use("/v1/*", async (c, next) => {
     const identity = c.get("identity");
     if (identity.kind === "api_key") {
@@ -152,7 +154,7 @@ export function createApp(db: Db, auth: Auth) {
     await next();
   });
 
-  // ---- org API keys（程式化身分）----
+  // Organization API keys: programmatic identity.
 
   app.get("/v1/api-keys", async (c) => {
     const orgId = c.get("orgId");
@@ -163,7 +165,7 @@ export function createApp(db: Db, auth: Auth) {
     return c.json({ api_keys: rows.map(toApiKeyResponse) });
   });
 
-  /** 明文 key 只在這個回應出現一次；落地只有 sha256。 */
+  /** Return the plaintext key once; persist only its SHA-256 hash. */
   app.post("/v1/api-keys", async (c) => {
     const orgId = c.get("orgId");
     const parsed = createApiKeyRequest.safeParse(await c.req.json().catch(() => null));
@@ -185,7 +187,7 @@ export function createApp(db: Db, auth: Auth) {
     return c.json({ ...toApiKeyResponse(row), key }, 201);
   });
 
-  /** 撤銷＝標記不刪列；被撤銷的 key 當下起全部 401。 */
+  /** Mark revoked keys without deleting audit history; subsequent requests return 401. */
   app.delete("/v1/api-keys/:id", async (c) => {
     const orgId = c.get("orgId");
     const [row] = await db
@@ -203,7 +205,7 @@ export function createApp(db: Db, auth: Auth) {
     return c.body(null, 204);
   });
 
-  // ---- org members（登入 console 的「人」）----
+  // Organization members: human account identities.
 
   app.get("/v1/members", async (c) => {
     const orgId = c.get("orgId");
@@ -278,7 +280,7 @@ export function createApp(db: Db, auth: Auth) {
     return c.body(null, 204);
   });
 
-  // ---- 插槽 3：sandbox provider ----
+  // Sandbox provider selection.
 
   app.get("/v1/sandbox-providers", async (c) => {
     const providers = await Promise.all(
@@ -291,7 +293,7 @@ export function createApp(db: Db, auth: Auth) {
     return c.json({ providers });
   });
 
-  // ---- 插槽 1：BYOK ----
+  // BYOK provider credentials.
 
   app.get("/v1/provider-keys", async (c) => {
     const orgId = c.get("orgId");
@@ -310,7 +312,7 @@ export function createApp(db: Db, auth: Auth) {
     });
   });
 
-  /** 明文只在這個請求裡出現，落地即 AES-256-GCM 加密，之後只讀得到 last4。 */
+  /** Encrypt plaintext with AES-256-GCM before storage; later reads expose only last4. */
   app.put("/v1/provider-keys", async (c) => {
     const orgId = c.get("orgId");
     const parsed = putProviderKeyRequest.safeParse(await c.req.json().catch(() => null));
@@ -365,7 +367,7 @@ export function createApp(db: Db, auth: Auth) {
     return c.body(null, 204);
   });
 
-  /** 價格表：計量與跑前試算共用同一份資料。 */
+  /** Shared prices for accounting and estimates. */
   app.get("/v1/models", (c) =>
     c.json({
       models: listPricedModels().map(({ provider, model, rate }) => ({
@@ -417,6 +419,7 @@ export function createApp(db: Db, auth: Auth) {
 
     try {
       const run = await db.transaction(async (tx) => {
+        const seed = await prepareRunSeed(tx, orgId, body);
         const [created] = await tx
           .insert(runs)
           .values({
@@ -429,7 +432,12 @@ export function createApp(db: Db, auth: Auth) {
               instructions: body.instructions,
               input: body.input ?? null,
               metadata: body.metadata ?? null,
+              parent_run_id: body.parent_run_id ?? null,
+              prior_messages: seed.priorMessages,
+              execution_mode: body.execution_mode,
+              compact_context: body.context_mode === "compact",
             },
+            workspaceMetadata: seed.metadata,
             budgetUsd: body.budget_usd,
             maxDurationSeconds: body.max_duration_seconds ?? null,
             clientNonce: body.client_nonce,
@@ -437,6 +445,7 @@ export function createApp(db: Db, auth: Auth) {
           })
           .returning();
         if (!created) throw new Error("insert run failed");
+        await saveWorkspace(tx, created.id, {}, seed.files, orgId);
         await tx.insert(events).values({
           runId: created.id,
           seq: 0,
@@ -469,6 +478,7 @@ export function createApp(db: Db, auth: Auth) {
       });
       return c.json(toRunResponse(run, externalUserId), 201);
     } catch (err) {
+      if (err instanceof RunSeedError) return c.json({ error: err.message }, err.status);
       if (isUniqueViolation(err)) return c.json({ error: "duplicate_client_nonce" }, 409);
       throw err;
     }
@@ -610,7 +620,7 @@ export function createApp(db: Db, auth: Auth) {
     return c.json(toRunResponse(updated, endUserExternalId));
   });
 
-  /** 立刻軟殺；沙箱由 worker 看到狀態改變後硬殺（destroy）。 */
+  /** Persist the stop immediately; the worker observes it and destroys the sandbox. */
   app.post("/v1/runs/:id/kill", async (c) => {
     const found = await findRunWithEndUser(db, c.get("orgId"), c.req.param("id"));
     if (!found) return c.json({ error: "not_found" }, 404);
@@ -689,7 +699,7 @@ async function getOrCreateEndUser(db: Db, orgId: string, externalId: string) {
   return again;
 }
 
-/** 一律帶 orgId 過濾：跨租戶的 run 就當不存在（404，不是 403——不洩漏存在性）。 */
+/** Scope by orgId; cross-tenant runs return 404 to avoid disclosing their existence. */
 async function findRunWithEndUser(db: Db, orgId: string, id: string) {
   if (!UUID_RE.test(id)) return null;
   const run = await db.query.runs.findFirst({ where: and(eq(runs.id, id), eq(runs.orgId, orgId)) });

@@ -8,8 +8,8 @@ export interface AppendableEvent {
 }
 
 /**
- * append-only 事件寫入：用 runs.event_seq 原子遞增分配序號，
- * 保證同一 run 的 seq 連續且不重複（SSE 以 seq 續傳）。
+ * Append-only events use atomic runs.event_seq increments to allocate sequences.
+ * Sequences are contiguous and unique per run, providing the SSE resume cursor.
  */
 export async function appendRunEvents(
   executor: DbExecutor,

@@ -1,7 +1,7 @@
-// BYOK 保險庫的信封加密。
+// Envelope encryption for the BYOK vault.
 //
-// 明文 key 只在「使用者 PUT 它」與「閘道要往上游發請求」這兩個瞬間存在於記憶體，
-// 落地一律是 AES-256-GCM 密文。沙箱永遠拿不到——箱子裡只有 run token。
+// Plaintext exists in memory while accepting a key or calling its provider.
+// Persist only AES-256-GCM ciphertext; never expose provider keys to sandboxes.
 
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 

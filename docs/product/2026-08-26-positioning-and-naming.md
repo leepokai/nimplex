@@ -1,182 +1,166 @@
-# nimplex 定位與命名
+# nimplex positioning and naming
 
-> 2026-08-26 定案。取代 `2026-08-21-enduser-sdk-direction.md` 的商業模式部分。
-> 技術架構見 `2026-08-24-nimplex-blueprint.html`（HTML 檔僅為示意展示用）。
+> Decision recorded on 2026-08-26, replacing the business-model section of `2026-08-21-enduser-sdk-direction.md`.
+> The original technical illustration was `2026-08-24-nimplex-blueprint.html`, a presentation mockup rather than a maintained specification.
+> **Historical:** market assessments and business assumptions below reflect that date. The 09-06 refocus later changed the product direction.
 
 ---
 
-## 一、定位：OpenRouter for cloud agents
+## 1. Positioning: OpenRouter for cloud agents
 
-### 1.1 先講清楚 OpenRouter 到底在賣什麼
+### 1.1 What OpenRouter sells
 
-**不是抽象層，是帳單。**
+The original argument: **the bill is the product**.
 
-OpenAI-compatible schema 在 OpenRouter 出現前就已經是事實標準了 —— 它沒有創造中立性，它是**在既有的中立性上面收錢**。真正的價值是「一把 key、一張帳單、一次儲值，不用簽 40 份供應商合約」，加上路由 / failover，以及那個沒人有的公開排行榜。商業模式是**過路財**。
+OpenAI-compatible schemas were already a de facto standard before OpenRouter. Its value is one key, one bill, and one prepaid balance without forty vendor contracts, plus routing, failover, and a public leaderboard. It monetizes existing interoperability through a transaction margin.
 
-所以「OpenRouter for X」要成立，X 必須滿足三個條件：
+For “OpenRouter for X” to work, X needs:
 
-1. 多個供應商，各自有帳單，而且簽約很煩
-2. 真的可替換，路由 / fallback 才有意義
-3. 解決 cold-start（讓人拿到原本拿不到的東西）
+1. Multiple vendors with separate bills and cumbersome contracting.
+2. Real substitutability so routing/fallback has value.
+3. A cold-start benefit: access to something previously unavailable.
 
-### 1.2 三個候選定位的評分
+### 1.2 Three candidate positions
 
-| | for Sandbox | for Harness | **for Cloud Agents** |
+| | For sandboxes | For harnesses | **For cloud agents** |
 |---|---|---|---|
-| 供應商各自有帳單 | 有但薄利 | ❌ 免費（Apache-2.0 npm 套件，$0） | ✅ **高單價** |
-| 路由 / 替換有意義 | 部分 | ❌ 換 harness 是行為質變，不是價差 | ✅ **輸出統一為 PR** |
-| 有可轉售的 API | ✅ | n/a | ⚠️ 混合，且有 ToS 風險 |
-| 花費流過你 | compute 薄利 | ❌ | ✅ **厚** |
-| **誰想弄死你** | 沒人特別 | **Vercel（免費吃掉）** | **供應商本人** |
+| Separate vendor bills | Yes, thin margins | ❌ Free Apache-2.0 npm packages | ✅ **High prices** |
+| Useful routing/substitution | Partly | ❌ Harness changes alter behavior, not merely price | ✅ **Common output: a PR** |
+| Resellable API | ✅ | n/a | ⚠️ Mixed, with terms-of-service risk |
+| Spending passes through us | Thin compute margin | ❌ | ✅ **Substantial** |
+| Main competitive threat | No specific opponent | **Vercel providing it free** | **The vendors themselves** |
 
-**harness 層出局的關鍵**：harness 是 Apache-2.0 的 npm 套件，成本 $0、不計費、不可替換，而且 Vercel 的 `HarnessAgent` 已經免費把「一套 API 跨 harness」做完了（adapter 已 9 家：claude-code / codex / cursor / cline / fx / grok-build / opencode / pi / ACP）。**無法從 $0 抽成 —— 這是結構問題，不是執行問題。**
+**Why the harness layer was rejected:** harness packages are free, unmetered, and behaviorally different, while Vercel's free `HarnessAgent` already supplied one API across nine adapters: claude-code, codex, cursor, cline, fx, grok-build, opencode, pi, and ACP. Taking a percentage of $0 is structurally impossible.
 
-**cloud agent 層成立的關鍵**：Devin 的 ACU、Cursor 的 seat、Copilot 的 premium request、Codex 綁 ChatGPT 方案 —— 各自計費且昂貴。更重要的是它們的契約**統一在產出**（給 repo + issue，還一個 PR），而不是統一在 API。這個共同分母讓路由與 best-of-N 真的可行。
+**Why cloud agents appeared viable:** Devin ACUs, Cursor seats, Copilot premium requests, and Codex through ChatGPT plans are separately and expensively billed. Their common contract is the result—repository plus issue in, PR out—rather than the API. That shared output supports routing and best-of-N comparisons.
 
-### 1.3 為什麼 Vercel 結構上不會做這個
+### 1.3 The proposed structural gap with Vercel
 
-**Vercel 的生意是賣 Vercel 的 compute。**
+The thesis was that Vercel sells its own compute. A neutral metering layer letting customers run E2B, route to Codex, and call Anthropic directly would conflict with that incentive. Free `HarnessAgent` makes adoption of Vercel Sandbox easier.
 
-一個中立的計量層，讓客戶跑在 E2B、路由到 Codex、用 Anthropic 直連 —— 直接違背他們的利益。他們給出免費的 `HarnessAgent`，是為了讓你更容易落在他們的 sandbox 上。
+This was considered analogous to OpenRouter's position beside OpenAI and a stronger argument than a list of feature differences. It is a strategic hypothesis, not a guarantee about another company's future plans.
 
-這跟 OpenRouter 能在 OpenAI 旁邊活下來是同一個結構縫隙。**這是本定位最強的論證，比任何功能差異都強。**
+### 1.4 Vendors become the primary risk
 
-### 1.4 但這一版的敵人是供應商本人
+Model vendors already sell APIs and want volume, enabling OpenRouter resale. Cloud-agent vendors often sell seats. Breaking seats into resold usage can undermine their pricing, giving a $500/user/month vendor a clear reason to prohibit it in its terms.
 
-OpenRouter 能轉售，是因為模型商本來就想賣 API、想要 volume。
+### 1.5 Therefore v1 uses BYOK
 
-**cloud agent 廠商賣的是 seat。** 把 seat 打散成 usage 轉售，等於直接破壞他們的定價模型。一家 $500/user/mo 的公司有非常明確的動機在 ToS 裡封死你。
+The initial version would not resell usage. Customers connect their own Devin / Cursor / Codex accounts to an orchestration and governance layer:
 
-### 1.5 v1 因此走 BYOK
+- Customers retain their own contracts. The original proposal described this as eliminating terms risk and COGS and avoiding a financial-services role; those were business assumptions, not a legal determination.
+- We provide one API, best-of-N fan-out, per-user USD caps, kill switches, and unified auditing.
+- We collect real outcome/win-rate data from each run.
 
-第一版**不轉售**。做 BYOK（客戶插自己的 Devin / Cursor / Codex 帳號）的編排 + 治理層：
+This gives up the single-bill pitch and transaction margin in exchange for starting the data feedback cycle with less operational exposure.
 
-- 客戶用**自己的合約** → **ToS 風險歸零、COGS 歸零、不用當 fintech**
-- 我們提供：一個 API、fan-out best-of-N、per-user $ 上限、kill-switch、統一稽核
-- 我們收走：**每一次 run 的真實勝率資料**
+> The proposed moat is outcome data, not adapters.
 
-代價是放棄「一張帳單」的話術與抽成。換到的是**零風險地把飛輪先轉起來**。
+Public benchmarks do not answer which cloud agent works on a customer's actual repository. SWE-bench was considered saturated and unrepresentative of real repositories. An intermediary can collect real task outcomes across providers.
 
-> **護城河是勝率資料，不是 adapter。**
->
-> 「哪個 cloud agent 在**我這個 repo** 上真的好用」目前公開世界沒有答案 —— SWE-bench 早已飽和且不反映真實 repo。作為中間層，我們是唯一產得出真實任務勝率資料的人。
-
-等這份資料變成客戶留下來的理由，才有籌碼談轉售 —— 那時候是廠商想上架，不是我們求他們。
-
-**先當編排層，再當通路。反過來會被 ToS 打死在第一天。**
+If that data becomes the reason customers stay, it creates bargaining power for future resale: vendors would want distribution through the platform. The intended sequence is orchestration first, distribution later; attempting resale first exposes the business to vendor restrictions immediately.
 
 ---
 
-## 二、目標客戶：B / C / D
+## 2. Target customers: B / C / D
 
-三者的共同點是**真的需要聚合**。
+Their common requirement is real aggregation.
 
-### B. AI 產品公司（把 agent 嵌進自己產品賣給終端使用者）
+### B. AI product companies embedding agents for end users
 
-「幫我做一個 app」類產品、Shopify app 生成器、內部工具生成器。
+Examples: “build an app” products, Shopify app generators, and internal-tool generators.
 
-| | |
+| Area | Assessment |
 |---|---|
-| 痛點 | per-end-user 預算不設就被燒爆；供應商掛掉＝自己產品掛掉；成本套利直接決定毛利 |
-| 為何需要聚合 | 這三個痛點**沒有一個**能靠單一廠商解決 |
-| 評價 | **最強的聚合買家**，也是真正的市場 |
+| Pain | Uncapped end-user spending, provider outages becoming product outages, and cost differences directly determining gross margin |
+| Need for aggregation | A single provider cannot solve all three problems |
+| Priority | Strongest aggregation buyer and principal market |
 
-### C. 50–500 人的工程組織（採購型）
+### C. Engineering organizations with 50–500 people
 
-| | |
+| Area | Assessment |
 |---|---|
-| 痛點 | 四家供應商 = 四份合約、四個 dashboard、零個統一視圖；不知道哪家真的好；市場變太快不想鎖死 |
-| 為何需要聚合 | 一張帳單 + 用量治理 + 供應商可替換 |
-| 評價 | 單價最高，但銷售週期最長，不適合當第一個 |
+| Pain | Four contracts and dashboards without a unified view, uncertain provider quality, and a fast-moving market discouraging lock-in |
+| Need for aggregation | Consolidated billing, usage governance, interchangeable providers |
+| Priority | Highest contract value but longest sales cycle; unsuitable as the first customer segment |
 
-### D. best-of-N 買家（高風險 codebase）
+### D. Best-of-N buyers with high-risk codebases
 
-| | |
+| Area | Assessment |
 |---|---|
-| 痛點 | 同一個任務要丟三家比 PR |
-| 評價 | 量少、單價高、**demo 效果最好** —— 適合當行銷素材，不適合當商業模式 |
+| Pain | Send the same task to three vendors and compare PRs |
+| Priority | Low volume, high value, strongest demo; useful marketing material rather than the core business model |
 
-**建議順序：B → C**，D 全程當素材用。
+Recommended order: **B → C**, with D supplying demonstrations throughout.
 
-### ⚠️ 關於 indie developer / 小團隊
+### Indie developers and small teams
 
-原本考慮的兩個 persona（indie dev 要 browser + 突破 Vercel / Supabase timeout；小團隊要權限管理 + Slack bot，類 Omnara）——
+The original personas—indie developers needing browsers and longer execution than Vercel/Supabase timeouts, and small teams needing permissions plus a Slack bot like Omnara—do not inherently need aggregation. One buys runtime, the other a control plane; either may accept a single-provider product.
 
-**他們的痛點與「聚合」完全無關。** 前者買的是 runtime，後者買的是控制面，**兩者都會很開心地用一個綁死單一廠商的產品**。
-
-這不代表 persona 錯了。OpenRouter 的用戶當初也不是為了聚合註冊的，是為了「一把 key 很好用」——**聚合是留下來的理由，不是進來的理由**。
-
-所以：這兩類可以當**獲客入口**，但**架構第一天就必須多供應商**，絕不能讓他們的需求把產品塑造成單一廠商形態。這條線現在畫，之後來不及。
+That does not invalidate them as acquisition channels. OpenRouter users may arrive because one key is convenient and stay because of aggregation. These personas can attract initial users, but the architecture must support multiple providers from day one so their immediate needs do not permanently shape a single-provider product.
 
 ---
 
-## 三、命名：nimplex
+## 3. Naming: nimplex
 
-### 3.1 為什麼捨棄 loopbox
+### 3.1 Why abandon loopbox
 
-`loop` + `box` ＝「我在箱子裡跑 loop」。
+`loop` + `box` suggests running a loop in a box. Under this positioning, the product routes work to loop operators rather than running the loop itself, making the name misleading. With only one commit, renaming was cheap; the cost would grow each week.
 
-但新產品**不跑 loop，它路由給跑 loop 的人**。這個名字已經從「不精確」變成「主動誤導」。專案只有一個 commit，現在改名幾乎零成本，往後每週都變貴。
+### 3.2 Naming criteria
 
-### 3.2 命名條件
+The audience is B/C: platform teams and engineering leaders, not indie hackers. The name should sound like serious infrastructure and function as a name rather than a description.
 
-TA 是 B / C —— platform team 與工程主管，不是 indie hacker。名字必須讀起來像**正經基礎設施**，而且要是「一個名字」而非「一句描述」。
+`AgentRouter` was rejected as a literal description with no room for interpretation or recognition to develop. Reference names: Supabase, Vercel, Replicate, Turso, Groq—short, modern, coined, and suggestive of purpose.
 
-> `AgentRouter` 出局的原因：它是**描述句不是名字**，沒留任何解釋空間，第二次聽到不會更有感。
+### 3.3 Collision checks at the time
 
-register 參照：Supabase / Vercel / Replicate / Turso / Groq —— 現代、短、造字、猜得到在幹嘛。
-
-### 3.3 撞名檢查結果
-
-| 候選 | 結果 |
+| Candidate | Result |
 |---|---|
-| Agentry | ❌ **SAP Agentry**（Syclo 併購而來的企業行動平台，仍在服役） |
-| Artery | ❌ **Akka Artery**（JVM 遠端傳輸層） |
-| Agora | ❌ **Agora.io**（即時音視訊 SDK） |
-| Conductor / Maestro | ❌ Netflix 兩個都有 |
-| Corso | ⚠️ Alcion Corso（M365 備份，小眾 OSS） |
-| Dispatch | ⚠️ Netflix Dispatch（事故管理） |
-| Switchgear / Rotta | ✅ 空，但語感偏工業 / 復古 |
+| Agentry | ❌ SAP Agentry, the enterprise mobile platform acquired with Syclo |
+| Artery | ❌ Akka Artery, JVM remote transport |
+| Agora | ❌ Agora.io, real-time audio/video SDK |
+| Conductor / Maestro | ❌ Netflix uses both |
+| Corso | ⚠️ Alcion Corso, a smaller open-source M365 backup product |
+| Dispatch | ⚠️ Netflix Dispatch, incident management |
+| Switchgear / Rotta | ✅ No identified collision, but industrial/retro tone |
 
-> 判準修正：**npm 被殭屍套件佔走不算撞名，撞到真實產品才算。**
+Refined criterion: an abandoned npm package is not a meaningful collision; an active product is.
 
-### 3.4 nimplex 的構詞
+### 3.4 Construction
 
+```text
+nim + plex
 ```
-nim  +  plex
-```
 
-- **`plex·`** —— 來自 multiplex / plexus，是唯一**字面上就是「多路徑在一點交會再散開」**的字根。中央 router 的語意直接內建，而且 multiplex 是每個工程師都懂的詞，零解釋成本。
-- **`nim·`** —— 取自 **nimbus**（氣象學中「雲」的正式術語）。雲端語意百分之百在，但不直白。
+- **plex:** from multiplex/plexus, suggesting multiple paths meeting and separating at a central point. Multiplex is familiar to engineers and conveys routing.
+- **nim:** from **nimbus**, a meteorological cloud term, suggesting cloud infrastructure without stating it literally.
 
-**接合規則（`runplex` / `arcplex` 被否決的原因）**：真正的 -plex 字，前半都以母音或 `m` / `l` / `r` 收尾 —— com·plex、sim·plex、du·plex、multi·plex —— 會滑進 `pl` 讀成**一個字**。以硬爆破音收尾的前綴（run· / arc· / grid· / hub·）舌頭要停一下，會讀成**兩個字黏起來**。
+The naming discussion favored prefixes ending in a vowel or m/l/r because they flow into “pl,” citing com·plex, sim·plex, du·plex, and multi·plex. Candidates such as runplex and arcplex were rejected because they sounded like two joined words; grid/hub prefixes were judged similarly abrupt.
 
-其他「中央 router」字根候選（備查）：`xbar·`（crossbar switch，任意進任意出）、`spin·`（spine-leaf 的中央層）。`nex·` 已爛（Nexus / Nexo / Nexa 滿地）。
+Other central-router roots considered: `xbar` from crossbar switching, and `spin` from the spine layer in spine-leaf networks. `nex` was considered overused by Nexus/Nexo/Nexa.
 
-```
+```text
 @nimplex/sdk
 $ nimplex run --cap=5.00
 ```
 
+The command above was a naming illustration, not the current CLI syntax.
+
 ---
 
-## 四、動工前待驗證（優先序）
+## 4. Validation before building, in priority order
 
-| # | 問題 | 為什麼重要 |
+| # | Question | Why it matters |
 |---|---|---|
-| 1 | `bespokelabsai/sandbox`（自稱 "OpenRouter for Sandbox"、8 backend、Apache-2.0）**只有 4 星的死因** | 死因若是「聚合層沒有錢流過」→ 本 reframe 正好跳過該坑，往下做；若是「根本沒人要中立」→ run-level 版本也會死，整條路重想。**同一份資料，兩個相反結論** |
-| 2 | 各家 cloud agent 的 **ToS 禁不禁多租戶代理 / 轉售** | 直接決定 v1 只能 BYOK 還是可以走轉售 |
-| 3 | 是否已有人在做 cloud agent 聚合 | **尚未查證，不應假設這塊是空的** |
+| 1 | Why did `bespokelabsai/sandbox`, describing itself as “OpenRouter for Sandbox” with eight backends and Apache-2.0 licensing, have only four stars? | If no spending passes through sandbox aggregation, this reframe avoids that problem. If customers do not want neutrality, run-level aggregation may also fail. The same observation supports opposite conclusions |
+| 2 | Do cloud-agent terms permit multitenant proxies or resale? | Determines whether v1 must remain BYOK or can resell |
+| 3 | Is someone already aggregating cloud agents? | Unverified; do not assume an empty market |
 
 ---
 
-## 附錄：技術面既有結論（2026-08-26 掃描）
+## Appendix: technical conclusions from the 2026-08-26 review
 
-- **不要在 `apps/runtime` 重寫 loop 與 session** —— 接 Vercel `HarnessAgent`。它已提供 session detach / stop / resume、`suspendTurn()` 跨 process 續跑、sandbox 模板快照（`onBootstrap` + `bootstrapHash`）、`permissionMode`、`toolApproval`、Workflow DevKit 持久化、useChat 串流。
-
-- **sandbox 層是開放介面**，不是只有 Vercel。`HarnessV1SandboxProvider` 任何人可實作；官方有 `@ai-sdk/sandbox-vercel` 與 `sandbox-just-bash`，社群已有 Cloudflare bridge、Coder、Azure Container Apps、Apple Container 等。
-
-- **Vercel 明確不做的三件事，就是差異化的全部**：
-  1. **per-end-user $ 硬上限**
-  2. **mid-run kill-switch**（`detach()` 不是 kill）
-  3. **per-end-user credential vault** —— Vercel 只給 `credentialForwarding` 這根管線，不給保險庫；Composio 只解 SaaS OAuth 那半，且正在遮蔽 raw token（`mask_secret_keys_in_connected_account`），而 coding agent 在箱內跑 `gh` / `psql` / `terraform` 要的正是**原始憑證**。
+- **Do not rewrite loops and sessions in `apps/runtime`.** The proposal favored Vercel `HarnessAgent`, which supplied detach/stop/resume, cross-process `suspendTurn()`, bootstrap snapshots through `onBootstrap` + `bootstrapHash`, permissionMode, toolApproval, Workflow DevKit durability, and useChat streaming.
+- **Sandbox integration is open**, not restricted to Vercel. Anyone can implement `HarnessV1SandboxProvider`; official providers include `@ai-sdk/sandbox-vercel` and sandbox-just-bash, with community Cloudflare, Coder, Azure Container Apps, and Apple Container bridges.
+- **Three proposed differentiators absent from the reviewed Vercel offering:** per-end-user USD caps; mid-run kill switches (`detach()` is not kill); and per-end-user credential vaults. Vercel supplied the `credentialForwarding` channel rather than a vault. Composio covered SaaS OAuth and was masking raw tokens through `mask_secret_keys_in_connected_account`, while sandboxed `gh`, `psql`, and `terraform` require usable credentials.

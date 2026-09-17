@@ -1,62 +1,93 @@
 # Tech stack
 
-> 活文件：換掉任何一項時同步更新「為什麼」。詳細決策見 docs/product/ 對應文件。
+> Living document: update the rationale whenever a choice changes. Detailed decisions are in the corresponding documents under `docs/product/`.
 
-## Runtime 與工具鏈
+Product direction, 2026-09-15: the target is a cloud agent platform with many
+durable sessions. The tables below describe the current implementation, including
+its local SQLite entry point. See [cloud architecture candidates](product/2026-09-15-cloud-agent-candidates.md)
+for the PostgreSQL planning baseline and unresolved execution topology.
 
-| 項目 | 選擇 | 為什麼 |
+## Runtime and toolchain
+
+| Area | Choice | Rationale |
 |---|---|---|
-| Runtime | Node ≥ 22 + tsx（dev 與 prod 都直跑 TS，無 build step） | monorepo 內部套件全走 source import，改 contracts 立即全域生效 |
-| Package manager | pnpm 10（workspace: apps/* packages/* examples/*） | workspace protocol + 硬連結省空間 |
-| Task runner | turbo 2（`pnpm check` 跑全 workspace tsc） | 增量快取 |
-| Lint / Format | Biome 2（單工具取代 eslint+prettier；docs/ 與 migrations/ 排除） | 快、零設定衝突 |
-| 測試 | vitest 4（純函式單測）＋ `examples/quickstart/src/e2e.ts`（冒煙）＋ `@nimplex/testkit` 假上游 | 業務核心在 core 純函式，單測便宜；整合靠 e2e 腳本。**錢的路徑不用真 key**：testkit 仿 Anthropic Messages API 的官方形狀，BYOK `base_url` 指過去，worker 零改動地走真實路徑 |
+| Runtime | Node ≥ 22 and tsx in development and production; TypeScript runs directly without a build step | Internal packages import source, so contract changes take effect throughout the monorepo immediately |
+| Package manager | pnpm 10; workspace: apps/*, packages/*, examples/* | Workspace protocol and space-efficient hard links |
+| Task runner | Turbo 2; `pnpm check` runs workspace TypeScript checks | Incremental caching |
+| Lint / format | Biome 2 replaces ESLint and Prettier; docs/ and migrations/ excluded | Fast and avoids conflicting configurations |
+| Testing | Vitest 4 for pure functions, `examples/quickstart/src/e2e.ts` for smoke tests, and the `@nimplex/testkit` fake upstream | Core business logic is pure and inexpensive to test; scripts cover integration. **Accounting tests do not use real keys:** testkit follows the official Anthropic Messages API shape, and BYOK `base_url` redirects the unchanged worker through the real execution path |
 
-## 後端
+## Local runtime
 
-| 項目 | 選擇 | 為什麼 |
+`@nimplex/runtime` is the shared execution package. The default terminal and
+headless paths use its in-process session authority and Node 22.13+ `node:sqlite`.
+SQLite transactions commit events, model accounting, and workspace snapshots;
+a separate SQLite ownership database holds an OS lock for the runtime lifetime.
+Pi, context projection, just-bash tools, and native journals are shared with the
+optional hosted worker. See [the local design](product/2026-09-13-local-runtime.md).
+An opt-in per-session engine (`NIMPLEX_ENGINE=pi-harness`) runs Pi's public
+AgentHarness over the same SQLite transaction; the hosted schema carries the
+matching organization-scoped Pi Storage tables (`pi_*`, migration 0010).
+
+Local model access includes Anthropic API credentials and Pi's Codex subscription
+OAuth provider. Subscription requests retain the shared executor but record quota
+usage separately from API charges. See [subscription access](product/2026-09-15-codex-subscription.md)
+and [Pi compatibility](product/2026-09-15-pi-compatibility.md). Hosted model dispatch
+remains Anthropic-only.
+
+## Optional hosted backend
+
+| Area | Choice | Rationale |
 |---|---|---|
-| HTTP framework | Hono 4 + @hono/node-server | 控制面 `/v1` 與 Better Auth 共用一個 app；SSE 用 `hono/streaming` |
-| DB | Postgres 17（local docker :5433；prod 定案 Neon） | `DATABASE_URL` 驅動，換雲不改 code；不用 Supabase 因為租戶隔離在 app 層不靠 RLS |
-| ORM | Drizzle 0.45 + drizzle-kit migrations + postgres.js driver | schema 即型別；migrations 進版控 |
-| 契約 | zod 4（packages/contracts） | 唯一真理來源：API 驗證、SDK 型別、DB jsonb 型別同一份 |
-| Auth（人的登入） | Better Auth 1.7：GitHub / Google 社群登入；email+password 僅 dev 後門（e2e 用） | 資料在自己 DB、無廠商鎖定（vs Clerk）；選型全文見 memory 與 `.env.example` 設定步驟 |
-| Auth（程式化） | 自刻 org API key（`nmx_live_…`，sha256 落地、可撤銷） | 這條路徑本來就該自己刻；per-key limit 是未來花費控制掛點 |
-| 秘密保管 | AES-256-GCM 信封加密（BYOK vault），明文只在兩個瞬間存在於記憶體 | 架構不變式 I1/I3 |
-| Harness loop | **Pi** `@earendil-works/{pi-agent-core,pi-ai,pi-coding-agent}` 0.85.1（MIT），`Agent` class 在 worker 程序內驅動，`shouldStopAfterTurn` 一次只跑一個 turn；read/write/edit 的 `operations` 掛點換成 VFS，bash 使用自訂 execute | 09-09 決策閘實測：headless、自訂 ops、BYOK base_url、usage 全通（`sandbox/pi-spike/`）；不 fork、不自寫 loop。grep/find/ls 工具不掛（Pi 的 grep 直接 spawn ripgrep），模型用 bash 裡的 `grep`/`rg` 即可 |
-| Tier 1 VFS | **just-bash** 3.4.2（`Bash({ cwd, files })`，`InMemoryFs`） | 60+ 指令、毫秒啟動、零成本；沒 git / npm / 網路 / binary，native 指令執行前路由至 Tier 2。VFS 本身無快照 API，靠 Tier 0（`workspace_files` + metadata）每個工具原子寫回 |
-| Sandbox | docker provider（預設 image `node:22-bookworm-slim`）；**e2b provider**（`e2b` SDK 2.46）；**ComputeSDK adapter**（`computesdk` 4.1 + `@computesdk/{daytona,vercel}` 1.7）填長尾；local 僅 dev | 插槽 3 可插拔；正式環境預設遠端 provider（架構文件 §9）。每家都要過 `@nimplex/testkit` 的 conformance kit（C0–C10）。ComputeSDK 沒有 stdin／per-exec signal：adapter 用「寫檔 + `<`」與 `Promise.race` 繞，實際差幾條由 conformance 說話 |
+| HTTP framework | Hono 4 and @hono/node-server | `/v1` control plane and Better Auth share an app; SSE uses `hono/streaming` |
+| Database | Postgres 17; local Docker on :5433; Neon selected for production | `DATABASE_URL` allows cloud changes without code changes; application-level tenant isolation does not require Supabase RLS |
+| ORM | Drizzle 0.45, drizzle-kit migrations, postgres.js driver | Schema-derived types and version-controlled migrations |
+| Contracts | Zod 4 in packages/contracts | One source for API validation, SDK types, and DB JSONB types |
+| Human authentication | Better Auth 1.7: GitHub / Google social login; email/password enabled only for development and E2E | Data stays in our DB without vendor lock-in (compared with Clerk); see the decision memory and `.env.example` setup instructions |
+| Programmatic authentication | Organization API keys (`nmx_live_…`), SHA-256 stored, revocable | A small purpose-built interface; per-key limits provide a future spending-control extension point |
+| Secret storage | AES-256-GCM envelope encryption for the BYOK vault; plaintext exists in memory only while accepting or using a credential | Architectural invariants I1/I3, as updated for the worker-hosted loop |
+| Harness loop | **Pi** `@earendil-works/{pi-agent-core,pi-ai,pi-coding-agent}` 0.85.1 (MIT); host-owned `Agent`, one turn via `shouldStopAfterTurn`; VFS operations for read/write/edit and custom bash execution | The 09-09 spike verified headless use, custom operations, BYOK base URL, and usage (`sandbox/pi-spike/`). No fork or custom loop. Pi's grep/find/ls tools are not registered because grep spawns ripgrep directly; models use bash `grep`/`rg` |
+| Tier 1 VFS | **just-bash** 3.4.2: `Bash({ cwd, files })` and `InMemoryFs` | 60+ commands, millisecond startup, no sandbox charge; native git/npm/network/binary operations route to Tier 2 before execution. VFS has no snapshot API; Tier 0 (`workspace_files` and metadata) commits every tool atomically |
+| Sandbox | Docker (`node:22-bookworm-slim` by default); direct **E2B** SDK 2.46; **ComputeSDK** 4.1 with `@computesdk/{daytona,vercel}` 1.7 for additional providers; local only for development | Pluggable sandbox port; production defaults to a remote provider (architecture §9). Each provider runs the same C0–C10 conformance kit. ComputeSDK lacks stdin and per-exec signals; the adapter uses a temporary file with `<` and `Promise.race`, with actual limitations measured by conformance tests |
 
-## 前端
+## Frontend and terminal
 
-| 項目 | 選擇 | 為什麼 |
+| Area | Choice | Rationale |
 |---|---|---|
-| Site | Vite + React + GSAP ScrollTrigger | 行銷頁動效 |
-| SDK 瀏覽器線 | 規劃中：`@nimplex/sdk/browser`（run-scoped viewer token，型別上無 apiKey 欄位） | SDK 架構文件 §2.5 |
+| Site | Vite, React, and GSAP ScrollTrigger | Marketing animations |
+| Terminal | `@earendil-works/pi-tui` 0.85.1, plus `@nimplex/runtime`; plain readline mode for pipes and one-shot commands | Shared terminal primitives provide multiline editing, autocomplete, scrolling, and Markdown; separate controller, store, command registry, view, and IO modules keep the application maintainable |
+| Browser SDK | Planned `@nimplex/sdk/browser`, with run-scoped viewer tokens and no apiKey field in its type | SDK architecture §2.5 |
 
 ## SDK
 
-| 項目 | 選擇 | 為什麼 |
+The terminal lives in `apps/cli` and loads TypeScript through tsx. It uses the
+local session runtime directly. The HTTP SDK remains available for optional hosted
+API deployments and depends only on contracts. `.env` in the current project is
+loaded by the CLI; sandbox tools never inherit provider credentials.
+
+| Area | Choice | Rationale |
 |---|---|---|
-| 介面形狀 | 對齊 Vercel AI SDK v7 `Agent`（version/generate/stream） | SDK 架構文件 §1.2 |
-| 事件流 | SSE + 原生 `Last-Event-ID` 續傳（seq 為游標） | 四家競品皆無乾淨可續傳事件流，是差異化（§8.1） |
-| 依賴 | 只依賴 `@nimplex/contracts` | 客戶安裝零拖累 |
+| Interface | Vercel AI SDK v7 `Agent` shape: version/generate/stream | SDK architecture §1.2 |
+| Event stream | SSE with native `Last-Event-ID` resume; sequence number is the cursor | The original competitor comparison identified clean resumable streams as a differentiator (§8.1) |
+| Dependencies | Only `@nimplex/contracts` | Minimal installation overhead for SDK customers |
 
-## 已知踩坑（改動這些依賴前先讀）
+## Known pitfalls
 
-1. **better-auth 1.7 的 account 表需要 `issuer` 欄位**（多數網路範例是舊版）；schema 在 `packages/db/src/auth-schema.ts`。
-2. **better-auth 帶進 kysely 會讓 drizzle-orm 在 pnpm 產生第二個 peer 實例**→ typecheck 大爆炸。修法：db/api/worker 三包的 devDependencies 都掛 `kysely`，統一 peer context。升級 drizzle 或 better-auth 時保持。
-3. （已移除：Managed Agents 路徑 2026-09-06 刪掉，其 SDK 白名單踩坑見 git 歷史 `0f32657` 的本文件。）
-4. **E2B 真雲兩個坑（conformance kit 抓到）**：(a) Hobby 方案 sandbox 壽命上限 1 小時，超過 400 `Timeout cannot be greater than 1 hours`——預設壽命改 1h，`NIMPLEX_E2B_LIFETIME_MS` 可覆寫；(b) 預設使用者是非 root 的 `user`，`/workspace` 要用 `user: "root"` 建再 `chown` 回去。
-5. **worker 原本沒載入根目錄 `.env`**（只有 api 有）→ sandbox provider 的 key 在 worker 看不到。已補同一套 `process.loadEnvFile`。
-6. **遠端 provider 的 `create()` 在箱子建好後任何一步失敗，必須自己 kill 再 throw**——否則沒人拿到 id、沒人砍，箱子漏在雲端燒額度。E2B 首次真雲測試就漏了 12 個（mkdir 失敗那輪），已修（e2b.ts / computesdk.ts）。接新 provider 時這條要抄。
-7. **drizzle 0.45 把所有 query 錯誤包成 `DrizzleQueryError`，Postgres 的 SQLSTATE 在 `err.cause.code`**——直接讀 `err.code` 永遠對不到（app.ts 的 `isUniqueViolation` 曾因此讓 409 變 500）。讀錯誤碼一律走 `apps/api/src/pg-errors.ts` 的 `pgErrorCode()`。
+Read these before changing the related dependencies:
 
-## 2026-09-10 harness 落地
+1. **Better Auth 1.7 requires `issuer` in the account table.** Many online examples target older versions. See `packages/db/src/auth-schema.ts`.
+2. **Better Auth brings Kysely, which can create a second Drizzle peer instance under pnpm and break type checking.** Keep `kysely` in db/api/worker devDependencies to unify the peer context when upgrading Drizzle or Better Auth.
+3. Managed Agents was removed on 2026-09-06. Its SDK event-allowlist issue remains documented in this file's history at `0f32657`.
+4. **Two real E2B issues found by conformance tests:** (a) Hobby sandboxes have a one-hour lifetime limit; longer values return HTTP 400, `Timeout cannot be greater than 1 hours`. The default is now one hour, overridable by `NIMPLEX_E2B_LIFETIME_MS`. (b) The default account is non-root `user`; create `/workspace` as `root`, then chown it to `user`.
+5. **The worker originally did not load the root `.env`, while the API did**, so sandbox credentials were unavailable. Both now use `process.loadEnvFile`.
+6. **A remote provider's `create()` must kill the new sandbox if any subsequent setup step fails.** Otherwise no caller receives its ID and the sandbox leaks. The first real E2B mkdir failure leaked 12 sandboxes; `e2b.ts` and `computesdk.ts` now clean up. Apply the same rule to new providers.
+7. **Drizzle 0.45 wraps query errors in `DrizzleQueryError`; Postgres SQLSTATE is in `err.cause.code`.** Reading only `err.code` caused uniqueness errors to return 500 instead of 409. Always use `pgErrorCode()` in `apps/api/src/pg-errors.ts`.
 
-- Pi 0.85.1 + just-bash 3.4.2；模型與每個工具各自形成 durable checkpoint。
-- `model_calls` 保存 reservation、settled 與 unknown；已結算與預留額度分開對外回傳。
-- native 路由解析完整 shell AST。E2B 執行器使用持久化 supervisor journal，支援 pause/resume 與確認環境丟失後重建。
-- workspace 保留 binary、空目錄、symlink 與權限；`node_modules` 是 native 箱子的可重建快取。
-- context 使用可驗 digest 的 extractive checkpoint，完整原始 log 保留，`read_output` / `read_log` 分頁讀取。
-- 驗收：`pnpm e2e` / `pnpm e2e:e2b` / `pnpm e2e:real`。細節見 `docs/product/2026-09-10-harness-runtime.md`。
+## Runtime implemented on 2026-09-10
+
+- Pi 0.85.1 and just-bash 3.4.2; each model response and each tool has a durable checkpoint.
+- `model_calls` tracks reservations, settlements, and unknown outcomes; settled and reserved amounts are returned separately.
+- Native routing parses the complete shell AST. E2B uses durable supervisor journals, pause/resume, and reconstruction after confirmed environment loss.
+- The workspace preserves binary data, empty directories, symlinks, and permissions; `node_modules` is a reconstructible native cache.
+- Context uses digest-verified extractive checkpoints. Original logs remain available through paginated `read_output` / `read_log` tools.
+- Acceptance: `pnpm e2e`, `pnpm e2e:e2b`, and `pnpm e2e:real`. See `docs/product/2026-09-10-harness-runtime.md`.

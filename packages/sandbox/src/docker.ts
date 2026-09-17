@@ -1,7 +1,7 @@
-// docker provider：每個 run 一個容器，硬殺就是 docker rm -f。
+// Docker provider: one container per run, destroyed with docker rm -f.
 //
-// 分層抄 OpenAI agents-core 的做法（DockerSandboxSession extends UnixLocalSandboxSession）：
-// docker 只是「在別的地方執行同一組指令」，路徑與檔案語意跟 local 一樣。
+// Follows OpenAI agents-core DockerSandboxSession/UnixLocalSandboxSession layering:
+// execute the same filesystem commands in a different environment.
 
 import { randomUUID } from "node:crypto";
 import type {
@@ -101,7 +101,7 @@ export class DockerSandboxProvider implements SandboxProvider {
       name,
       "-w",
       workdir,
-      // Linux 上讓容器也能用 host.docker.internal 打到閘道
+      // Make host.docker.internal available to containers on Linux too.
       "--add-host=host.docker.internal:host-gateway",
     ];
     if (args.cpu) runArgs.push("--cpus", String(args.cpu));

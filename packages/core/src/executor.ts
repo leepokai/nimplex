@@ -1,4 +1,4 @@
-// One work item drives a Pi turn. Awaited persistence callbacks commit each model response
+// One executor step drives a Pi inference and tool batch. Persistence callbacks commit each model response
 // and each tool result independently, so recovery skips all already committed operations.
 
 import type {
@@ -16,7 +16,6 @@ export interface ExecutorEvent {
 
 export interface ExecutorRunContext {
   id: string;
-  orgId: string;
   modelProvider: ModelProvider;
   model: string;
   config: unknown;
@@ -25,8 +24,12 @@ export interface ExecutorRunContext {
   /** Tier 0 file tree at the start of this turn (absolute path -> bytes). */
   files: Record<string, Uint8Array>;
   workspaceMetadata: WorkspaceMetadata;
-  /** BYOK credential resolved by the worker. Stays in this process; never enters any sandbox. */
-  credential: { apiKey: string; baseUrl: string | null };
+  /** Model credential resolved by the host. Stays in this process; never enters any sandbox. */
+  credential: {
+    apiKey: string;
+    baseUrl: string | null;
+    billingMode?: "subscription";
+  };
   nativeBash?: (
     id: string,
     command: string,
@@ -62,7 +65,7 @@ export interface ExecutorRunContext {
 export interface ExecutorStepResult {
   events: ExecutorEvent[];
   costUsd: number;
-  /** Tier 0 file tree after this turn; the worker diffs it against the input and writes through. */
+  /** Tier 0 file tree after this turn; the host owns its durable commit. */
   files: Record<string, Uint8Array>;
   /**
    * Why the model stopped. "toolUse" = the run continues, "stop" = the run is complete; anything
@@ -72,7 +75,7 @@ export interface ExecutorStepResult {
   errorMessage?: string;
 }
 
-/** Runs exactly one turn. Must honor `signal` (lease lost, run killed, duration cap) by aborting the model call. Throws only for infrastructure errors; model-side stops come back in the result so spend is never lost. */
+/** Runs exactly one turn. Must honor `signal` (host shutdown, cancellation, ownership loss, duration cap) by aborting the model call. Throws only for infrastructure errors; model-side stops come back in the result so spend is never lost. */
 export type RunExecutor = (
   run: ExecutorRunContext,
   signal: AbortSignal,

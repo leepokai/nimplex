@@ -11,7 +11,8 @@
     "@nimplex/db": "workspace:*",
     "@nimplex/sandbox": "workspace:*",
     "@nimplex/sdk": "workspace:*",
-    "@nimplex/testkit": "workspace:*"
+    "@nimplex/testkit": "workspace:*",
+    "@nimplex/runtime": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",

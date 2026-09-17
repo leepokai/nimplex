@@ -11,9 +11,9 @@ const LINES = [
 ];
 
 /**
- * 開機序列。刻意做得短（約 1.1 秒）並且能被跳過——
- * 這是一個 waitlist 頁，表單越晚出現轉換越差，動畫不該擋在使用者前面。
- * reduced-motion 或背景分頁直接略過。
+ * Short, skippable boot sequence (about 1.1 seconds).
+ * Keep the waitlist form accessible; animation must not delay the primary action.
+ * Skip for reduced motion and background tabs.
  */
 export function Preloader() {
   const root = useRef<HTMLDivElement>(null);
@@ -67,7 +67,7 @@ export function Preloader() {
 
   return (
     <div ref={root} id="preloader" aria-hidden="true" className="preloader">
-      {/* 沒有 JS 就不該看到一塊永遠不會消失的黑幕 */}
+      {/* Without JavaScript, never leave a permanent opaque overlay. */}
       <noscript>
         <style>{"#preloader{display:none}"}</style>
       </noscript>

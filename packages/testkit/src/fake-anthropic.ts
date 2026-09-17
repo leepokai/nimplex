@@ -29,6 +29,12 @@ export interface FakeAnthropicOptions {
   toolCalls?: number;
   /** Latency added to every response, so a test can kill a worker mid-call. Default 0. */
   delayMs?: number;
+  /**
+   * Answer requests that offer no tools (for example summary requests) with plain
+   * text instead of the scripted tool call. Off by default so existing probes can
+   * observe an unguarded harness accepting tool calls in a summary.
+   */
+  honorToolAvailability?: boolean;
 }
 
 export interface FakeAnthropicState {
@@ -75,29 +81,38 @@ export function createFakeAnthropic(options: FakeAnthropicOptions = {}) {
     state.messagesCalls.push({ model, stream, maxTokens, body });
     if (delayMs > 0) await new Promise((r) => setTimeout(r, delayMs));
     const step = countToolResults(body.messages);
+    // With honorToolAvailability, a request that offers no tools cannot use tools.
+    const toolsOffered =
+      !options.honorToolAvailability || (Array.isArray(body.tools) && body.tools.length > 0);
     // Each scripted step writes a file so Tier 0 (the durable workspace) has something to show.
     const scripted = options.script?.slice(step, step + (options.batchSize ?? 1));
-    const toolUses = scripted
-      ? scripted.map((tool, index) => ({
-          id: `${nextId("toolu")}_step_${step + index + 1}`,
-          name: tool.name,
-          input: typeof tool.input === "function" ? tool.input(body.messages) : tool.input,
-        }))
-      : step < toolCalls
-        ? [
-            {
-              id: `${nextId("toolu")}_step_${step + 1}`,
-              name: "bash",
-              input: { command: `echo "fake step ${step + 1}" > /workspace/step-${step + 1}.txt` },
-            },
-          ]
-        : [];
+    const toolUses = !toolsOffered
+      ? []
+      : scripted
+        ? scripted.map((tool, index) => ({
+            id: `${nextId("toolu")}_step_${step + index + 1}`,
+            name: tool.name,
+            input: typeof tool.input === "function" ? tool.input(body.messages) : tool.input,
+          }))
+        : step < toolCalls
+          ? [
+              {
+                id: `${nextId("toolu")}_step_${step + 1}`,
+                name: "bash",
+                input: {
+                  command: `echo "fake step ${step + 1}" > /workspace/step-${step + 1}.txt`,
+                },
+              },
+            ]
+          : [];
     const stopReason =
       options.stopReasons?.[state.messagesCalls.length - 1] ??
       (toolUses.length ? "tool_use" : "end_turn");
     const text = toolUses.length
       ? `(fake anthropic) step ${step + 1} of ${toolCalls}`
-      : "(fake anthropic) hello from the fake upstream";
+      : toolsOffered
+        ? "(fake anthropic) hello from the fake upstream"
+        : "(fake anthropic) summary of the conversation";
     const usage = {
       input_tokens: inputTokens,
       output_tokens: Math.min(outputTokens, maxTokens),

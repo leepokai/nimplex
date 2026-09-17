@@ -11,18 +11,18 @@ export class NimplexError extends Error {
 }
 
 export interface TransportOptions {
-  /** nimplex 控制面位址，預設讀 NIMPLEX_BASE_URL */
+  /** Control-plane base URL, defaulting to NIMPLEX_BASE_URL. */
   baseUrl?: string;
-  /** org 層 API key，預設讀 NIMPLEX_API_KEY */
+  /** Organization API key, defaulting to NIMPLEX_API_KEY. */
   apiKey?: string;
   fetch?: typeof globalThis.fetch;
   headers?: Record<string, string>;
 }
 
 /**
- * 只做一件事：把 HTTP 細節收在一個地方。
- * Console 與 SDK 走的是同一組公開 endpoint（沒有 /internal），
- * 所以這個 transport 能做的事，就是使用者能做的事的全集。
+ * Centralize HTTP protocol behavior.
+ * Console and SDK use the same public endpoints, without /internal routes,
+ * so this transport exposes the same capabilities available to customers.
  */
 export class Transport {
   readonly baseUrl: string;
@@ -37,7 +37,7 @@ export class Transport {
       "http://localhost:8787"
     ).replace(/\/+$/, "");
     this.apiKey = options.apiKey ?? globalThis.process?.env?.NIMPLEX_API_KEY;
-    // 瀏覽器裡的 fetch 必須以 window 當 receiver，直接存成欄位再呼叫會 Illegal invocation
+    // Bind browser fetch to its receiver to avoid Illegal invocation errors.
     this.fetchImpl = options.fetch ?? globalThis.fetch.bind(globalThis);
     this.extraHeaders = options.headers ?? {};
   }
@@ -100,9 +100,9 @@ export class Transport {
   }
 
   /**
-   * SSE：用 fetch 讀串流。伺服器乾淨關閉＝事件流結束；
-   * 中途斷線（網路錯誤）會帶 Last-Event-ID 自動重連續傳，
-   * 連續失敗超過上限或 HTTP 層錯誤（4xx/5xx）則直接拋出。
+   * Read SSE with fetch. Clean server closure ends the event stream.
+   * Network interruptions reconnect automatically with Last-Event-ID.
+   * Exceeding the consecutive-failure limit or receiving an HTTP error throws.
    */
   async *sse(
     path: string,
@@ -142,7 +142,7 @@ export class Transport {
               const parsed = parseFrame(frame);
               if (!parsed) continue;
               if (parsed.id !== null) lastId = parsed.id;
-              failures = 0; // 有資料進來就重置退避
+              failures = 0; // Data resets reconnect backoff.
               yield parsed;
             }
           }
@@ -150,12 +150,12 @@ export class Transport {
           await reader.cancel().catch(() => {});
         }
       } catch (err) {
-        // 呼叫端主動取消、或 server 明確回錯（4xx/5xx）——不重試
+        // Explicit cancellation and HTTP errors are not retried.
         if (options.signal?.aborted || err instanceof NimplexError) throw err;
         failures += 1;
         if (failures > SSE_MAX_RETRIES) throw err;
         await sleep(SSE_RETRY_BASE_MS * failures, options.signal);
-        continue; // 帶著 lastId 重連，事件不重不漏（exclusive 語意）
+        continue; // Reconnect after lastId, preserving exclusive cursor semantics.
       }
       if (closedCleanly) return;
     }

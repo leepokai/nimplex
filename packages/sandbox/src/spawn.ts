@@ -1,4 +1,4 @@
-// 所有 provider 共用的 process 執行原語：串流、逾時、stdin、abort。
+// Shared process execution with streaming, timeout, stdin, and cancellation.
 
 import { spawn } from "node:child_process";
 import type { ExecResult } from "@nimplex/core";
@@ -90,7 +90,7 @@ export function spawnCollect(
   });
 }
 
-/** 只想知道成功與否的小工具（探測 docker 有沒有開之類）。 */
+/** Probe command success, for example Docker daemon availability. */
 export async function probe(command: string, args: string[]): Promise<boolean> {
   try {
     const result = await spawnCollect(command, args, { timeoutMs: 5000 });

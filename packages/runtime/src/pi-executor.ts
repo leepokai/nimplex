@@ -1,6 +1,6 @@
-// Pi (@earendil-works) as the loop kernel, loop-outside: the agent runs in this worker process,
+// Pi (@earendil-works) as the loop kernel, loop-outside: the agent runs in its runtime host,
 // its tools run against a just-bash VFS (Tier 1) seeded from Tier 0. Nothing here touches the
-// database; the worker owns the transaction.
+// database; the host supplies transactional persistence.
 import { Agent, type AgentMessage, type AgentTool } from "@earendil-works/pi-agent-core";
 import {
   type AssistantMessage,
@@ -9,6 +9,7 @@ import {
   validateToolArguments,
 } from "@earendil-works/pi-ai";
 import { streamSimple } from "@earendil-works/pi-ai/api/anthropic-messages";
+import { streamSimple as streamCodex } from "@earendil-works/pi-ai/api/openai-codex-responses";
 import { getBuiltinModels } from "@earendil-works/pi-ai/providers/all";
 import {
   createBashTool,
@@ -33,15 +34,19 @@ import {
   readArchive,
   toolOutputText,
 } from "./context.ts";
+import { CODEX_BASE_URL, codexModels } from "./models.ts";
 import { restoreWorkspace, snapshotWorkspace } from "./workspace.ts";
 
 export const WORKSPACE = "/workspace";
-const DEFAULT_ANTHROPIC_URL = "https://api.anthropic.com";
+export const DEFAULT_ANTHROPIC_URL = "https://api.anthropic.com";
 const DEFAULT_BASH_TIMEOUT_MS = 120_000;
 
 const runConfig = z.object({
   instructions: z.string(),
   input: z.string().nullable().optional(),
+  prior_messages: z.array(z.record(z.string(), z.unknown())).optional(),
+  execution_mode: z.enum(["build", "read_only"]).optional(),
+  compact_context: z.boolean().optional(),
 });
 type RunConfig = z.infer<typeof runConfig>;
 
@@ -54,7 +59,15 @@ const toolResultPayload = z.object({
 
 export const piExecutor: RunExecutor = async (run, signal) => {
   signal.throwIfAborted();
-  if (run.modelProvider !== "anthropic") throw new Error("pi executor supports Anthropic only");
+  const subscription = run.modelProvider === "openai-codex";
+  if (!subscription && run.modelProvider !== "anthropic")
+    throw new Error("Unsupported Pi model provider.");
+  if (
+    subscription &&
+    (run.credential.billingMode !== "subscription" ||
+      (run.credential.baseUrl !== null && run.credential.baseUrl !== CODEX_BASE_URL))
+  )
+    throw new Error("Codex requires subscription credentials bound to the ChatGPT endpoint.");
   const config = runConfig.parse(run.config);
   const bash = new Bash({
     cwd: WORKSPACE,
@@ -62,12 +75,11 @@ export const piExecutor: RunExecutor = async (run, signal) => {
     executionLimits: { maxFileSystemBytes: WORKSPACE_MAX_BYTES, maxOutputSize: 1024 * 1024 },
   });
   await restoreWorkspace(bash, run.files, run.workspaceMetadata);
-  let currentToolId = "";
-  const tools = vfsTools(bash, async (command, toolSignal, timeoutMs) => {
+  let tools = vfsTools(bash, async (toolCallId, command, toolSignal, timeoutMs) => {
     if (!run.nativeBash) throw new Error("native sandbox is unavailable");
     const before = await snapshotWorkspace(bash);
     const remote = await run.nativeBash(
-      currentToolId,
+      toolCallId,
       command,
       before.files,
       before.metadata,
@@ -77,6 +89,7 @@ export const piExecutor: RunExecutor = async (run, signal) => {
     await restoreWorkspace(bash, remote.files, remote.metadata);
     return remote.result;
   });
+  if (config.execution_mode === "read_only") tools = tools.filter((tool) => tool.name === "read");
   tools.push(
     archiveTool("read_output", run.persistence.readEvents),
     archiveTool("read_log", run.persistence.readEvents),
@@ -85,7 +98,7 @@ export const piExecutor: RunExecutor = async (run, signal) => {
   const compacted = compactContext(
     history,
     run.events,
-    Number(process.env.NIMPLEX_CONTEXT_CHARS ?? 64000),
+    config.compact_context ? 4000 : Number(process.env.NIMPLEX_CONTEXT_CHARS ?? 64000),
   );
   if (compacted) {
     await run.persistence.checkpointContext(compacted);
@@ -116,7 +129,8 @@ export const piExecutor: RunExecutor = async (run, signal) => {
   // the missing calls against the last committed workspace before asking the model again.
   const lastAssistant = history.findLastIndex((m) => m.role === "assistant");
   const previous = history[lastAssistant] as AssistantMessage | undefined;
-  if (previous) {
+  const lastUser = history.findLastIndex((m) => m.role === "user");
+  if (previous && lastAssistant > lastUser) {
     const completed = new Set(
       history
         .slice(lastAssistant + 1)
@@ -149,7 +163,6 @@ export const piExecutor: RunExecutor = async (run, signal) => {
         history.push(message);
         continue;
       }
-      currentToolId = call.id;
       await run.persistence.startTool(call.id, call.name);
       let message: ToolResultMessage;
       try {
@@ -182,33 +195,44 @@ export const piExecutor: RunExecutor = async (run, signal) => {
   }
 
   const agent = new Agent({
-    streamFn: (model, context, options) =>
-      streamSimple(model as Model<"anthropic-messages">, context, {
+    streamFn: (model, context, options) => {
+      const streamOptions = {
         ...options,
-        cacheRetention: "none",
+        cacheRetention: "none" as const,
         maxRetries: 0,
         timeoutMs: 120_000,
-        onPayload: async (payload) => {
+        onPayload: async (payload: unknown) => {
           try {
             signal.throwIfAborted();
             // Text-only messages and local tool schemas: one token per serialized UTF-8 byte,
-            // plus framing allowance. Cache writes, thinking and paid server tools are disabled.
+            // plus framing allowance. Anthropic cache writes, thinking and paid server tools
+            // are disabled; subscription requests use a zero-dollar dispatch reservation.
             const inputTokenBound = Buffer.byteLength(JSON.stringify(payload), "utf8") + 4096;
             reservation = await run.persistence.reserveModel(inputTokenBound);
-            return { ...(payload as object), max_tokens: reservation.max_output_tokens };
+            // Codex subscription requests do not accept Anthropic's output-cap parameter.
+            return subscription
+              ? payload
+              : { ...(payload as object), max_tokens: reservation.max_output_tokens };
           } catch (error) {
             infrastructureError = error;
             throw error;
           }
         },
-      }),
+      };
+      return subscription
+        ? streamCodex(model as Model<"openai-codex-responses">, context, {
+            ...streamOptions,
+            transport: "sse",
+            reasoning: "low",
+          })
+        : streamSimple(model as Model<"anthropic-messages">, context, streamOptions);
+    },
     getApiKey: () => run.credential.apiKey,
     shouldStopAfterTurn: () => true,
     toolExecution: "sequential",
     beforeToolCall: async ({ toolCall }) => {
       try {
         signal.throwIfAborted();
-        currentToolId = toolCall.id;
         await run.persistence.startTool(toolCall.id, toolCall.name);
       } catch (error) {
         infrastructureError = error;
@@ -219,10 +243,15 @@ export const piExecutor: RunExecutor = async (run, signal) => {
     initialState: {
       systemPrompt:
         systemPrompt(config.instructions) +
+        (config.execution_mode === "read_only"
+          ? `\nRead-only workspace paths: ${JSON.stringify(Object.keys(run.files))}. Only read and archive tools are available.`
+          : "") +
         (run.events.some((e) => e.type === "environment.reset")
           ? "\nThe native environment was recreated from the durable workspace. Installed dependencies and background processes may be gone."
           : ""),
-      model: buildModel(run.model, run.credential.baseUrl ?? DEFAULT_ANTHROPIC_URL),
+      model: subscription
+        ? buildCodexModel(run.model)
+        : buildModel(run.model, run.credential.baseUrl ?? DEFAULT_ANTHROPIC_URL),
       messages: history,
       tools,
     },
@@ -235,16 +264,26 @@ export const piExecutor: RunExecutor = async (run, signal) => {
       if (event.message.role === "assistant") {
         if (infrastructureError) throw infrastructureError;
         assistant = event.message;
+        if (subscription)
+          assistant = {
+            ...assistant,
+            usage: {
+              ...assistant.usage,
+              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+            },
+          };
         if (!reservation) {
           if (infrastructureError) throw infrastructureError;
           throw new Error("model response without reservation");
         }
-        const cost = computeCost(run.modelProvider, run.model, {
-          inputTokens: assistant.usage.input,
-          outputTokens: assistant.usage.output,
-          cacheWriteTokens: assistant.usage.cacheWrite,
-          cacheReadTokens: assistant.usage.cacheRead,
-        });
+        const cost = subscription
+          ? { costUsd: 0, estimated: false }
+          : computeCost(run.modelProvider, run.model, {
+              inputTokens: assistant.usage.input,
+              outputTokens: assistant.usage.output,
+              cacheWriteTokens: assistant.usage.cacheWrite,
+              cacheReadTokens: assistant.usage.cacheRead,
+            });
         const uncertain = assistant.stopReason === "error" || assistant.stopReason === "aborted";
         const events: ExecutorEvent[] = [
           {
@@ -260,6 +299,7 @@ export const piExecutor: RunExecutor = async (run, signal) => {
                 cache_write_tokens: assistant.usage.cacheWrite,
               },
               cost_usd: cost.costUsd,
+              billing_mode: subscription ? "subscription" : "api",
               estimated: cost.estimated,
               uncertain,
               message: assistant,
@@ -323,7 +363,10 @@ export function projectMessages(config: RunConfig, events: ExecutorEvent[]): Age
   const checkpoint = latestCheckpoint(events);
   const messages: AgentMessage[] = checkpoint
     ? (checkpoint.messages as unknown as AgentMessage[])
-    : [{ role: "user", content: config.input ?? config.instructions, timestamp: 0 }];
+    : [
+        ...((config.prior_messages as unknown as AgentMessage[]) ?? []),
+        { role: "user", content: config.input ?? config.instructions, timestamp: 0 },
+      ];
   for (const e of events.slice(checkpoint ? checkpoint.high_water + 1 : 0)) {
     if (e.type === "model.call") {
       messages.push((e.payload as { message: AssistantMessage }).message);
@@ -352,7 +395,7 @@ export function projectMessages(config: RunConfig, events: ExecutorEvent[]): Age
   return messages;
 }
 
-function systemPrompt(instructions: string): string {
+export function systemPrompt(instructions: string): string {
   return [
     `You are a coding agent working in a sandboxed workspace at ${WORKSPACE}.`,
     "The shell is an in-memory bash emulator: coreutils, grep/rg, sed, awk, jq, sqlite3 and similar work;",
@@ -363,7 +406,13 @@ function systemPrompt(instructions: string): string {
   ].join("\n");
 }
 
-function buildModel(id: string, baseUrl: string): Model<"anthropic-messages"> {
+export function buildCodexModel(id: string): Model<"openai-codex-responses"> {
+  const model = codexModels().find((m) => m.id === id);
+  if (!model) throw new Error(`Unsupported Codex subscription model: ${id}`);
+  return { ...model, api: "openai-codex-responses", baseUrl: CODEX_BASE_URL };
+}
+
+export function buildModel(id: string, baseUrl: string): Model<"anthropic-messages"> {
   const known = getBuiltinModels("anthropic").find((m) => m.id === id);
   if (known) return { ...known, baseUrl };
   // Preserve the requested ID; the reservation gate rejects models without a known rate.
@@ -382,9 +431,10 @@ function buildModel(id: string, baseUrl: string): Model<"anthropic-messages"> {
 }
 
 /** Pi's file tools with their operations pointed at the just-bash VFS instead of the host disk. */
-function vfsTools(
+export function vfsTools(
   bash: Bash,
   native: (
+    toolCallId: string,
     command: string,
     signal: AbortSignal,
     timeoutMs: number,
@@ -428,7 +478,7 @@ function vfsTools(
       },
       description:
         "Run a shell command in /workspace. The runtime routes the entire script to just-bash or an isolated native sandbox before execution. Full output is archived; large output can be read with read_output.",
-      execute: async (_id, args, signal) => {
+      execute: async (id, args, signal) => {
         const { command, timeout } = z
           .object({ command: z.string(), timeout: z.number().positive().max(120).optional() })
           .parse(args);
@@ -437,6 +487,7 @@ function vfsTools(
         const toolSignal = AbortSignal.any(signals);
         const result = needsNativeSandbox(command)
           ? await native(
+              id,
               command,
               signal ?? new AbortController().signal,
               timeout ? timeout * 1000 : DEFAULT_BASH_TIMEOUT_MS,
@@ -464,7 +515,7 @@ function vfsTools(
   ];
 }
 
-function archiveTool(
+export function archiveTool(
   name: "read_output" | "read_log",
   readEvents: () => Promise<ExecutorEvent[]>,
 ): AgentTool {

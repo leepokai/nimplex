@@ -7,9 +7,9 @@ import { SignalField } from "./SignalField.tsx";
 const WORKS_WITH = ["claude-code", "codex", "opencode", "your own manifest"];
 
 /**
- * 置中的大標題，逐字組裝進場。
- * 兩個把關：等 document.fonts.ready 才切字（否則字寬會在動畫中途跳動）；
- * 等 Preloader 廣播 BOOT_EVENT 才開演，另外留 timeout 保險。
+ * Centered title assembled character by character.
+ * Wait for document.fonts.ready before splitting to prevent changing glyph widths;
+ * wait for the preloader BOOT_EVENT, with a timeout fallback.
  */
 export function Hero() {
   const root = useRef<HTMLElement>(null);
@@ -30,7 +30,7 @@ export function Hero() {
         played = true;
         await document.fonts.ready;
 
-        // 一定要連 words 一起切：只切 chars 的話換行會發生在單字中間
+        // Split words as well as characters to prevent line breaks inside words.
         const split = SplitText.create("[data-hero-h1]", { type: "words,chars" });
         gsap.set("[data-hero-h1]", { autoAlpha: 1 });
 
@@ -48,7 +48,7 @@ export function Hero() {
             "-=0.1",
           )
           .to("[data-hero-sub]", { autoAlpha: 1, y: 0, duration: 0.4 }, "-=0.3")
-          // 表單最後進場，但從頭到尾沒有被 display:none —— 它是這頁唯一要做的事
+          // Reveal the form last, but never hide the primary action with display:none.
           .to("[data-hero-form]", { autoAlpha: 1, duration: 0.35 }, "-=0.15")
           .to("[data-hero-note]", { autoAlpha: 1, duration: 0.3 }, "-=0.2");
       };

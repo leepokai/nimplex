@@ -1,14 +1,14 @@
-// Sandbox provider conformance kit：任何一家 SandboxProvider 都必須通過的契約測試。
+// Contract tests shared by every SandboxProvider.
 //
-// 為什麼要有它：架構文件 §4.1——「換一格其他不動」現在靠人記得，不是靠 build 會紅。
-// 第三家 provider 進來、行為稍有差異（resume 後 env 掉了、stop 後 exec 還能跑、
-// timeout 殺不掉），問題會以「某些 run 隨機殺不掉」的形式出現，那是最難查的一類 bug。
-// 這裡把 port 的每一條隱含契約寫成可執行的斷言；尤其 C4/C5 是不變式 I4
-// （任何 worker 都能砍掉任何箱子）的機械保證。
+// Architecture §4.1 requires provider interchangeability to be mechanically tested.
+// Differences in resumed env, post-stop execution, or timeout cancellation otherwise
+// appear as intermittent runs that cannot be stopped.
+// Express each port guarantee as an assertion; C4/C5 enforce invariant I4:
+// any worker can destroy any sandbox from serialized state.
 //
-// 用法（在 provider 套件的 *.test.ts 裡）：
+// Usage from provider *.test.ts files:
 //   describeSandboxConformance("docker", () => new DockerSandboxProvider(), { timeoutMs: 180_000 });
-// provider 不可用（沒 docker daemon、沒 API key）時整組自動 skip，並印出原因。
+// Unavailable providers skip their group and print the configuration reason.
 
 import {
   isSandboxSessionState,
@@ -20,14 +20,14 @@ import {
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 export interface SandboxConformanceOptions {
-  /** 覆寫預設 image／template（雲端 provider 多半需要） */
+  /** Override default image/template for providers that require it. */
   image?: string;
   /**
-   * shell 指令裡的絕對路徑（/workspace/…）是否指到同一個檔案系統。
-   * 隔離型 provider 一律 true（預設）；local provider 是虛擬映射，設 false 並接受它只能 dev 用。
+   * Whether absolute /workspace paths in shell commands address the same filesystem.
+   * Isolated providers default to true; the development-only local adapter declares false.
    */
   absolutePaths?: boolean;
-  /** 每個測試的上限；建箱可能很慢（拉 image、雲端排程） */
+  /** Per-test timeout allows for image pulls and cloud provisioning. */
   timeoutMs?: number;
 }
 
@@ -49,7 +49,7 @@ export function describeSandboxConformance(
       if (unavailable) console.log(`  [conformance:${label}] 跳過：${unavailable}`);
     }, timeout);
 
-    // 不論測試怎麼收場，箱子一定要清乾淨（reaper 的精神）
+    // Clean up sandboxes regardless of test outcome.
     afterAll(async () => {
       for (const state of leftovers) await provider.delete(state).catch(() => {});
     }, timeout);
@@ -94,8 +94,8 @@ export function describeSandboxConformance(
       await s.stop();
     });
 
-    // 隔離型 provider（docker / e2b …）的 /workspace 是箱子裡真實存在的路徑，harness 會用絕對路徑讀寫。
-    // local provider 做不到（host 上建不出 /workspace），要在選項裡明示 absolutePaths: false。
+    // Isolated providers expose a real /workspace for absolute shell paths.
+    // Local cannot provide that path and must explicitly declare absolutePaths:false.
     if (options.absolutePaths !== false) {
       spec("C1b writeFile 的檔案在 exec 裡用絕對路徑看得到", async () => {
         const s = await create();
@@ -108,7 +108,7 @@ export function describeSandboxConformance(
     }
 
     spec("C2 create 時注入的 env 在 exec 裡看得到；per-exec env 可覆寫", async () => {
-      // harness 拿閘道 URL 與 run token 全靠這條——env 掉了等於 key 路徑斷了
+      // Environment propagation must retain injected configuration and scoped credentials.
       const s = await create({ environment: { NIMPLEX_CONF: "from-create" } });
       const a = await s.exec({ cmd: 'printf %s "$NIMPLEX_CONF"' });
       expect(a.stdout).toBe("from-create");
@@ -136,7 +136,7 @@ export function describeSandboxConformance(
       expect(isSandboxSessionState(copy)).toBe(true);
       const again = await provider.resume(copy as SandboxSessionState);
       expect(await again.readFile("/workspace/c4.txt")).toBe("before-resume");
-      // resume 回來的 session 也要保有 env
+      // Reconnected sessions must retain environment variables.
       const env = await again.exec({ cmd: "env | sort | head -50" });
       expect(env.exitCode).toBe(0);
       await again.stop();
@@ -189,7 +189,7 @@ export function describeSandboxConformance(
       expect(r.exitCode).toBe(0);
       expect(chunks.join("")).toContain("first");
       expect(firstChunkAt).not.toBeNull();
-      // 第一段輸出必須明顯早於結束（至少早過那 1 秒 sleep 的一半）
+      // Initial output must arrive well before completion: within half the one-second sleep.
       expect(finishedAt - (firstChunkAt ?? finishedAt)).toBeGreaterThan(400);
       await s.stop();
     });
@@ -219,7 +219,7 @@ async function expectDead(provider: SandboxProvider, state: SandboxSessionState)
   try {
     session = await provider.resume(state);
   } catch {
-    return; // resume 直接拒絕也算「確實不在」
+    return; // Rejected resume also establishes that the sandbox no longer exists.
   }
   await expectExecFails(session);
 }

@@ -1,30 +1,119 @@
 # nimplex
 
-開源、可自架的 coding agent 雲端 runtime：run 不會因為 worker 或箱子死掉而死、錢有美元硬上限、隨時殺得掉。2026-09-06 起 harness 自己寫、跑在 worker（loop-outside）；工具面 just-bash 第一層、真箱子第二層；append-only run events 是 runtime 的唯一真相。
+A coding-agent harness whose long-term product is a cloud agent platform with
+many durable sessions. Read `docs/product/2026-09-15-cloud-agent-candidates.md`
+for the confirmed direction and candidate designs; the execution topology is
+not finally selected. Reference evidence is recorded in
+`docs/product/2026-09-15-grok-bot-reference.md` and
+`docs/product/2026-09-16-cloudflare-think-reference.md`. The latter records managed
+SQLite and product overlap; PostgreSQL is not required by every cloud topology.
+
+The current `nimplex` CLI starts a session runtime in process;
+no API server, Postgres, or leased worker is required for terminal/headless use.
+`packages/runtime` owns Pi execution, tools, context, durable SQLite checkpoints,
+session workspace snapshots, and session-scoped native sandbox lifetime.
+The existing hosted API/worker deployment reuses the same executor with Postgres
+persistence and lease fencing. Read `docs/product/2026-09-13-local-runtime.md`
+for implemented local behavior; its primary-product framing is superseded by
+the 2026-09-15 direction.
 
 @docs/file-structure.md
 @docs/tech-stack.md
 
-## 必讀文件
+## Required reading
 
-- 怎麼跑起來／服務拓撲／e2e 驗收：`docs/product/2026-09-01-local-dev-runbook.md`
-- 架構切分與不變式（三平面不互相呼叫、錢的路徑）：`docs/product/2026-09-01-architecture.md`
-- SDK 分層與事件契約定案：`docs/product/2026-09-01-sdk-architecture.md`
+- Local operation and acceptance: `docs/product/2026-09-01-local-dev-runbook.md`
+- Architecture and invariants: `docs/product/2026-09-01-architecture.md`
+- SDK boundaries: `docs/product/2026-09-01-sdk-architecture.md`
+- Implemented recovery contract: `docs/product/2026-09-10-harness-runtime.md`
 
-## 鐵則
+Dated proposals describe historical decisions. Prefer the implemented runtime
+contract and current source when older documents disagree.
 
-- `packages/contracts` 是唯一真理來源；改 API 形狀先改 contracts。
-- **沒有 `/internal`**：任何前端或工具都只 import `@nimplex/sdk`，能做的事＝客戶能做的事。
-- api / worker 之間**不互相呼叫**，只透過 Postgres 的 run 狀態機協調。
-- 每句 DB query 都要帶 `org_id` 過濾（租戶隔離在 app 層，沒有 RLS）。
-- 使用者的真 provider key 永不離開信任區 A（api / worker）；沙箱裡永遠沒有它。
-- 文件一律 Markdown（HTML 僅供示意展示）。
-- `docs/competitor-analyze/` 與 `sandbox/` 是 gitignored——絕不 commit；第三方工具試玩放 `sandbox/`。
-- Commit message 不帶 AI attribution trailer（commit-msg hook 會擋）。
-- **程式碼註解、commit message、設定檔註解（Dockerfile / compose / workflow / .env.example）一律用 plain English**（2026-09-03 起）；既有中文註解碰到再改，`docs/product/` 的文件維持中文。
+## Rules
 
-## 改完程式碼後：一律跑 code review
+- `packages/contracts` defines public API schemas. Change contracts before API shapes.
+- No `/internal` API: clients use `@nimplex/sdk` and the same public endpoints as customers.
+- For hosted deployment, API and worker do not call each other. They coordinate through PostgreSQL.
+- Scope every hosted database query to the organization, using a scoped join where needed.
+- Provider keys stay in the owning runtime (or hosted API/worker) and never enter sandboxes.
+- Write **all documentation, instruction files, code comments, configuration comments,
+  and commit messages in English**. Use Markdown for documentation. Conversation
+  with Kevin may remain in Traditional Chinese.
+- `docs/competitor-analyze/` and `sandbox/` are ignored; never commit them.
+  Keep third-party experiments under `sandbox/`.
+- Never commit credentials or local environment files.
+- Do not add AI attribution trailers to commits; the commit hook rejects them.
 
-- 每次修改程式碼（含新增檔案、改 contracts / schema / migration）之後、commit 之前，**必跑 `/code-review medium`**；碰到錢的路徑（budget、記帳、run 狀態機）或改動範圍大時升到 `high`。
-- Review **一律用 Opus 跑**。`/code-review` 沒有 `--model` 旗標，模型跟著 session 走：session 不是 Opus 時，跑 review 前先提醒 Kevin `/model opus` 再執行。
-- 有 findings 先修完再 commit，不可只回報不修；修完若改動不小，再跑一次確認。
+## Long-term maintainability
+
+- Preserve Pi capability parity as a product requirement. See
+  `docs/product/2026-09-15-pi-compatibility.md` for the current inventory and open
+  composition choices; do not claim missing capabilities are implemented.
+- Treat long-term code maintainability as a requirement for every change.
+- Separate UI rendering, command definitions, application state, and IO. Reuse
+  runtime and contract boundaries instead of duplicating business rules in clients.
+- Prefer small, cohesive modules and explicit types. Extract abstractions for
+  actual shared needs; avoid speculative frameworks and giant command switches.
+- Cover important transitions and failure paths with behavior-focused tests.
+  Update architecture and usage documentation when behavior changes.
+- Remove superseded code when replacing an implementation. Do not ship placeholder
+  commands or claim capabilities that the runtime does not actually enforce.
+
+## Full behavioral test coverage
+
+Full behavioral test coverage is required throughout implementation, not deferred
+until the end. Do not take shortcuts by narrowing the requested behavior to the
+cases that are easiest to implement or test.
+
+- Map every requirement and acceptance criterion to executable evidence. Cover
+  normal behavior, boundaries, invalid input, important branches, failure paths,
+  and relevant concurrency, cancellation, ownership and recovery transitions.
+- Add or update tests with each behavior change. Use unit tests for pure logic,
+  integration/conformance tests for real boundaries, and end-to-end tests for
+  complete user workflows. Include actual process-death/restart tests where
+  durability is claimed; mocks alone cannot prove those guarantees.
+- Test observable outcomes and invariants, including absence of duplicate effects,
+  partial commits, cross-tenant access and unauthorized dispatch where applicable.
+  Do not substitute implementation-mirroring assertions or line-coverage numbers
+  for full requirement coverage.
+- Never weaken assertions, silently skip required cases, or change expected behavior
+  merely to make a suite pass. Fix the implementation and retain regression tests.
+- Before claiming completion, audit the full requested scope against the tests
+  actually run. Report uncovered, skipped, unavailable or failing cases explicitly;
+  a green subset does not establish completion, and required gaps remain unfinished.
+
+## Review after code changes
+
+- Before committing code, run `/code-review medium`. Use `high` for accounting,
+  budgets, run transitions, or broad changes.
+- Reviews must use Opus. `/code-review` has no `--model` flag and uses the current
+  session model. In Claude Code, switch with `/model opus` before reviewing.
+- These slash commands are Claude Code commands, not Codex commands. Codex review
+  does not satisfy the Opus review gate for a code commit.
+- Fix actionable findings before committing and review substantial fixes again.
+- Run `pnpm check`, `pnpm lint`, `pnpm test`, and the relevant integration checks.
+
+## Product positioning reference
+
+Read `docs/product/2026-09-16-positioning-map.md` for Kevin's Pi-based direction
+and the distinctions between Think-like capabilities, Cloudflare infrastructure,
+and adopting the Think harness. Audience and packaging candidates remain open.
+
+## Mandatory durable Pi integration
+
+Kevin confirmed that preserving Pi capabilities while enforcing durable commit,
+ownership, and recovery semantics is a necessary architecture step. Read
+`docs/product/2026-09-16-pi-durable-runtime-requirement.md` before changing Pi
+composition or persistence. Event mirroring alone does not meet this requirement;
+full Pi parity and durability must both be preserved. Implementation remains open.
+
+Implementation sequencing is proposed in
+`docs/product/2026-09-16-durable-pi-implementation-plan.md`. Begin with the pinned
+Pi composition gate; the installed AgentSession event subscription is not an
+awaited database commit boundary. Do not migrate the default before that gate.
+
+Native/browser recovery must follow
+`docs/product/2026-09-16-environment-browser-recovery.md`: preserve supported
+Chrome session state and logs, define real snapshot capabilities, and distinguish
+reattachment, snapshot restoration, reconstruction and unknown external effects.

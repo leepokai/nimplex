@@ -1,4 +1,4 @@
-<title>nimplex Runtime 規格</title>
+<title> nimplex runtime specification </title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@700;900&family=Noto+Sans+TC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
   :root {
@@ -175,26 +175,26 @@
 <div class="wrap">
 
 <header>
-  <p class="eyebrow">Feature Spec · 內部工作文件</p>
-  <h1>nimplex Runtime 規格</h1>
-  <p class="standfirst">以 GoFreight 的 DIY agent 疊層（Avery＋rhapsody＋sandbox）作為「必須對齊的參照工作負載」，加上 nimplex 的三道閘差異化,逐模組定義在 Cloudflare computer 之上要蓋的完整功能。</p>
-  <p class="meta">2026-08-23 · 參照證據：tool-rhapsody README/CLAUDE.md · poc-ai/solution_router · tool-cc-forge gf-support skills · 三道閘缺席查證</p>
+  <p class="eyebrow"> Feature Spec · Historical internal document </p>
+  <h1> nimplex runtime specification </h1>
+  <p class="standfirst"> Use GoFreight's Avery/rhapsody/sandbox stack as the required reference workload, then define the modules above Cloudflare computer, including nimplex's metering, permissions, and credential controls. </p>
+  <p class="meta"> 2026-08-23 · Evidence: tool-rhapsody README/CLAUDE.md, poc-ai/solution_router, tool-cc-forge gf-support skills, and the missing enforcement controls. Later runtime decisions supersede this proposal. </p>
   <div class="legend">
-    <span class="gf">🟦 GoFreight 現況（parity 基準）</span>
-    <span class="cf">🟠 CF 原語（接上就用）</span>
-    <span class="you">🟢 你要寫的（★＝差異化）</span>
+    <span class="gf"> Blue: GoFreight parity baseline </span>
+    <span class="cf"> Orange: Cloudflare primitives </span>
+    <span class="you"> Green: our implementation; stars mark differentiation </span>
   </div>
 </header>
 
 <section id="principle">
   <p class="tag">Design Inputs</p>
-  <h2>兩個輸入，一條鐵律</h2>
-  <p><strong>輸入一（parity 底線）</strong>：rhapsody 已經在生產環境做到的事——tracker 派工、續跑、防呆、監控——nimplex 不能做得比它差，否則沒有退役的理由。<strong>輸入二（差異化）</strong>：三道閘＋網控，全是他們「被迫關掉或沒有」的（<code>--dangerously-skip-permissions</code>、個人憑證、零 egress 控制、零電表）。</p>
-  <p><strong>鐵律</strong>：一切能力經 <code>packages/contracts</code> 暴露；<code>@cloudflare/computer</code>／Think 的型別只准存在於 <code>apps/runtime</code> 內部。</p>
+  <h2> Two inputs and one boundary </h2>
+  <p><strong> Input one: parity baseline </strong> : match rhapsody's production tracking, dispatch, continuation, safeguards, and monitoring before replacing it. <strong> Input two: differentiation </strong> : metering, permissions, credentials, and egress controls they disabled or lacked ( <code>--dangerously-skip-permissions</code> , personal credentials, no egress controls, no meter). </p>
+  <p><strong> Boundary </strong> : expose every capability through <code>packages/contracts</code> ; <code>@cloudflare/computer</code> /Think types belong only inside <code>apps/runtime</code> . </p>
 
   <figure>
     <div class="fig-card">
-    <svg viewBox="0 0 960 400" role="img" aria-label="一個 run 的旅程：觸發層進入 Session DO，內有鑰匙櫃注入、迴圈中每步過電表與門禁，經 computer 的三種執行後端幹活，事件日誌流向 console 與 SDK">
+    <svg viewBox="0 0 960 400" role="img" aria-label="Run flow: triggers enter a Session DO; credentials, model metering, and tool permissions govern three execution backends; events stream to console and SDK.">
       <defs>
         <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
           <path d="M0,0 L10,5 L0,10 z" fill="var(--muted)"/>
@@ -202,11 +202,11 @@
       </defs>
 
       <!-- triggers -->
-      <text class="ts" x="90" y="40" text-anchor="middle">M1 觸發</text>
+      <text class="ts" x="90" y="40" text-anchor="middle"> M1 triggers </text>
       <rect class="box" x="20" y="52" width="140" height="40" rx="8"/>
       <text class="t" x="90" y="77" text-anchor="middle">Slack @agent</text>
       <rect class="box" x="20" y="102" width="140" height="40" rx="8"/>
-      <text class="t" x="90" y="127" text-anchor="middle">Jira / GitHub 輪詢</text>
+      <text class="t" x="90" y="127" text-anchor="middle"> Jira/GitHub polling </text>
       <rect class="box" x="20" y="152" width="140" height="40" rx="8"/>
       <text class="t" x="90" y="177" text-anchor="middle">cron / webhook</text>
       <rect class="box" x="20" y="202" width="140" height="40" rx="8"/>
@@ -217,21 +217,21 @@
       <line class="edge" x1="160" y1="172" x2="216" y2="175" marker-end="url(#ar)"/>
       <line class="edge" x1="160" y1="222" x2="216" y2="195" marker-end="url(#ar)"/>
       <text class="lbl" x="188" y="112" text-anchor="middle">source key</text>
-      <text class="lbl" x="188" y="248" text-anchor="middle">＝DO 定址（天然去重）</text>
+      <text class="lbl" x="188" y="248" text-anchor="middle"> = addressable DO with deduplication </text>
 
       <!-- session DO -->
       <rect class="box-you" x="220" y="60" width="330" height="270" rx="12"/>
-      <text class="t tb t-you" x="385" y="88" text-anchor="middle">Session DO（每個 actor × 任務一個）M2</text>
+      <text class="t tb t-you" x="385" y="88" text-anchor="middle"> Session DO per actor/task · M2 </text>
       <rect class="box" x="244" y="104" width="282" height="36" rx="8"/>
-      <text class="t" x="385" y="127" text-anchor="middle">🔑 鑰匙櫃：注入 agent 專屬憑證</text>
+      <text class="t" x="385" y="127" text-anchor="middle"> Credentials: inject an agent-specific identity </text>
       <rect class="box" x="244" y="150" width="282" height="120" rx="8"/>
-      <text class="t tb" x="385" y="174" text-anchor="middle">agent 迴圈（fibers 續跑）</text>
-      <text class="ts" x="385" y="196" text-anchor="middle">模型呼叫 → ⚡ 電表跳錶（爆上限＝斷電）</text>
-      <text class="ts" x="385" y="216" text-anchor="middle">工具呼叫 → 🚪 門禁 allow / ask / deny</text>
-      <text class="ts" x="385" y="236" text-anchor="middle">ask ＝ durable 審批，批准後斷點續跑</text>
-      <text class="ts" x="385" y="256" text-anchor="middle">stall guard · backoff 重試（alarms）</text>
+      <text class="t tb" x="385" y="174" text-anchor="middle"> Agent loop with fiber continuation </text>
+      <text class="ts" x="385" y="196" text-anchor="middle"> Model call → meter usage; stop when the cap is exhausted </text>
+      <text class="ts" x="385" y="216" text-anchor="middle"> Tool call → allow/ask/deny policy </text>
+      <text class="ts" x="385" y="236" text-anchor="middle"> Ask → durable approval and continuation </text>
+      <text class="ts" x="385" y="256" text-anchor="middle"> Stall guard and capped backoff through alarms </text>
       <rect class="box" x="244" y="280" width="282" height="34" rx="8"/>
-      <text class="t" x="385" y="302" text-anchor="middle">📜 事件日誌（DO SQLite·不可變）M5</text>
+      <text class="t" x="385" y="302" text-anchor="middle"> Append-only DO SQLite event log · M5 </text>
 
       <!-- computer -->
       <line class="edge" x1="550" y1="210" x2="606" y2="210" marker-end="url(#ar)"/>
@@ -240,15 +240,15 @@
       <text class="t tb t-cf" x="690" y="114" text-anchor="middle">computer</text>
       <rect class="box" x="626" y="128" width="128" height="40" rx="8"/>
       <text class="ts" x="690" y="146" text-anchor="middle">isolate（90%）</text>
-      <text class="ts" x="690" y="160" text-anchor="middle">檔案·輕程式</text>
+      <text class="ts" x="690" y="160" text-anchor="middle"> Files and lightweight execution </text>
       <rect class="box" x="626" y="176" width="128" height="48" rx="8"/>
       <text class="ts" x="690" y="194" text-anchor="middle">Sandbox（container）</text>
-      <text class="ts" x="690" y="210" text-anchor="middle">harness 預裝·git·測試</text>
+      <text class="ts" x="690" y="210" text-anchor="middle"> Preinstalled harness, Git, tests </text>
       <rect class="box" x="626" y="232" width="128" height="40" rx="8"/>
       <text class="ts" x="690" y="250" text-anchor="middle">Browser Run</text>
-      <text class="ts" x="690" y="264" text-anchor="middle">a11y tree 瀏覽</text>
+      <text class="ts" x="690" y="264" text-anchor="middle"> Accessibility-tree browser navigation </text>
       <rect class="box" x="626" y="280" width="128" height="36" rx="8"/>
-      <text class="ts t-you" x="690" y="302" text-anchor="middle">🌐 egress 政策 M4</text>
+      <text class="ts t-you" x="690" y="302" text-anchor="middle"> Egress policy · M4 </text>
 
       <!-- console/sdk -->
       <line class="edge" x1="480" y1="330" x2="480" y2="366" marker-end="url(#ar)"/>
@@ -259,117 +259,117 @@
       <rect class="box-you" x="290" y="366" width="380 " height="0" opacity="0"/>
       <rect class="box-you" x="250" y="368" width="470" height="26" rx="8" opacity="0"/>
       <rect class="box-you" x="220" y="366" width="550" height="30" rx="8"/>
-      <text class="t t-you" x="495" y="386" text-anchor="middle">Console＋SDK：SSE 時間軸 · 審批收件匣 · needs-attention · 帳單（M5/M6）</text>
+      <text class="t t-you" x="495" y="386" text-anchor="middle"> Console/SDK: SSE timeline, approvals, needs-attention, billing · M5/M6 </text>
 
       <!-- gateway -->
       <rect class="box-cf" x="810" y="150" width="130" height="70" rx="10"/>
       <text class="t t-cf" x="875" y="178" text-anchor="middle">AI Gateway</text>
-      <text class="ts" x="875" y="198" text-anchor="middle">模型路由·成本資料</text>
+      <text class="ts" x="875" y="198" text-anchor="middle"> Model routing and cost data </text>
       <line class="edge" x1="770" y1="185" x2="806" y2="185" marker-end="url(#ar)"/>
     </svg>
     </div>
-    <figcaption><b>一個 run 的旅程。</b>觸發源換成 SDK（end user）或 Jira ticket（Avery 場景）都是同一條路——actor 是誰只是參數。source key 決定 DO 定址，天然解掉 rhapsody「同一張 ticket 兩個 agent 互撞」的已知缺陷。</figcaption>
+    <figcaption><b> A run's journey. </b> SDK end-user input and Jira tickets use the same path; actor identity is a parameter. Deterministic source keys address DOs to prevent two agents colliding on the same ticket, a known rhapsody gap. </figcaption>
   </figure>
 </section>
 
 <section id="modules">
   <p class="tag">Modules</p>
-  <h2>六個模組的完整功能清單</h2>
+  <h2> Complete inventory across six modules </h2>
 
-  <h3><span class="mod">M1</span>觸發與路由</h3>
-  <p class="parity">Parity 對象：rhapsody trackers（JQL gating＋per-ticket cursor、reviewed-at-head＋cooldown）、cron daemon、solution_router Lambda、CI 失敗路由</p>
+  <h3><span class="mod">M1</span> Triggers and routing </h3>
+  <p class="parity"> Parity: rhapsody JQL gating/per-ticket cursors, reviewed-at-head/cooldown, cron daemon, solution_router Lambda, CI failure routing </p>
   <div class="tbl-scroll"><table>
-    <thead><tr><th>功能</th><th>規格</th><th>CF 原語</th></tr></thead>
+    <thead><tr><th> Capability </th><th> Specification </th><th> Cloudflare primitive </th></tr></thead>
     <tbody>
-      <tr><td class="f">SDK 觸發</td><td>end user 經 Client SDK 開 session／發訊息（org key 永不進前端，短效 token）</td><td class="cfv">Worker route → DO</td></tr>
-      <tr><td class="f">Tracker 輪詢</td><td>Jira（JQL membership＋per-item cursor）、GitHub PR（search query＋reviewed-at-head＋cooldown）；宣告在 agent config</td><td class="cfv">Cron Trigger → 輪詢 Worker</td></tr>
-      <tr><td class="f">Channel 接入</td><td>Slack @mention → thread 綁 session（取代 solution_router）；generic webhook；CI 失敗事件</td><td class="cfv">Worker webhook route</td></tr>
-      <tr><td class="f">排程</td><td>cron jobs（prompt／script 兩種），宣告式、附冪等鍵</td><td class="cfv">Cron Triggers / DO alarms</td></tr>
-      <tr><td class="f">去重 <span class="star">★</span></td><td><code>source_key</code>（tracker＋item id）決定性對映到唯一 Session DO——跨 tracker 同項目不可能被做兩次</td><td class="cfv">DO 決定性命名</td></tr>
+      <tr><td class="f"> SDK trigger </td><td> End users create sessions/send messages with short-lived Client SDK tokens; org keys stay off frontends </td><td class="cfv">Worker route → DO</td></tr>
+      <tr><td class="f"> Tracker polling </td><td> Jira JQL membership/per-item cursor and GitHub PR search/reviewed-at-head/cooldown, declared in agent config </td><td class="cfv"> Cron Trigger → polling Worker </td></tr>
+      <tr><td class="f"> Channel input </td><td> Slack mentions bind threads to sessions; generic webhooks and CI failures replace solution_router </td><td class="cfv">Worker webhook route</td></tr>
+      <tr><td class="f"> Scheduling </td><td> Declarative prompt/script cron jobs with idempotency keys </td><td class="cfv">Cron Triggers / DO alarms</td></tr>
+      <tr><td class="f"> Deduplication <span class="star">★</span></td><td><code>source_key</code> Tracker/item identity maps deterministically to a Session DO to prevent duplicate work </td><td class="cfv"> Deterministic DO naming </td></tr>
     </tbody>
   </table></div>
 
-  <h3><span class="mod">M2</span>Session 與執行</h3>
-  <p class="parity">Parity 對象：per-item 派工＋continuation turns＋deterministic resume、max_concurrent＋per-status sub-caps、no-progress／stall guard、capped backoff、workspace 生命週期、claude-pty driver</p>
+  <h3><span class="mod">M2</span> Sessions and execution </h3>
+  <p class="parity"> Parity: per-item dispatch, continuation turns, deterministic resume, concurrency/status sub-caps, no-progress/stall guards, capped backoff, workspace lifecycle, claude-pty driver </p>
   <div class="tbl-scroll"><table>
-    <thead><tr><th>功能</th><th>規格</th><th>CF 原語</th></tr></thead>
+    <thead><tr><th> Capability </th><th> Specification </th><th> Cloudflare primitive </th></tr></thead>
     <tbody>
-      <tr><td class="f">Session DO</td><td>每個 (actor, 任務) 一個；actor 可以是 end user（SDK 場景）或 agent 身分（Avery 場景）——同一套 runtime</td><td class="cfv">DO＋SQLite</td></tr>
-      <tr><td class="f">續跑</td><td>turn 中斷（部署、崩潰、驅逐）自動從 checkpoint 恢復；SSE 客戶端無感重連（序號續傳）</td><td class="cfv">Think fibers（stash/recover）</td></tr>
-      <tr><td class="f">防呆</td><td>no-progress guard（N turns 無新事件）＋wall-clock stall guard＋capped backoff 無限重試；卡死進 needs-attention</td><td class="cfv">DO alarms</td></tr>
-      <tr><td class="f">並發控制</td><td>per-org／per-config／per-status 並發上限（rhapsody 的 max_concurrent 對等物），超額排隊</td><td class="cfv">協調 DO（計數器）</td></tr>
-      <tr><td class="f">Workspace</td><td>宣告式預載（git clone、檔案、skill 掛載），跨 isolate/container/browser 同步</td><td class="cfv">computer Workspace</td></tr>
-      <tr><td class="f">Harness 驅動</td><td>executor 介面兩個實作：(a) Think 原生（輕量）(b) <strong>Claude Code in Sandbox</strong>（claude-pty parity——GoFreight 全綁 CC，這是硬需求）；harness 預裝進 Sandbox image</td><td class="cfv">Think / Sandbox</td></tr>
-      <tr><td class="f">原生工具橋接</td><td>custom 工具標 ready、外部經 <code>SubmitToolCallResult</code> 補結果（Omnara 形狀）——客戶把自家功能註冊成 agent 工具</td><td class="cfv">—（純 contract）</td></tr>
+      <tr><td class="f">Session DO</td><td> One per actor/task; actors may be end users or service agents, sharing one runtime </td><td class="cfv">DO＋SQLite</td></tr>
+      <tr><td class="f"> Continuation </td><td> Resume interrupted turns after deployments/crashes/evictions from checkpoints; reconnect SSE by sequence </td><td class="cfv">Think fibers（stash/recover）</td></tr>
+      <tr><td class="f"> Safeguards </td><td> No-progress after N turns, wall-clock stall checks, capped backoff retries; persistent stalls enter needs-attention </td><td class="cfv">DO alarms</td></tr>
+      <tr><td class="f"> Concurrency </td><td> Organization/config/status caps, corresponding to max_concurrent; queue excess work </td><td class="cfv"> Coordinator DO counters </td></tr>
+      <tr><td class="f">Workspace</td><td> Declarative Git/file/skill preload synchronized across isolate/container/browser </td><td class="cfv">computer Workspace</td></tr>
+      <tr><td class="f"> Harness execution </td><td> Two executor implementations: lightweight native Think, or <strong>Claude Code in Sandbox</strong> for claude-pty parity required by GoFreight's Claude Code workflows; preinstall harnesses in sandbox images </td><td class="cfv">Think / Sandbox</td></tr>
+      <tr><td class="f"> Native product tool bridge </td><td> Mark custom tools ready and submit external results through <code>SubmitToolCallResult</code> using Omnara's interface so customers expose their own product functions </td><td class="cfv"> Contract only </td></tr>
     </tbody>
   </table></div>
 
-  <h3><span class="mod">M3</span>三道閘 <span class="star">★★★</span></h3>
-  <p class="parity">GoFreight 現況：權限＝<code>--dangerously-skip-permissions</code> 全開｜憑證＝工程師個人 acli/gh 登入｜電表＝不存在</p>
+  <h3><span class="mod">M3</span> Three enforcement checks <span class="star">★★★</span></h3>
+  <p class="parity"> GoFreight's recorded permissions: <code>--dangerously-skip-permissions</code> fully enabled; credentials were engineers' acli/gh logins; no metering </p>
   <div class="tbl-scroll"><table>
-    <thead><tr><th>閘</th><th>規格</th><th>CF 原語</th></tr></thead>
+    <thead><tr><th> Control </th><th> Specification </th><th> Cloudflare primitive </th></tr></thead>
     <tbody>
-      <tr><td class="f">⚡ 電表</td><td>每 actor 一個錶：模型（AI Gateway 成本）＋工具＋sandbox 時間全記；美元硬上限（org→config→actor 三級）；<strong>爆表＝DO 內當場終止 run</strong>；成本歸因報表＋可轉售帳單匯出</td><td class="cfv">DO 內攔截＋AI Gateway</td></tr>
-      <tr><td class="f">🚪 門禁</td><td>工具政策 allow/ask/deny 宣告在 contract、平台強制（不是 harness 旗標）；ask → durable 審批（console／Slack 按鈕），人批後斷點續跑；審批紀錄入事件日誌。<strong>賣點句：把 dangerously-skip 換成敢開權限的 headless</strong></td><td class="cfv">DO 狀態＋fibers</td></tr>
-      <tr><td class="f">🔑 鑰匙櫃</td><td>agent 專屬身分（GitHub App installation token、Jira service account、Slack bot）＋per-end-user OAuth（broker）；scoped、短效、<strong>注入 sandbox env／bindings，永不進 prompt</strong>；audit 可分辨 agent vs 人</td><td class="cfv">Secrets Store＋Workers bindings</td></tr>
+      <tr><td class="f"> Metering </td><td> Per-actor model, tool, and sandbox-time usage; org/config/actor USD caps; <strong> stop the active run inside the DO when exhausted </strong> ; attribution reports and rebillable exports </td><td class="cfv"> DO interception and AI Gateway </td></tr>
+      <tr><td class="f"> Permissions </td><td> Contract-defined allow/ask/deny enforced by the platform rather than harness flags; durable approvals via console/Slack, checkpoint continuation, and audited decisions <strong> Replace dangerously-skip with headless execution under enforceable policies </strong></td><td class="cfv"> DO state and fibers </td></tr>
+      <tr><td class="f"> Credentials </td><td> Agent-specific GitHub App/Jira service/Slack bot identities and brokered user OAuth; scoped, short-lived, <strong> injected into sandbox env/bindings rather than prompts </strong> ; audit distinguishes agent from human </td><td class="cfv">Secrets Store＋Workers bindings</td></tr>
     </tbody>
   </table></div>
 
-  <h3><span class="mod">M4</span>網控 <span class="star">★</span></h3>
-  <p class="parity">GoFreight 現況：零（全 org 搜不到 egress／allowlist／firewall）</p>
+  <h3><span class="mod">M4</span> Network controls <span class="star">★</span></h3>
+  <p class="parity"> GoFreight review found no egress/allowlist/firewall implementation </p>
   <div class="tbl-scroll"><table>
-    <thead><tr><th>功能</th><th>規格</th><th>CF 原語</th></tr></thead>
+    <thead><tr><th> Capability </th><th> Specification </th><th> Cloudflare primitive </th></tr></thead>
     <tbody>
-      <tr><td class="f">Egress allowlist</td><td>per agent-config 宣告允許網域；<strong>宣告格式 day one 定稿</strong>（之後換執行層不換格式）；v0 在應用層強制：Sandbox 內 proxy env＋工具層檢查；isolate 天生 <code>globalOutbound: null</code> 白名單</td><td class="cfv">isolate capability＋proxy</td></tr>
-      <tr><td class="f">MCP allowlist</td><td>可連的 MCP server 白名單＋每連線 auth 綁 secret 引用</td><td class="cfv">—</td></tr>
-      <tr><td class="f">流量稽核</td><td>所有 egress（誰、去哪、多少）入事件日誌，per-actor rate limit</td><td class="cfv">DO 計數器</td></tr>
+      <tr><td class="f">Egress allowlist</td><td> Declare allowed domains per agent config; <strong> stabilize the schema from day one </strong> so backend changes preserve customer configuration. Initially enforce through proxy env and tool checks; isolates use <code>globalOutbound: null</code> allowlists </td><td class="cfv">isolate capability＋proxy</td></tr>
+      <tr><td class="f">MCP allowlist</td><td> Allowed MCP endpoints with secret-reference authentication per connection </td><td class="cfv">—</td></tr>
+      <tr><td class="f"> Traffic audit </td><td> Record actor/destination/volume for all egress; per-actor rate limits </td><td class="cfv"> DO counters </td></tr>
     </tbody>
   </table></div>
 
-  <h3><span class="mod">M5</span>觀測與營運</h3>
-  <p class="parity">Parity 對象：events.jsonl＋History、web monitor＋needs-attention、supervisor 心跳、doctor、status/history CLI、telemetry secret 遮罩</p>
+  <h3><span class="mod">M5</span> Observation and operations </h3>
+  <p class="parity"> Parity: events.jsonl/History, web monitor/needs-attention, supervisor heartbeat, doctor, status/history CLI, telemetry secret masking </p>
   <div class="tbl-scroll"><table>
-    <thead><tr><th>功能</th><th>規格</th><th>CF 原語</th></tr></thead>
+    <thead><tr><th> Capability </th><th> Specification </th><th> Cloudflare primitive </th></tr></thead>
     <tbody>
-      <tr><td class="f">事件日誌</td><td>append-only、嚴格排序、per-session（the log is the agent）；歸檔到 R2；秘密遮罩在寫入層</td><td class="cfv">DO SQLite＋R2</td></tr>
-      <tr><td class="f">即時時間軸</td><td>SSE 串流（可續傳序號）給 console 與 Client SDK</td><td class="cfv">DO WS/SSE</td></tr>
-      <tr><td class="f">Needs-attention</td><td>卡在同狀態過久的 session／審批逾期／連續失敗——rhapsody web monitor 的對等物，做進 console</td><td class="cfv">alarms＋查詢</td></tr>
-      <tr><td class="f">狀態 API</td><td><code>status</code>／<code>history</code> 的機器可讀投影（rhapsody CLI 的對等物）＝ Server SDK 的查詢面</td><td class="cfv">—（contract）</td></tr>
-      <tr><td class="f">健康檢查</td><td>doctor 的對等物：連線、憑證、額度餘量的自檢頁</td><td class="cfv">—</td></tr>
+      <tr><td class="f"> Event log </td><td> Append-only, strictly ordered per session; archive to R2 and mask secrets at the write boundary </td><td class="cfv">DO SQLite＋R2</td></tr>
+      <tr><td class="f"> Live timeline </td><td> Resumable sequenced SSE for console and Client SDK </td><td class="cfv">DO WS/SSE</td></tr>
+      <tr><td class="f">Needs-attention</td><td> Sessions stuck in one state, overdue approvals, and repeated failures appear in the console </td><td class="cfv"> Alarms and queries </td></tr>
+      <tr><td class="f"> Status API </td><td><code>status</code>／<code>history</code> machine-readable projections corresponding to rhapsody's CLI, exposed through Server SDK queries </td><td class="cfv">—（contract）</td></tr>
+      <tr><td class="f"> Health checks </td><td> Doctor-style diagnostics for connections, credentials, and remaining budget </td><td class="cfv">—</td></tr>
     </tbody>
   </table></div>
 
-  <h3><span class="mod">M6</span>設定與技能</h3>
-  <p class="parity">Parity 對象：conf.yaml＋git repo 線上設定熱載入、config show 遮罩、tool-cc-forge plugin marketplace、skill 掛載</p>
+  <h3><span class="mod">M6</span> Configuration and skills </h3>
+  <p class="parity"> Parity: conf.yaml/Git-hosted configuration reload, masked config show, tool-cc-forge marketplace, skill mounts </p>
   <div class="tbl-scroll"><table>
-    <thead><tr><th>功能</th><th>規格</th><th>CF 原語</th></tr></thead>
+    <thead><tr><th> Capability </th><th> Specification </th><th> Cloudflare primitive </th></tr></thead>
     <tbody>
-      <tr><td class="f">Agent config</td><td>typed（contracts）、<strong>immutable 版本鏈＋內容雜湊</strong>（Omnara 形狀：審計與回滾免費）；console 編輯即發新版</td><td class="cfv">DO/D1</td></tr>
-      <tr><td class="f">Skill 掛載</td><td>宣告 skill 來源（git／registry），佈建時 prime 進 Workspace；<strong>相容 Claude Code plugin marketplace</strong>（tool-cc-forge 不用改就能掛）</td><td class="cfv">computer FS priming</td></tr>
-      <tr><td class="f">秘密引用</td><td>config 只存 <code>sec_…</code> 引用永不存值（rhapsody 的 <code>{exec:...}</code> 對等物，但平台代管）</td><td class="cfv">Secrets Store</td></tr>
+      <tr><td class="f">Agent config</td><td>typed（contracts）、<strong> Immutable version chain with content hashes </strong> for auditing and rollback; console edits publish a new version </td><td class="cfv">DO/D1</td></tr>
+      <tr><td class="f"> Skill mounts </td><td> Declare Git/registry sources and preload Workspace; <strong> Claude Code plugin marketplace compatibility </strong> lets tool-cc-forge mount without changes </td><td class="cfv">computer FS priming</td></tr>
+      <tr><td class="f"> Secret references </td><td> Configuration stores only <code>sec_…</code> references rather than values, corresponding to rhapsody's <code>{exec:...}</code> with platform management </td><td class="cfv">Secrets Store</td></tr>
     </tbody>
   </table></div>
 </section>
 
 <section id="phasing">
   <p class="tag">Phasing</p>
-  <h2>掛回 P0–P4</h2>
+  <h2> Mapping to P0–P4 </h2>
   <div class="tbl-scroll"><table>
-    <thead><tr><th>Phase</th><th>本規格落地的部分</th></tr></thead>
+    <thead><tr><th>Phase</th><th> Specification scope delivered </th></tr></thead>
     <tbody>
-      <tr><td class="f">P0 contracts</td><td>M1 SDK 觸發、M3 三道閘、M5 狀態 API、M6 config 的 wire 形狀全部進 contract（含 <code>end_user</code>／actor、budget、tool-policy、egress 宣告格式）</td></tr>
-      <tr><td class="f">P1 console</td><td>M5 時間軸＋needs-attention、M3 審批收件匣＋額度畫面（對 mock）</td></tr>
-      <tr><td class="f">P2 runtime 最小可跑</td><td>M2 Session DO＋fibers＋computer、M1 SDK 觸發＋cron、M3 電表粗版（計數＋超額即停）</td></tr>
-      <tr><td class="f">P3 三道閘做實</td><td>M3 門禁 durable 審批＋鑰匙櫃注入、M4 egress v0、M5 遮罩</td></tr>
-      <tr><td class="f">P4 SDK＋開源</td><td>M2 原生工具橋接、M5 狀態 API、M6 CC plugin 相容；<strong>之後</strong>才做 M1 tracker 輪詢＋Slack channel（GoFreight parity 的最後一塊，也是內部 fleet 銷售的敲門磚）</td></tr>
+      <tr><td class="f">P0 contracts</td><td> Contracts include M1 SDK triggers, M3 enforcement, M5 status, and M6 configuration, including <code>end_user</code> /actor, budget, tool policy, and egress declarations </td></tr>
+      <tr><td class="f">P1 console</td><td> M5 timeline/needs-attention and M3 approval/budget screens against mocks </td></tr>
+      <tr><td class="f"> P2 minimal runtime </td><td> M2 Session DO/fibers/computer, M1 SDK/cron, basic M3 counting and budget stops </td></tr>
+      <tr><td class="f"> P3 enforcement implementation </td><td> Durable permission approvals, credential injection, egress v0, secret masking </td></tr>
+      <tr><td class="f"> P4 SDK and open source </td><td> Native tool bridge, status API, and Claude Code plugin compatibility; <strong> afterward </strong> add tracker polling and Slack, completing GoFreight parity and the internal-fleet sales entry point </td></tr>
     </tbody>
   </table></div>
-  <div class="guard"><b>兩個 demo 順序不要反。</b>Demo 1＝電表斷電（跑中 run 爆假額度被當場終止）——全生態沒人做得到；Demo 2＝「把 <code>--dangerously-skip-permissions</code> 換掉」（危險工具停在收件匣、批准後斷點續跑）——指著 rhapsody 的程式碼賣。兩個 demo 都只需要 P2＋P3。</div>
-  <div class="guard"><b>Harness 現實。</b>Claude Code parity 需要 Sandbox（container）跑 claude-pty——這條路徑的成本比 Think 原生高一個量級，電表因此更重要，也是「container &lt;10%」原則的例外項。定價要反映。</div>
+  <div class="guard"><b> Keep the demo order. </b> Demo 1: exhaust a fake budget and stop an active run. Demo 2: replace <code>--dangerously-skip-permissions</code> with a dangerous-tool approval inbox and checkpoint continuation, demonstrated against rhapsody. Both require only P2/P3. </div>
+  <div class="guard"><b> Harness tradeoff. </b> Claude Code parity needs containerized claude-pty, estimated an order of magnitude more expensive than native Think. It is an exception to the container-under-10% target and must be reflected in pricing and metering. </div>
 </section>
 
 <footer>
-  <p>證據與前文：〈<a href="https://claude.ai/code/artifact/d188dc7c-2fb2-46c4-8d83-b6644a90bad4">nimplex 開工計畫</a>〉·〈<a href="https://claude.ai/code/artifact/47434aa1-3528-4600-8c18-3d3415d2f018">一萬台電腦的管家</a>〉·〈<a href="https://claude.ai/code/artifact/e83fa955-1a29-4d77-a2fe-8dfe428a67f7">Omnara 架構解剖</a>〉。GoFreight 細節引自 hardcoretech 私有 repo（tool-rhapsody、poc-ai、tool-cc-forge），僅供內部參考，不對外分發。</p>
+  <p> Evidence and prior documents: <a href="https://claude.ai/code/artifact/d188dc7c-2fb2-46c4-8d83-b6644a90bad4"> nimplex build plan </a>〉·〈<a href="https://claude.ai/code/artifact/47434aa1-3528-4600-8c18-3d3415d2f018"> Managing ten thousand computers </a>〉·〈<a href="https://claude.ai/code/artifact/e83fa955-1a29-4d77-a2fe-8dfe428a67f7"> Omnara architecture review </a> . GoFreight details come from private hardcoretech repositories tool-rhapsody, poc-ai, and tool-cc-forge. Internal reference only; not for external distribution. </p>
 </footer>
 
 </div>

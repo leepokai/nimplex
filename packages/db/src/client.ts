@@ -15,5 +15,5 @@ export function createDb(url = process.env.DATABASE_URL ?? DEFAULT_DATABASE_URL)
 
 export type DbHandle = ReturnType<typeof createDb>;
 export type Db = DbHandle["db"];
-/** transaction callback 拿到的 tx，與 Db 介面相容的子集 */
+/** Transaction callback executor: the subset of Db available within a transaction. */
 export type DbExecutor = Db | Parameters<Parameters<Db["transaction"]>[0]>[0];
