@@ -12,6 +12,20 @@ your laptop as the `nimplex` terminal: no server, no database service, no worker
 > flags change without notice. Read [What is not done yet](#what-is-not-done-yet)
 > before relying on anything.
 
+## Inspired by Cloudflare Project Think
+
+nimplex is inspired by [Cloudflare's Project Think](https://blog.cloudflare.com/project-think/):
+an agent should have a durable identity, keep its state when the process running
+it goes away, and resume where it left off. Think delivers that on Cloudflare's
+platform, where each agent is a Durable Object with its own SQLite store and the
+platform owns placement and lifetime. nimplex pursues the same promise for Pi
+agents on your own machine: one SQLite log per state root, explicit commit
+barriers around every model response and tool result, a durable workspace that
+outlives the sandbox, and recovery from the log after `kill -9`. It does not use
+the Think harness, `@cloudflare/think` or Durable Objects, and it keeps Pi's loop,
+session and tool semantics. What was compared and what remains open:
+[Think reference study](docs/product/2026-09-16-cloudflare-think-reference.md).
+
 ```text
 nimplex CLI ──► session runtime (in process) ──► Pi ──► model provider
                        │
@@ -211,12 +225,8 @@ implemented runtime contracts and current source win when they disagree.
 - **Loop kernel**: [Pi](https://github.com/earendil-works/pi). Everything the
   model sees and every tool it calls goes through Pi; nimplex owns commit,
   ownership and recovery.
-- **Durable agents**: [Cloudflare Project Think](https://developers.cloudflare.com/agents/harnesses/think/)
-  and its [announcement](https://blog.cloudflare.com/project-think/). nimplex
-  borrows the shape of the promise (durable identity, persistence, resumable
-  interaction, tool integration) and implements it on Pi with explicit commit
-  barriers and a durable workspace instead of platform-owned actors.
-  Comparison: [Think reference study](docs/product/2026-09-16-cloudflare-think-reference.md);
+- **Durable agents**: [Cloudflare Project Think](https://developers.cloudflare.com/agents/harnesses/think/),
+  see [Inspired by Cloudflare Project Think](#inspired-by-cloudflare-project-think);
   positioning: [positioning map](docs/product/2026-09-16-positioning-map.md).
 - **Log is the runtime**: Apache Maka, [`log-is-the-runtime.md`](https://github.com/apache/maka/blob/main/docs/blogs/log-is-the-runtime.md).
   nimplex adds a durable workspace and sandbox generations on top of the event log.
