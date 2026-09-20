@@ -1,6 +1,6 @@
 # nimplex
 
-**A cloud coding-agent harness built on [Pi](https://github.com/earendil-works/pi), with a runtime that keeps runs alive when workers or sandboxes die, caps spend in dollars, and can kill any run mid-flight.**
+**A cloud coding-agent harness built on [Pi](https://github.com/earendil-works/pi), with a runtime that keeps runs alive when workers or sandboxes die, accounts for every model call durably, and can kill any run mid-flight.**
 
 nimplex is inspired by [Cloudflare's Project Think](https://blog.cloudflare.com/project-think/): durable identity, persistence, and resumable execution for agents. It pursues the same promise for Pi agents while staying self-hostable (SQLite locally, PostgreSQL hosted) and keeping Pi's session and tool semantics; it does not use the Think harness or Durable Objects. See [the Think reference study](docs/product/2026-09-16-cloudflare-think-reference.md) for what was compared and what remains open.
 
