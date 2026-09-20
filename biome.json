@@ -6,7 +6,7 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["**", "!**/migrations", "!docs"]
+    "includes": ["**", "!docs"]
   },
   "formatter": {
     "enabled": true,

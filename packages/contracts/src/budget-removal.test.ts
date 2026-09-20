@@ -1,22 +1,13 @@
 import { expect, it } from "vitest";
-import { createRunRequest, modelAttempt, startTurnRequest } from "./index.ts";
+import { modelAttempt, startTurnRequest } from "./index.ts";
 
-it("accepts local and hosted requests without budget and strips obsolete input fields", () => {
+it("accepts turn requests without a budget and strips the obsolete input field", () => {
   const local = { prompt: "Do the work" };
   expect(startTurnRequest.parse(local)).not.toHaveProperty("budget");
   expect(startTurnRequest.parse({ ...local, budget: 0.000001 })).toEqual(
     startTurnRequest.parse(local),
   );
-  const hosted = {
-    instructions: "Do the work",
-    model: { provider: "anthropic", id: "claude-haiku-4-5" },
-  };
-  expect(createRunRequest.parse(hosted)).not.toHaveProperty("budget_usd");
-  expect(createRunRequest.parse({ ...hosted, budget_usd: 0.000001 })).toEqual(
-    createRunRequest.parse(hosted),
-  );
   expect(startTurnRequest.safeParse({ ...local, timeout: 0 }).success).toBe(false);
-  expect(createRunRequest.safeParse({ ...hosted, max_duration_seconds: 0 }).success).toBe(false);
 });
 
 it("keeps durable model identity without a monetary reservation", () => {

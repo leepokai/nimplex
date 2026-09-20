@@ -168,10 +168,9 @@ in `apps/cli/src/terminal/controller.test.ts`, and the `NIMPLEX_ENGINE` case in
 `apps/cli/src/cli.test.ts`.
 
 Not supported by this engine yet, rejected or absent rather than approximated:
-executable extensions and Pi resources through the production bridge, hosted
-execution of harness sessions (the PostgreSQL Storage adapter exists in
-`apps/worker/src/pi-storage.ts` but the worker still runs the default executor),
-and native/browser snapshot recovery. Pi's own history is the context
+executable extensions and Pi resources through the production bridge, and
+native/browser snapshot recovery. (A hosted PostgreSQL Storage adapter existed
+until 2026-09-20 and was removed with the rest of the hosted path.) Pi's own history is the context
 authority for these sessions; the nimplex extractive checkpoint is not applied to
 them. Automatic threshold compaction uses Pi's default settings and is exercised
 only through Pi's own tests; the durable summary path is verified through manual
@@ -222,7 +221,7 @@ snapshot cannot rewrite runtime events or workspace data.
 | Native lifetime and dependency reuse | Docker and E2B integration: first turn cache counter 1, second turn 2 with one environment; independent branch counter 1; close deletes both |
 | No native replay after journal loss | `packages/runtime/src/native-bash.test.ts`, with both missing and cleared provider state |
 | Credential isolation and setup | Endpoint-binding/mode-600 tests; project `.env` CLI test; PTY hidden-entry/login/logout test |
-| Hosted recovery remains compatible | `pnpm e2e` and `pnpm e2e:e2b`: VFS/native crashes, lease takeover, accounting/cancel races, provider pause failures and environment loss |
+| Hosted recovery remained compatible (historical) | `pnpm e2e` and `pnpm e2e:e2b` covered VFS/native crashes, lease takeover, accounting/cancel races, provider pause failures and environment loss; the hosted path and these scripts were removed on 2026-09-20 |
 | Static and automated checks | `pnpm check` across 12 packages; `pnpm lint`; `pnpm test`: 79 passed / 37 skipped; frozen offline install |
 | Real terminal behavior | Haiku wrote/read HELLO, then changed/read WORLD in the same session; total model cost $0.008427; diff/model/status menus, 120-column and 64-column layouts, clean exit |
 

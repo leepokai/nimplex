@@ -1,6 +1,14 @@
 # 2026-09-10 · Pi + just-bash harness: implementation and acceptance
 
-> The default terminal/headless architecture now follows [the 09-13 local runtime](2026-09-13-local-runtime.md). Hosted API/worker behavior and earlier acceptance records below retain their historical or hosted scope.
+> Historical record. The terminal/headless architecture follows [the 09-13 local runtime](2026-09-13-local-runtime.md).
+> The hosted API, worker, PostgreSQL schema, SDK and their acceptance scripts (`pnpm e2e`,
+> `pnpm e2e:e2b`, `pnpm e2e:real`, `examples/quickstart/src/harness-e2e.ts`,
+> `apps/worker/src/*`) were removed from the repository on 2026-09-20. Sections below that
+> name them describe the removed deployment and cannot be re-run. Current acceptance is
+> `pnpm check`, `pnpm lint`, `pnpm test` (real `SIGKILL` recovery tests live beside
+> `packages/runtime/src/pi-harness-engine.ts`), `pnpm bench`, and the native sandbox
+> integration tests. The recovery contract itself (commit barriers, journals, generations,
+> unknown outcomes) still describes the local runtime.
 
 This document describes the implemented runtime, superseding the 09-09 implementation proposal. Pi owns the model/tool loop; nimplex owns durability, execution ownership, accounting, cancellation, and recovery.
 

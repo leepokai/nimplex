@@ -3,8 +3,7 @@
 // Everything here runs against the fake Anthropic upstream with zero model latency, so
 // the numbers measure nimplex's own durability overhead (Pi harness + atomic SQLite
 // commits + workspace snapshots), not provider speed. Run with `pnpm bench`; pass
-// `--json` for machine-readable output. PostgreSQL adapter throughput is measured
-// only when NIMPLEX_TEST_POSTGRES_URL (or the local docker database on :5433) answers.
+// `--json` for machine-readable output.
 import { type ChildProcess, fork } from "node:child_process";
 import { once } from "node:events";
 import { mkdtempSync, rmSync, statSync } from "node:fs";
@@ -20,7 +19,6 @@ import { SqlitePiStorage } from "@nimplex/runtime/pi-storage/sqlite";
 import { startFakeAnthropic } from "@nimplex/testkit";
 
 const json = process.argv.includes("--json");
-const root = fileURLToPath(new URL("../../../", import.meta.url));
 const TOOLS_PER_TURN = 6;
 const script = Array.from({ length: TOOLS_PER_TURN }, (_, i) =>
   i % 3 === 0
@@ -337,66 +335,6 @@ async function sqliteCommits(count: number) {
     synchronous: "FULL (fsync per commit)",
   };
 }
-async function postgresCommits(count: number) {
-  const adminUrl = new URL(
-    process.env.NIMPLEX_TEST_POSTGRES_URL ?? "postgres://nimplex:nimplex@localhost:5433/postgres",
-  );
-  const { createDb } = await import("@nimplex/db");
-  const { spawnSync } = await import("node:child_process");
-  const admin = createDb(adminUrl.toString());
-  try {
-    await Promise.race([
-      admin.client`SELECT 1`,
-      new Promise((_r, reject) => setTimeout(() => reject(new Error("timeout")), 3_000)),
-    ]);
-  } catch (error) {
-    await admin.client.end({ timeout: 1 }).catch(() => {});
-    return { skipped: `PostgreSQL unavailable at ${adminUrl.host}: ${String(error)}` };
-  }
-  const databaseName = `nimplex_bench_${Date.now()}`;
-  await admin.client.unsafe(`CREATE DATABASE "${databaseName}"`);
-  const databaseUrl = new URL(adminUrl);
-  databaseUrl.pathname = `/${databaseName}`;
-  const migration = spawnSync("pnpm", ["db:migrate"], {
-    cwd: root,
-    env: { ...process.env, DATABASE_URL: databaseUrl.toString() },
-    encoding: "utf8",
-  });
-  if (migration.status !== 0) throw new Error(`Migration failed: ${migration.stderr}`);
-  const handle = createDb(databaseUrl.toString());
-  try {
-    const { PostgresPiStorage } = await import("../../../apps/worker/src/pi-storage.ts");
-    const [org] = await handle.client`INSERT INTO orgs (name) VALUES ('bench') RETURNING id`;
-    const storage = await PostgresPiStorage.open(handle.client, {
-      tenantId: String(org?.id),
-      sessionId: "bench-session",
-    });
-    const latencies: number[] = [];
-    let parent: string | null = null;
-    const started = now();
-    for (let i = 0; i < count; i++) {
-      const commit = typicalCommit(i, parent);
-      const at = now();
-      await storage.commit(commit.writes, context);
-      latencies.push(now() - at);
-      parent = commit.id;
-    }
-    const total = now() - started;
-    await storage.close(context);
-    return {
-      commits: count,
-      p50Ms: percentile(latencies, 50),
-      p95Ms: percentile(latencies, 95),
-      p99Ms: percentile(latencies, 99),
-      commitsPerSecond: Math.round((count * 1000) / total),
-      database: adminUrl.host,
-    };
-  } finally {
-    await handle.client.end({ timeout: 5 });
-    await admin.client.unsafe(`DROP DATABASE IF EXISTS "${databaseName}" WITH (FORCE)`);
-    await admin.client.end({ timeout: 5 });
-  }
-}
 
 try {
   results.machine = {
@@ -410,7 +348,6 @@ try {
   results.concurrent = [await concurrent(8), await concurrent(32)];
   results.recovery = await recovery(3);
   results.sqliteCommits = await sqliteCommits(1_000);
-  results.postgresCommits = await postgresCommits(1_000);
   if (json) console.log(JSON.stringify(results, null, 2));
   else {
     const s = results.sequential as Record<string, never>;

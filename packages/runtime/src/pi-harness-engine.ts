@@ -1,8 +1,8 @@
 // Production adapter for Pi's public AgentHarness. Pi owns the model/tool loop and
 // the session tree; the host owns the transaction that commits every Pi write together
 // with its own events, accounting and workspace revision. The engine is storage
-// agnostic: the local runtime supplies a SQLite host, the hosted worker a PostgreSQL
-// host with lease fencing. Opt in per session; the default executor is unchanged.
+// agnostic: the local runtime supplies a SQLite host through the HarnessTurnHost port.
+// Opt in per session; the default executor is unchanged.
 import {
   AgentHarness,
   type AgentHarnessTool,
@@ -57,7 +57,7 @@ export interface HarnessTurnControls {
 export interface HarnessTurn {
   /** Pi operation id; the host's turn or run id. */
   id: string;
-  /** Pi session id: the local session or the hosted run lineage that shares one tree. */
+  /** Pi session id: the local session whose turns share one tree. */
   sessionId: string;
   prompt: string;
   instructions: string;

@@ -26,9 +26,6 @@ async function fixture(delayMs = 0) {
         ANTHROPIC_BASE_URL: upstream.url,
         NIMPLEX_STATE_DIR: join(dir, "state"),
         XDG_CONFIG_HOME: join(dir, "config"),
-        NIMPLEX_BASE_URL: "http://127.0.0.1:1",
-        NIMPLEX_API_KEY: undefined,
-        DATABASE_URL: "postgres://unreachable.invalid/db",
         ...env,
       },
     });

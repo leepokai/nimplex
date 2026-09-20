@@ -119,7 +119,7 @@ export function commitToolIn(
   ]);
 }
 
-/** Local commits use the same executor contract as the hosted Postgres adapter. */
+/** Local commits implement the executor's persistence contract over SQLite. */
 export function createCheckpoints(
   store: RuntimeStore,
   id: string,

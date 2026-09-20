@@ -7,7 +7,6 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "start": "tsx src/serve.ts",
     "check": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {

@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.1",
   "type": "module",
-  "license": "Apache-2.0",
+  "license": "MIT",
   "packageManager": "pnpm@10.30.3",
   "engines": {
     "node": ">=22.13"
@@ -14,15 +14,7 @@
     "lint": "biome check .",
     "format": "biome check --write .",
     "test": "vitest run",
-    "db:generate": "pnpm --filter @nimplex/db generate",
-    "db:migrate": "pnpm --filter @nimplex/db migrate",
-    "compose:up": "docker compose up -d",
-    "compose:down": "docker compose down",
-    "e2e": "pnpm --filter @nimplex/example-quickstart exec tsx src/harness-e2e.ts",
-    "bench": "pnpm --filter @nimplex/example-quickstart exec tsx src/harness-bench.ts",
-    "e2e:e2b": "NIMPLEX_E2E_SANDBOX=e2b pnpm e2e",
-    "e2e:real": "NIMPLEX_E2E_SANDBOX=e2b NIMPLEX_E2E_REAL_MODEL=1 pnpm e2e",
-    "dev:hosted": "turbo dev"
+    "bench": "pnpm --filter @nimplex/example-quickstart exec tsx src/harness-bench.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.9",

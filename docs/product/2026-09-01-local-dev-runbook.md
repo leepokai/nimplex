@@ -1,5 +1,11 @@
 # Local development runbook: topology, startup, and acceptance
 
+> Historical, 2026-09-20: the hosted API, worker, PostgreSQL schema, SDK and VPS
+> deployment described below were removed from the repository. The local `nimplex`
+> CLI and its SQLite runtime are the only supported operation; see
+> [local runtime](2026-09-13-local-runtime.md). This file is kept as a record of the
+> earlier hosted setup and its acceptance steps.
+
 > **2026-09-20:** USD budgets have been removed. Run migration 0012 before starting
 > updated hosted services. `pnpm e2e` now checks uncapped execution/accounting,
 > unknown outcomes, cancellation and recovery. Earlier budget acceptance below
@@ -110,9 +116,7 @@ Managed Agents and claude-code × E2B CLI-in-a-box tests were removed on 09-06 (
 
 ## 7. Self-hosted cloud development: VPS and Compose
 
-Added 09-03. The historical sandbox could reach a public API without tunnels. One VPS, suggested 2 vCPU/4 GB on DigitalOcean/Linode, runs Postgres/API/worker/Caddy through deploy/docker-compose.yml. The deploy-dev GitHub workflow that built two images, pushed GHCR and ran pull → migrate → up over SSH was removed on 2026-09-20 together with `.github/`. Nothing publishes new images to GHCR now: build the `Dockerfile` targets and push them to a registry the Compose file can pull from before deploying. Console was excluded, with SDK acceptance instead.
-
-Branch decision, superseded on 2026-09-20: the dev branch and its automatic deployment no longer exist. main is the only branch and has no deployment workflow; deployments are manual.
+Added 09-03, removed 2026-09-20. The E2B sandbox needed a public API without tunnels, so one VPS (2 vCPU/4 GB on DigitalOcean) ran Postgres/API/worker/Caddy through `deploy/docker-compose.yml`, built and deployed by a `deploy-dev` GitHub workflow (two images to GHCR, then SSH pull → migrate → up) on every push to the `dev` branch. The workflow, `Dockerfile`, `.dockerignore`, `deploy/` and the hosted services themselves are no longer in the repository; the steps below are a record and cannot be followed against the current tree. Console was excluded, with SDK acceptance instead.
 
 Recorded deployment: DO droplet nimplex-dev, sgp1, s-2vcpu-4gb. On 09-03 commit 0f32657, Caddy TLS and four healthy services passed; cloud claude-code-e2b.ts completed in 19 seconds at $0.049 without a tunnel.
 

@@ -1,33 +1,36 @@
 # File structure
 
-The current default entry point is a local coding-agent runtime. The existing hosted
-API/worker deployment shares the same executor. See [runtime architecture](product/2026-09-13-local-runtime.md).
-The long-term product direction and proposed alternatives are recorded in
+nimplex is a local coding-agent runtime built on Pi. The `nimplex` CLI starts the
+runtime in process and stores everything in SQLite. See
+[runtime architecture](product/2026-09-13-local-runtime.md).
+
+The hosted API, worker, PostgreSQL schema, HTTP SDK and VPS deployment files were
+removed on 2026-09-20. Dated documents that describe them are historical. Cloud
+topology candidates remain recorded in
 [cloud agent candidates](product/2026-09-15-cloud-agent-candidates.md), with
 [Grok Bot reference evidence](product/2026-09-15-grok-bot-reference.md) and the
-[Project Think architecture and overlap study](product/2026-09-16-cloudflare-think-reference.md).
+[Project Think architecture and overlap study](product/2026-09-16-cloudflare-think-reference.md);
+none of them is implemented.
 
 The [positioning map](product/2026-09-16-positioning-map.md) separates reference
-products, candidate audiences, and the proposed Pi-based cloud workspace direction.
+products, candidate audiences, and the Pi-based direction.
 
 The [mandatory durable Pi integration requirement](product/2026-09-16-pi-durable-runtime-requirement.md)
 defines the required relationship between Pi capabilities and durable execution.
-
 See the [durable Pi implementation plan](product/2026-09-16-durable-pi-implementation-plan.md)
-for integration gates, migration phases, and acceptance criteria.
-
-[Native and browser recovery](product/2026-09-16-environment-browser-recovery.md)
-extends the plan with Chrome state, journals, snapshots, and restore acceptance.
+for integration gates and acceptance criteria, and
+[native and browser recovery](product/2026-09-16-environment-browser-recovery.md)
+for Chrome state, journals, snapshots and restore acceptance.
 
 ```text
 apps/
   cli/
     bin/nimplex.mjs              Executable entry point; loads TypeScript through tsx
     src/index.ts                Environment loading and TUI/headless routing
-    src/local-runtime.ts        Local runtime composition and project state-root selection
+    src/local-runtime.ts        Runtime composition, engine selection and project state-root selection
     src/auth.ts                 Local model credentials; masked input and mode-600 storage
     src/codex-auth.ts           Pi subscription OAuth, isolated credential storage and refresh
-    src/plain.ts                Headless/piped operations over session runtime
+    src/plain.ts                Headless/piped operations over the session runtime
     src/terminal/               Controller, commands, view, preferences and local file IO
       keyboard.ts               Shortcut contexts, profiles, chord timing and help
       composer.ts               Pi editor presentation and prompt history
@@ -35,55 +38,45 @@ apps/
       panels.ts                 Searchable pickers and paged output viewers
       resources.ts              Declarative prompt/skill snapshots and argument expansion
       resource-commands.ts      Reload and resource command adapters
-      pi-commands.ts            Pi-style session navigation and capability explanations
-  api/src/                      Optional hosted HTTP API, auth, runs, SSE, continuation seeding
-  worker/src/
-    index.ts                    Hosted work queue, lease/fence, heartbeat, reaper, transitions
-    checkpoints.ts              Postgres executor persistence adapter
-    pi-storage.ts               Organization-scoped PostgreSQL implementation of Pi's Storage port
-    native-bash.ts              Hosted ownership adapter to shared native execution
-  site/                         Marketing site
+      pi-commands.ts            Pi-style session navigation, trust and extension commands
+  site/                         Marketing site (nimplex.dev)
 packages/
-  contracts/src/                Shared Zod schemas and public session/turn contracts
-  core/src/                     Pure pricing/state/conversation functions and ports
+  contracts/src/                Zod schemas: turn requests, accepted input, events, checkpoints, Pi storage records
+  core/src/                     Pure pricing/state/conversation functions and the SandboxProvider port
   runtime/src/
     runtime.ts                  Session execution authority, lifecycle, cancellation and events
     sessions.ts                 Session operations, turn seeding and read projections
     store.ts                    SQLite persistence and state-root OS ownership lock
     models.ts                   Local selection over the complete installed Pi provider/model catalog
-    checkpoints.ts              Local atomic model/tool/workspace commits
-    pi-executor.ts              Shared Pi loop, tool composition and model projection
+    checkpoints.ts              Atomic model/tool/workspace commits
+    pi-executor.ts              Default engine: host-owned Pi Agent loop, tool composition and model projection
     pi-harness-engine.ts        Opt-in AgentHarness engine: atomic commits, context operations, inbox, recovery
+    pi-harness-local-host.ts    SQLite host port for the harness engine
     pi-harness-models.ts        Awaited dispatch intent inside Pi Models for assistant and summary requests
     pi-storage/                 SQLite Pi Storage with host transactions, journal, summary responses and conformance
-    pi-summary-models.ts         Experimental public Models facade for summary-response validation
-    pi-extensions/              Production extension bridge (bridge.ts: trust-gated loading, hooks, tools) plus Codex's projection/settings adapters
-    pi-harness-*.test.ts         Pinned candidate lifecycle, commit and process-recovery gates
+    pi-summary-models.ts        Public Models facade for summary-response validation
+    pi-extensions/              Trust-gated Pi extension bridge (bridge.ts: loading, hooks, tools)
+    pi-harness-*.test.ts        Lifecycle, commit and process-recovery gates
     context.ts                  Checkpoints, digests, compaction and output archive
     workspace.ts                just-bash workspace snapshot/restore
     bash-routing.ts             Whole-script virtual/native routing
-    native-bash.ts              Shared isolated supervisor journals and provider lifecycle
-  db/src/                       Hosted Postgres schema, migrations, auth, workspace and events
+    native-bash.ts              Isolated supervisor journals and provider lifetime
   sandbox/src/                  Docker, E2B, ComputeSDK and local-development provider adapters
-  sdk/src/                      Optional hosted API client; depends only on contracts
-  testkit/src/                  Fake model endpoint and sandbox conformance helpers
-examples/quickstart/src/         Hosted integration and recovery acceptance
+  testkit/src/                  Fake Anthropic upstream and sandbox conformance helpers
+examples/quickstart/src/
+  harness-bench.ts              Durability overhead, recovery time and storage growth measurements
 ```
 
 ## Dependency direction
 
 ```text
 cli → runtime → core/contracts/sandbox
-worker → runtime + db
-api → db/core/contracts/sandbox
-sdk → contracts
+sandbox → core/contracts/testkit
 core → contracts
 ```
 
 - UI state is a projection; it cannot overwrite canonical execution events.
 - Runtime has IO; `core` remains free of IO.
-- Default local execution does not import the Postgres package or start a server.
 - Native tools receive an explicit workspace and isolated environment, not host secrets.
-- Hosted queries remain tenant-scoped; API and worker coordinate through Postgres.
-- Tests for shared execution live beside their runtime modules.
+- Tests for runtime behavior live beside their runtime modules.
 - Root `sandbox/` and `docs/competitor-analyze/` are ignored research artifacts.

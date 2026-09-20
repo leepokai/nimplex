@@ -9,28 +9,23 @@ Keep shared architectural decisions in the existing documents.
 
 Before runtime work, read:
 
-- `docs/product/2026-09-01-local-dev-runbook.md`
-- `docs/product/2026-09-01-architecture.md`
-- `docs/product/2026-09-01-sdk-architecture.md`
+- `docs/product/2026-09-13-local-runtime.md`, the implemented local runtime contract
+- `docs/product/2026-09-10-harness-runtime.md`, the implemented recovery contract
+- `docs/product/2026-09-01-architecture.md` (hosted sections are historical)
 - `docs/product/2026-09-06-harness-on-just-bash.md`, especially the final decision in section 7
-- `docs/product/2026-09-09-mvp-demo-plan.md`
 
 Dated documents include historical proposals. Distinguish the latest explicit
 decision from a proposal and from behavior actually implemented in the code.
-The long-term product is a cloud agent platform with many durable sessions.
-Read `docs/product/2026-09-15-cloud-agent-candidates.md` for the confirmed product
-direction and unresolved architecture options, and
-`docs/product/2026-09-15-grok-bot-reference.md` for the bounded reference study.
-Read `docs/product/2026-09-16-cloudflare-think-reference.md` for managed SQLite
-and product overlap; cloud deployment does not universally require PostgreSQL.
-Do not treat candidate designs as implemented or finally selected.
-The current default CLI is a local agent application. Read
-`docs/product/2026-09-13-local-runtime.md` for its implemented behavior before runtime changes.
+Current scope, confirmed on 2026-09-20: the local harness only. The hosted
+API/worker/PostgreSQL deployment, HTTP SDK and VPS files were removed from the
+tree on that date; documents describing them are historical. Cloud topology
+candidates remain recorded in `docs/product/2026-09-15-cloud-agent-candidates.md`
+and `docs/product/2026-09-16-cloudflare-think-reference.md` for a later decision;
+nothing there is implemented.
 `packages/runtime` owns sessions and executes Pi with just-bash/native tools.
 Terminal and headless clients share this runtime; SQLite stores local state.
-`apps/worker` is the existing hosted adapter that uses the shared executor with
-Postgres persistence and lease fencing. Model responses settle before tools;
-tool outcomes and workspace snapshots commit together in either deployment.
+Model responses settle before tools; tool outcomes and workspace snapshots commit
+together.
 
 ## Working conventions
 
@@ -39,10 +34,9 @@ tool outcomes and workspace snapshots commit together in either deployment.
   and commit messages in English. Keep documentation in Markdown. Discussion with
   Kevin may remain in Traditional Chinese.
 - Preserve existing staged and unstaged work. Scope changes and commits to the task.
-- Change public API shapes in `packages/contracts` first. Keep `core` free of IO and
-  the SDK dependent only on contracts. The optional hosted API and worker coordinate through Postgres.
-- Follow the tenant isolation and credential boundaries in `CLAUDE.md`. Existing
-  implementation gaps are not precedents for new code.
+- Change public schemas in `packages/contracts` first. Keep `core` free of IO.
+- Follow the credential boundaries in `CLAUDE.md`: provider keys never enter
+  sandboxes. Existing implementation gaps are not precedents for new code.
 - Put third-party experiments in the ignored root `sandbox/` directory. Never commit
   it, `docs/competitor-analyze/`, credentials, or local environment files.
 - Project skills already live in `.agents/skills/`; `.claude/skills/` points to the
@@ -78,7 +72,7 @@ cases that are easiest to implement or test.
   complete user workflows. Include actual process-death/restart tests where
   durability is claimed; mocks alone cannot prove those guarantees.
 - Test observable outcomes and invariants, including absence of duplicate effects,
-  partial commits, cross-tenant access and unauthorized dispatch where applicable.
+  partial commits and unauthorized dispatch where applicable.
   Do not substitute implementation-mirroring assertions or line-coverage numbers
   for full requirement coverage.
 - Never weaken assertions, silently skip required cases, or change expected behavior
@@ -88,13 +82,12 @@ cases that are easiest to implement or test.
   a green subset does not establish completion, and required gaps remain unfinished.
 
 After code changes, run `pnpm check`, `pnpm lint`, and `pnpm test`, plus the relevant
-integration or conformance checks described in the runbook. Use the fake upstream
-for budget and accounting tests. Documentation-only changes need link/content and
+integration or conformance checks (`pnpm bench`, native sandbox tests, sandbox
+conformance). Use the fake upstream for accounting tests. Documentation-only changes need link/content and
 diff checks; configuration changes also need format/configuration validation.
 
-Review the changed code before committing. Review budget, accounting, tenant
-isolation, run transitions, leases, fencing, cancellation, and recovery with high
-scrutiny; use medium scrutiny for other code changes. Fix actionable findings and
+Review the changed code before committing. Review accounting, run transitions,
+ownership, cancellation, and recovery with high scrutiny; use medium scrutiny for other code changes. Fix actionable findings and
 rerun affected checks. Do not claim tests or reviews that were not performed.
 
 `/code-review medium`, `/code-review high`, and `/model opus` in `CLAUDE.md` are

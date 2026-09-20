@@ -1,9 +1,0 @@
-# Public entrypoint. The api container only exposes 8787 on the compose network;
-# Caddy owns 80/443 and TLS.
-#
-# With a domain:    SITE_ADDRESS=api-dev.nimplex.dev  -> Caddy obtains a Let's Encrypt certificate
-# Without a domain: SITE_ADDRESS=:80                   -> plain http, reach it via http://<server ip>
-{$SITE_ADDRESS}
-
-encode zstd gzip
-reverse_proxy api:8787

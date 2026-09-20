@@ -63,6 +63,9 @@ memory (Pi harness plus just-bash workspace per active turn) rather than the log
 
 ## Storage adapter commit latency (1,000 commits, 1 KiB message entry plus one value each)
 
+> The PostgreSQL row is historical: the hosted adapter was removed on 2026-09-20 and
+> `pnpm bench` now measures SQLite only.
+
 | Adapter | p50 | p95 | p99 | Commits/s |
 | --- | --- | --- | --- | --- |
 | SQLite, WAL, `synchronous=FULL`, host transaction | 0.12 ms | 0.16 ms | 1.02 ms | 7,200 |

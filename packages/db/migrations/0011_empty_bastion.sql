@@ -1,2 +1,0 @@
-ALTER TABLE "work_items" ADD COLUMN "available_at" timestamp with time zone DEFAULT now() NOT NULL;--> statement-breakpoint
-CREATE INDEX "work_items_available" ON "work_items" USING btree ("status","available_at");
