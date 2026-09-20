@@ -64,7 +64,7 @@ API and worker load `.env` at startup; existing process variables take precedenc
 - databaseHooks.user.create.after created organization and owner membership. Same-email providers linked to one user, verified without duplicate organizations.
 - Every /v1 route accepted either an org Bearer key or session cookie through the same endpoint. API keys are hashed, revocable, and return 401 immediately after revocation.
 - Every run route scopes by organization; cross-tenant access returns 404.
-- Google was in Testing mode with only kevin2005ha@gmail.com on the test list. Add testers through Google Auth Platform → Audience.
+- Google was in Testing mode with only the developer's own Google account on the test list. Add testers through Google Auth Platform → Audience.
 - Production nimplex.dev needs separate OAuth credentials, production callbacks, and Google publication/verification rather than reusing local credentials.
 
 ## 5. Historical smoke acceptance, rewritten 09-09
@@ -114,7 +114,7 @@ Added 09-03. The historical sandbox could reach a public API without tunnels. On
 
 Branch decision, superseded on 2026-09-20: the dev branch and its automatic deployment no longer exist. main is the only branch and has no deployment workflow; deployments are manual.
 
-Recorded deployment: DO droplet nimplex-dev, sgp1, s-2vcpu-4gb, IP 168.144.107.105. On 09-03 commit 0f32657, Caddy TLS and four healthy services passed; cloud claude-code-e2b.ts completed in 19 seconds at $0.049 without a tunnel.
+Recorded deployment: DO droplet nimplex-dev, sgp1, s-2vcpu-4gb. On 09-03 commit 0f32657, Caddy TLS and four healthy services passed; cloud claude-code-e2b.ts completed in 19 seconds at $0.049 without a tunnel.
 
 ```bash
 # One-time Ubuntu 24.04 VPS setup
