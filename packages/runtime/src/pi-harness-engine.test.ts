@@ -269,6 +269,31 @@ describe("Pi harness engine", () => {
     expect(f.runtime.getSession(session.id).turns).toHaveLength(1);
   });
 
+  it("switches one session between build and read-only turns without losing tools", async () => {
+    const f = await setup({
+      script: [{ name: "write", input: { path: "/workspace/a.txt", content: "one\n" } }],
+    });
+    const session = f.runtime.createSession(f.dir);
+    const offered = () => {
+      const last = f.upstream.state.messagesCalls.at(-1)?.body as { tools?: { name: string }[] };
+      return (last?.tools ?? []).map((tool) => tool.name).sort();
+    };
+    const build = await f.runtime.startTurn(session.id, request("Build"));
+    expect((await finish(f.runtime, build.runId)).status).toBe("completed");
+    expect(offered()).toEqual(["bash", "edit", "read", "read_log", "read_output", "write"]);
+    // Pi keeps the lane's active tools across turns; a read-only turn registers fewer.
+    const readOnly = await f.runtime.startTurn(
+      session.id,
+      request("Look", { executionMode: "read_only" }),
+    );
+    expect((await finish(f.runtime, readOnly.runId)).status).toBe("completed");
+    expect(offered()).toEqual(["read", "read_log", "read_output"]);
+    const again = await f.runtime.startTurn(session.id, request("Build again"));
+    expect((await finish(f.runtime, again.runId)).status).toBe("completed");
+    expect(offered()).toEqual(["bash", "edit", "read", "read_log", "read_output", "write"]);
+    expect(f.runtime.getSession(session.id).turns).toHaveLength(3);
+  });
+
   it("branches a harness session through Pi's fork policy and keeps both lineages independent", async () => {
     const f = await setup();
     const session = f.runtime.createSession(f.dir);

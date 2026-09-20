@@ -677,6 +677,16 @@ async function driveHarnessTurn(
         await lane.setModel({ provider: model.provider, modelId: model.id }, context);
       if ((await lane.getThinkingLevel(context)) !== turn.thinkingLevel)
         await lane.setThinkingLevel(turn.thinkingLevel, context);
+      // Active tools persist in the lane as well. A read-only turn after a build turn must
+      // not ask for tools this process did not register (Pi fails the generation), and a
+      // build turn after a read-only turn must get its write tools back.
+      const activeTools = [...tools, ...(extensions?.tools ?? [])].map((tool) => tool.name);
+      const currentTools = await lane.getActiveTools(context);
+      if (
+        currentTools.length !== activeTools.length ||
+        activeTools.some((name) => !currentTools.includes(name))
+      )
+        await lane.setActiveTools(activeTools, context);
       // Context operations run before the prompt is accepted and only once per turn.
       if (turn.contextMode === "reset") {
         const operationId = contextOperationId(id, "reset");

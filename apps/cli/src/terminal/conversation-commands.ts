@@ -82,12 +82,14 @@ export const conversationCommands: Command[] = [
   {
     name: "compact",
     group: "Conversation",
-    description: "Use extractive context compaction on the next turn",
+    description: "Compact the conversation context on the next turn",
     action: (c) => {
       c.nextContextMode = "compact";
       c.view.notice(
         "Context compaction",
-        "The next turn will create a durable extractive checkpoint when context exceeds 4,000 UTF-8 bytes. Original events and workspace remain intact.",
+        c.session.engine === "pi-harness"
+          ? "When there is history to compact, the next turn first asks the model for a durable Pi summary of it, then runs your prompt against the compacted history. Original events and workspace remain intact."
+          : "The next turn will create a durable extractive checkpoint when context exceeds 4,000 UTF-8 bytes. Original events and workspace remain intact.",
       );
     },
   },
