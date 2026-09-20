@@ -1,4 +1,4 @@
-// Fake Anthropic upstream so the money path (per-call metering, budget kill) runs end to end
+// Fake Anthropic upstream so the money path (per-call metering, durable settlement) runs end to end
 // without a real key. Point a BYOK provider key's base_url at it; everything else stays real.
 //
 // Shape follows the official Messages API:

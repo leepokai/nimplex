@@ -5,7 +5,11 @@ import { join } from "node:path";
 
 export type { SessionSnapshot as Session, SessionTurn as Turn } from "@nimplex/contracts";
 
-import type { SessionSnapshot as Session } from "@nimplex/contracts";
+import {
+  type SessionSnapshot as Session,
+  type ThinkingLevelId,
+  thinkingLevel,
+} from "@nimplex/contracts";
 import type { NimplexRuntime } from "@nimplex/runtime";
 
 export interface Preferences {
@@ -13,9 +17,10 @@ export interface Preferences {
   theme: "dark" | "light" | "mono";
   model: string;
   sandbox: "e2b" | "docker";
-  budget: number;
   timeout: number;
   mode: "build" | "read_only";
+  /** Pi thinking level for harness sessions; absent means off. */
+  thinking?: ThinkingLevelId;
   expanded: boolean;
   statusline: boolean;
 }
@@ -57,9 +62,9 @@ export class SessionStore {
           theme: (v) => typeof v === "string" && ["dark", "light", "mono"].includes(v as string),
           model: (v) => typeof v === "string" && v.length > 0,
           sandbox: (v) => typeof v === "string" && ["e2b", "docker"].includes(v as string),
-          budget: (v) => typeof v === "number" && Number.isFinite(v) && v > 0,
           timeout: (v) => typeof v === "number" && Number.isInteger(v) && v > 0 && v <= 86400,
           mode: (v) => typeof v === "string" && ["build", "read_only"].includes(v as string),
+          thinking: (v) => thinkingLevel.safeParse(v).success,
           expanded: (v) => typeof v === "boolean",
           statusline: (v) => typeof v === "boolean",
         };
@@ -74,12 +79,12 @@ export class SessionStore {
         theme: ["dark", "light", "mono"].includes(p.theme) ? p.theme : defaults.theme,
         model: typeof p.model === "string" ? p.model : defaults.model,
         sandbox: ["e2b", "docker"].includes(p.sandbox) ? p.sandbox : defaults.sandbox,
-        budget: Number.isFinite(p.budget) && p.budget > 0 ? p.budget : defaults.budget,
         timeout:
           Number.isInteger(p.timeout) && p.timeout > 0 && p.timeout <= 86400
             ? p.timeout
             : defaults.timeout,
         mode: ["build", "read_only"].includes(p.mode) ? p.mode : defaults.mode,
+        ...(thinkingLevel.safeParse(p.thinking).success ? { thinking: p.thinking } : {}),
         expanded: typeof p.expanded === "boolean" ? p.expanded : defaults.expanded,
         statusline: typeof p.statusline === "boolean" ? p.statusline : defaults.statusline,
       };

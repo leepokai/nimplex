@@ -27,7 +27,6 @@ const RUN = {
   model: { provider: "anthropic", id: "claude-sonnet-5" },
   sandbox: { provider: "local" },
   sandbox_ref: null,
-  budget_usd: 1,
   spent_usd: 0,
   error: null,
   created_at: "2026-09-02T00:00:00Z",
@@ -68,14 +67,13 @@ describe("CloudAgent", () => {
       id: "unit-test",
       model: { provider: "anthropic", id: "claude-sonnet-5" },
       instructions: "測試",
-      budgetUsd: 1,
     });
 
-    const result = await agent.generate({ prompt: "hi", budgetUsd: 0.5 });
+    const result = await agent.generate({ prompt: "hi" });
 
     const body = bodies["POST /v1/runs"] as Record<string, unknown>;
     expect(body.input).toBe("hi");
-    expect(body.budget_usd).toBe(0.5); // Per-call values override agent defaults.
+    expect(body).not.toHaveProperty("budget_usd");
     expect((body.metadata as Record<string, unknown>).agent_id).toBe("unit-test");
 
     expect(result.run.status).toBe("completed");

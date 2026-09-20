@@ -1,5 +1,7 @@
 #!/usr/bin/env node
-import { tsImport } from "tsx/esm/api";
+import { register } from "tsx/esm/api";
 
-const { main } = await tsImport("../src/index.ts", import.meta.url);
+// Register the process loader so Pi's lazy provider imports can resolve Node built-ins.
+register();
+const { main } = await import("../src/index.ts");
 await main();

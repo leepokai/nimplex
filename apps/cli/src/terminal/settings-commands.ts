@@ -1,3 +1,4 @@
+import { THINKING_LEVELS, thinkingLevel } from "@nimplex/contracts";
 import type { Command } from "./commands.ts";
 
 import { type Keymap, keyboardHelp } from "./keyboard.ts";
@@ -17,6 +18,7 @@ export const settingsCommands: Command[] = [
             description: "Sign in with ChatGPT through Pi OAuth",
           },
           { value: "anthropic", label: "Anthropic API key" },
+          { value: "openai", label: "OpenAI API key", description: "openai/… models" },
         ]));
       if (provider) await c.view.authenticate(provider);
     },
@@ -28,9 +30,14 @@ export const settingsCommands: Command[] = [
     action: async (c, arg) => {
       const { logout } = await import("../auth.ts");
       const provider =
-        arg || (c.preferences.model.startsWith("openai-codex/") ? "codex" : "anthropic");
-      if (!["anthropic", "codex", "openai-codex"].includes(provider))
-        throw new Error("Choose anthropic or codex.");
+        arg ||
+        (c.preferences.model.startsWith("openai-codex/")
+          ? "codex"
+          : c.preferences.model.startsWith("openai/")
+            ? "openai"
+            : "anthropic");
+      if (!["anthropic", "openai", "codex", "openai-codex"].includes(provider))
+        throw new Error("Choose anthropic, openai or codex.");
       c.close();
       await logout(provider);
     },
@@ -63,6 +70,36 @@ export const settingsCommands: Command[] = [
     },
   },
   {
+    name: "thinking",
+    group: "Settings",
+    description: "Choose the Pi thinking level for new turns (Pi harness engine)",
+    action: async (c, arg) => {
+      const value =
+        arg ||
+        (await c.view.choose(
+          "Thinking level",
+          THINKING_LEVELS.map((level) => ({
+            value: level,
+            label: level,
+            description:
+              level === "off"
+                ? "No thinking; the default"
+                : "Thinking output is billed as output tokens by the provider",
+          })),
+        ));
+      if (!value) return;
+      const parsed = thinkingLevel.safeParse(value);
+      if (!parsed.success) throw new Error(`Choose one of ${THINKING_LEVELS.join(", ")}.`);
+      if (parsed.data !== "off" && c.session.engine !== "pi-harness")
+        throw new Error(
+          "Thinking runs on the Pi harness engine. Start nimplex with NIMPLEX_ENGINE=pi-harness and open a new session.",
+        );
+      if (parsed.data === "off") delete c.preferences.thinking;
+      else c.preferences.thinking = parsed.data;
+      c.settingsChanged();
+    },
+  },
+  {
     name: "config",
     aliases: ["settings"],
     group: "Settings",
@@ -70,7 +107,7 @@ export const settingsCommands: Command[] = [
     action: async (c) => {
       const command = await c.view.choose(
         "Settings",
-        ["model", "theme", "permissions", "sandbox", "budget", "timeout", "statusline"].map(
+        ["model", "thinking", "theme", "permissions", "sandbox", "timeout", "statusline"].map(
           (value) => ({ value, label: value }),
         ),
       );

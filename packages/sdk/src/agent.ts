@@ -7,7 +7,7 @@
 //
 // Same minimal shape ("implement the Agent interface, or use the ready-made class"); the only
 // difference is where it runs: the nimplex loop runs in the worker against a cloud sandbox, so
-// there is a budgetUsd hard cap that can kill the run mid-flight.
+// model usage is recorded per durable attempt.
 
 import type { ModelSpec, RunEvent, RunResponse, SandboxSpec } from "@nimplex/contracts";
 import type { Transport } from "./http.ts";
@@ -20,9 +20,12 @@ export interface AgentSettings {
   model: ModelSpec;
   sandbox?: SandboxSpec;
   instructions: string;
-  /** USD hard cap: the run is killed the moment spend reaches it. Per-call override via AgentCallOptions. */
-  budgetUsd: number;
+  /** Optional wall-clock execution limit in seconds. */
   maxDurationSeconds?: number;
+  /** Execution engine for new runs; continuations inherit their parent's engine. */
+  engine?: "pi-executor" | "pi-harness";
+  /** Pi thinking level (harness engine). */
+  thinking?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 }
 
 export interface AgentCallOptions {
@@ -36,9 +39,10 @@ export interface AgentCallOptions {
   /** Override agent defaults for this call. */
   model?: ModelSpec;
   sandbox?: SandboxSpec;
-  budgetUsd?: number;
   metadata?: Record<string, unknown>;
   clientNonce?: string;
+  /** Earliest start; the run is created immediately and stays queued until then. */
+  startAt?: Date | string;
   signal?: AbortSignal;
 }
 
@@ -96,6 +100,12 @@ export class CloudAgent implements Agent {
       signal: options.signal,
       body: {
         parent_run_id: options.parentRunId,
+        start_at:
+          options.startAt === undefined
+            ? undefined
+            : options.startAt instanceof Date
+              ? options.startAt.toISOString()
+              : options.startAt,
         context_mode: options.contextMode,
         execution_mode: options.executionMode,
         attachments: options.attachments,
@@ -104,8 +114,9 @@ export class CloudAgent implements Agent {
         sandbox: options.sandbox ?? this.settings.sandbox ?? { provider: "docker" },
         instructions: this.settings.instructions,
         input: options.prompt,
-        budget_usd: options.budgetUsd ?? this.settings.budgetUsd,
         max_duration_seconds: this.settings.maxDurationSeconds,
+        engine: this.settings.engine,
+        thinking: this.settings.thinking,
         client_nonce: options.clientNonce,
         metadata: {
           ...(this.settings.id ? { agent_id: this.settings.id } : {}),

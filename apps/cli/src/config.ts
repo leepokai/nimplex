@@ -1,4 +1,5 @@
 import { parseArgs } from "node:util";
+import { THINKING_LEVELS, thinkingLevel } from "@nimplex/contracts";
 
 export const HELP = `nimplex — local coding-agent harness
 
@@ -7,16 +8,17 @@ export const HELP = `nimplex — local coding-agent harness
   printf 'Your task' | nimplex   Read a task from stdin
   nimplex --resume SESSION_ID    Open a saved session (or append a supplied task)
   nimplex login                 Save a local Anthropic credential
+  nimplex login PROVIDER        Sign in using a built-in Pi provider
   nimplex login codex           Sign in with a Codex / ChatGPT subscription
-  nimplex logout                Remove the saved local credential
-  nimplex logout codex          Remove nimplex's Codex subscription login
+  nimplex logout [PROVIDER] Remove the saved local credential
   nimplex --watch TURN_ID        Read committed turn events
   nimplex --files TURN_ID        List a turn's workspace files
 
   --model MODEL                 Default: claude-haiku-4-5
+                                Pi providers: provider/model (Pi harness engine)
                                 Subscription: openai-codex/gpt-5.6-sol
+  --thinking LEVEL              off|minimal|low|medium|high|xhigh; Pi harness engine only
   --sandbox e2b|docker           Native execution provider; default: e2b
-  --budget USD                  Model budget per turn; default: 0.20
   --timeout SECONDS             Active turn time limit; default: 180
   --state-dir PATH              Select an isolated local state root
   --env-file PATH               Load credentials from this environment file
@@ -27,13 +29,14 @@ No API server, Postgres, or worker is required. Local SQLite stores sessions,
 events and workspace snapshots. NIMPLEX_ENGINE=pi-harness opts new sessions into
 the experimental Pi harness engine; existing sessions keep their recorded engine. The current directory's .env is loaded when
 present; existing environment variables take precedence. ANTHROPIC_API_KEY or
-nimplex login supplies the model credential. Native providers need their own setup.
+nimplex login supplies the Anthropic credential; OPENAI_API_KEY or nimplex login
+openai supplies the OpenAI one. Native providers need their own setup.
 
 Follow-ups share a session workspace and sandbox. @path attaches selected local
 text files; the local project is not automatically copied into /workspace.
 Closing nimplex stops execution; /resume can explicitly resume interrupted work.
-Sandbox charges are separate from model budgets. Codex subscription models use
-provider-managed quota, not the USD model budget; --timeout still applies.`;
+Model usage is recorded; sandbox usage accounting is not implemented yet. Codex subscription models use
+provider-managed quota; --timeout still applies.`;
 
 export function readOptions(argv: string[]) {
   const { values, positionals } = parseArgs({
@@ -43,7 +46,7 @@ export function readOptions(argv: string[]) {
       help: { type: "boolean", short: "h" },
       model: { type: "string", default: "claude-haiku-4-5" },
       sandbox: { type: "string", default: "e2b" },
-      budget: { type: "string", default: "0.20" },
+      thinking: { type: "string" },
       timeout: { type: "string", default: "180" },
       watch: { type: "string" },
       files: { type: "string" },
@@ -54,14 +57,16 @@ export function readOptions(argv: string[]) {
       "request-id": { type: "string" },
     },
   });
-  const budget = Number(values.budget);
   const timeout = Number(values.timeout);
-  if (!Number.isFinite(budget) || budget <= 0) throw new Error("--budget must be greater than 0.");
   if (!Number.isInteger(timeout) || timeout < 1 || timeout > 86400)
     throw new Error("--timeout must be an integer between 1 and 86400.");
   const sandbox = values.sandbox;
   if (sandbox !== "e2b" && sandbox !== "docker")
     throw new Error("--sandbox must be e2b or docker.");
+  const thinking =
+    values.thinking === undefined ? undefined : thinkingLevel.safeParse(values.thinking);
+  if (thinking && !thinking.success)
+    throw new Error(`--thinking must be one of ${THINKING_LEVELS.join(", ")}.`);
   const prompt = positionals.join(" ").trim();
   if ([values.watch, values.files, values.kill, prompt].filter(Boolean).length > 1)
     throw new Error("Choose one operation at a time: a task, --watch, --files or --kill.");
@@ -75,12 +80,12 @@ export function readOptions(argv: string[]) {
   }
   return {
     ...values,
-    budget,
     timeout,
+    thinking: thinking?.data,
     sandbox: sandbox as "e2b" | "docker",
     prompt,
     explicit: new Set(
-      ["model", "sandbox", "budget", "timeout"].filter((name) =>
+      ["model", "sandbox", "timeout", "thinking"].filter((name) =>
         argv.some((arg) => arg === `--${name}` || arg.startsWith(`--${name}=`)),
       ),
     ),

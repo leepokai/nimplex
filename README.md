@@ -24,7 +24,7 @@ nimplex CLI ──► the same runtime in-process, SQLite instead of Postgres
 | --- | --- |
 | **A run survives a dead worker** | Workers lease work items with fencing tokens and heartbeats. When a lease expires, another worker resumes from the log: committed model calls and tools are reused, only uncommitted tools re-execute. |
 | **A run survives a dead sandbox** | Files live in a durable Postgres workspace (Tier 0). Native commands run under an in-sandbox supervisor whose journal is keyed by run and tool-call ID, so a second worker collects the same result instead of running the command twice. Confirmed sandbox loss creates a new generation, restores the workspace, and reports any command with unknown side effects instead of replaying it. |
-| **Spend has a hard USD cap** | `budget_usd` is enforced per model call: a conservative reservation is written before dispatch, settled after the response, and dispatch is refused when `budget - spent - reserved` cannot cover the next request. Unknown responses keep their reservation. |
+| **Model usage is durable** | Each request has a committed call ID before dispatch. Responses and usage settle atomically, duplicate settlements are ignored, and lost responses remain explicit unknown outcomes. There is no USD spending limit. |
 | **Any run can be killed** | `POST /v1/runs/:id/kill` writes terminal state to Postgres. Heartbeats cancel the model call and tool in flight on whichever worker owns the run; a late response cannot overwrite a terminal state. |
 
 Recorded demo (`examples/quickstart/src/demo-kill.ts`, real Haiku, about $0.006):
@@ -67,9 +67,10 @@ Tier 0 /workspace/hello.txt (28 B): Wed Sep  9 09:49:11 UTC 2026
 
 **Accounting**
 
-- Priced Anthropic models only; unpriced models are rejected before paid dispatch. Hidden SDK retries, prompt caching, and paid server tools are disabled so the cap holds.
-- `spent_usd` is settled cost, `reserved_usd` is the upper bound for unresolved calls. Amounts round up to micro-USD; call IDs deduplicate settlement.
-- `max_duration_seconds` caps wall-clock time. Budgets cover model tokens only; sandbox, storage, and network charges are separate.
+- Local harness sessions use the installed Pi provider/model catalog and native provider adapters. Hosted dispatch currently supports Anthropic and OpenAI; the default legacy executor supports Anthropic and Codex.
+- `spent_usd` records Pi's catalog-based model cost estimates, rounded upward to micro-USD per call. Call IDs deduplicate settlement; unknown outcomes do not imply a free request. Provider invoices remain authoritative.
+- `max_duration_seconds` caps wall-clock time. Model, sandbox, storage, and network charges are separate. There is no monetary admission gate or output cap imposed by nimplex.
+
 
 **Continuation**
 
@@ -79,7 +80,7 @@ Tier 0 /workspace/hello.txt (28 B): Wed Sep  9 09:49:11 UTC 2026
 **Control plane, SDK, auth**
 
 - `/v1` API on Hono with resumable SSE: `GET /v1/runs/:id/events` honors `Last-Event-ID`, using the event sequence as cursor.
-- `@nimplex/sdk` follows the Vercel AI SDK v7 `Agent` shape (`version`, `generate`, `stream`) and adds `budgetUsd`; it depends only on `@nimplex/contracts`, the zod source of truth for every API shape.
+- `@nimplex/sdk` follows the Vercel AI SDK v7 `Agent` shape (`version`, `generate`, `stream`); it depends only on `@nimplex/contracts`, the zod source of truth for every API shape.
 - Better Auth login (GitHub, Google) creates an organization; programmatic access uses revocable `nmx_live_…` keys. BYOK provider keys are envelope-encrypted (AES-256-GCM) and decrypted only inside the API/worker trust boundary. Every query is scoped by `org_id`.
 - There is no `/internal`. Anything a first-party tool can do, a customer can do through the SDK.
 
@@ -97,7 +98,7 @@ docker compose up -d        # Postgres on :5433
 pnpm db:migrate
 NIMPLEX_DEV_EMAIL_AUTH=1 pnpm --filter @nimplex/api start &
 pnpm --filter @nimplex/worker start &
-pnpm --filter @nimplex/example-quickstart exec tsx src/e2e.ts   # signup, API key, Pi loop, budget stop, tenant isolation; fake upstream, no charges
+pnpm --filter @nimplex/example-quickstart exec tsx src/e2e.ts   # signup, API key, Pi loop, tenant isolation; fake upstream, no charges
 ```
 
 There is no console yet. Obtain a session with `POST /api/auth/sign-up/email` (requires `NIMPLEX_DEV_EMAIL_AUTH=1`), then mint an `nmx_live_…` key through `POST /v1/api-keys`.
@@ -110,13 +111,12 @@ curl -X PUT localhost:8787/v1/provider-keys \
   -H "authorization: Bearer $NIMPLEX_API_KEY" -H 'content-type: application/json' \
   -d '{"provider":"anthropic","api_key":"sk-ant-...","scope":"org"}'
 
-# Start a run with a $0.50 hard cap.
+# Start a run.
 curl -X POST localhost:8787/v1/runs \
   -H "authorization: Bearer $NIMPLEX_API_KEY" -H 'content-type: application/json' -d '{
   "model":{"provider":"anthropic","id":"claude-sonnet-5"},
   "sandbox":{"provider":"docker"},
-  "instructions":"Create hello.txt in /workspace",
-  "budget_usd":0.5
+  "instructions":"Create hello.txt in /workspace"
 }'
 
 # Follow the log; reconnect with Last-Event-ID to resume.
@@ -139,12 +139,11 @@ const agent = nimplex.agent({
   model: { provider: "anthropic", id: "claude-sonnet-5" },
   sandbox: { provider: "e2b" },
   instructions: "Fix CI",
-  budgetUsd: 0.5, // USD hard cap, enforced per model call
 });
 
 const run = await agent.stream({ prompt: "The tests keep failing" });
 for await (const event of run.events) console.log(event.seq, event.type, event.payload);
-console.log(await run.wait()); // status, spent_usd, reserved_usd
+console.log(await run.wait()); // status, spent_usd
 ```
 
 `run.kill()` and `run.cancel()` terminate from the client. `nimplex.sandbox.listProviders()` reports which providers are configured on the server. See `examples/quickstart/src/index.ts`.
@@ -171,7 +170,7 @@ pnpm --dir apps/cli link --global         # puts `nimplex` on PATH
 
 nimplex
 nimplex "Create /workspace/hello.js and run node hello.js to verify it"
-nimplex --budget 0.50 --timeout 300 "Your task"
+nimplex --timeout 300 "Your task"
 printf 'Inspect the workspace' | nimplex
 nimplex --resume SESSION_ID "Continue this task"
 nimplex --resume SESSION_ID --request-id task-001 "Run this task once"
@@ -183,12 +182,24 @@ with changed content fails. Retrying acceptance never restarts interrupted work;
 explicitly resume that turn separately. The CLI prints the generated request ID
 when one was not supplied.
 
-Set `ANTHROPIC_API_KEY`, run `nimplex login`, or keep the credential in the project's `.env`; `ANTHROPIC_BASE_URL` selects a compatible endpoint. Defaults are Haiku 4.5, E2B for native commands (`E2B_API_KEY`) or `--sandbox docker`, a $0.20 model budget per turn, and a 180-second execution limit. just-bash-only tasks create no sandbox at all.
+Set `ANTHROPIC_API_KEY`, run `nimplex login`, or keep the credential in the project's `.env`; `ANTHROPIC_BASE_URL` selects a compatible endpoint. Defaults are Haiku 4.5, E2B for native commands (`E2B_API_KEY`) or `--sandbox docker`, a 180-second execution limit. just-bash-only tasks create no sandbox at all.
 
 For personal Codex subscription access, run `nimplex login codex`, then
 `nimplex --model openai-codex/gpt-5.6-sol`. `/model` also lists the installed Pi
-Codex catalog. Subscription quota is provider-managed; USD model budgets apply
-only to API models. See [Codex subscription setup](docs/product/2026-09-15-codex-subscription.md).
+Codex catalog. Subscription quota is provider-managed. See [Codex subscription setup](docs/product/2026-09-15-codex-subscription.md).
+For the full installed Pi provider catalog, create a harness session:
+
+```bash
+nimplex login groq
+NIMPLEX_ENGINE=pi-harness nimplex --model groq/llama-3.3-70b-versatile "Your task"
+```
+
+`nimplex login PROVIDER` delegates additional provider login to Pi (OAuth when
+available, otherwise API-key setup). Pi environment credentials, including ambient
+cloud credentials, also work. Provider IDs and model IDs come from the installed
+catalog; `/model` lists them. Existing sessions retain their engine. Credentials
+stay in nimplex's private configuration files and are never passed to tools.
+
 Current Pi support and remaining gaps are tracked in the
 [Pi compatibility inventory](docs/product/2026-09-15-pi-compatibility.md).
 
@@ -204,18 +215,18 @@ pnpm e2e:real     # also real Haiku + E2B; reads credentials from .env
 NIMPLEX_TEST_NATIVE=docker pnpm exec vitest run packages/runtime/src/native.integration.test.ts
 ```
 
-`e2e` needs only local Postgres on :5433; it creates and removes its own database. `e2e:e2b` needs `E2B_API_KEY`, `e2e:real` also `ANTHROPIC_API_KEY`. Cloud tests clean up the sandboxes they create. The money path is tested against `@nimplex/testkit`, a fake Anthropic Messages upstream, so budget and settlement logic never needs a real key.
+`e2e` needs only local Postgres on :5433; it creates and removes its own database. `e2e:e2b` needs `E2B_API_KEY`, `e2e:real` also `ANTHROPIC_API_KEY`. Cloud tests clean up the sandboxes they create. The money path is tested against `@nimplex/testkit`, a fake Anthropic Messages upstream, so accounting and settlement logic never needs a real key.
 
 ## Repository
 
 | Directory | Contents |
 | --- | --- |
 | `apps/api` | `/v1` control plane: Better Auth, org API keys, BYOK keys, runs, resumable SSE (Hono, :8787) |
-| `apps/worker` | Work queue with leases, fencing, and heartbeats; drives the shared Pi executor one turn at a time; budget enforcement, cancellation, orphan sandbox reaper |
+| `apps/worker` | Work queue with leases, fencing, and heartbeats; drives the shared Pi executor one turn at a time; usage accounting, cancellation, orphan sandbox reaper |
 | `apps/cli` | `nimplex` terminal and headless mode on the local runtime |
 | `apps/site` | Marketing site (nimplex.dev) |
 | `packages/contracts` | Zod schemas for runs, events, keys, organizations, sandbox specs. The single source of truth for API shapes |
-| `packages/core` | Pure functions, zero IO: budgets, pricing, run state machine, conversation projection, `SandboxProvider` port |
+| `packages/core` | Pure functions, zero IO: pricing, run state machine, conversation projection, `SandboxProvider` port |
 | `packages/runtime` | Shared Pi executor, tools, context checkpoints, native execution; local session ownership on SQLite |
 | `packages/db` | Drizzle schema and migrations, BYOK encryption, append-only events, Tier 0 workspace |
 | `packages/sandbox` | `SandboxProvider` implementations: Docker, E2B, ComputeSDK (Daytona, Vercel), local; shared conformance tests |
@@ -237,7 +248,7 @@ Dependency direction: `apps/* → packages/*`; `sdk → contracts` only; `core �
 
 ## Design sources
 
-- **Durable cloud agents**: [Cloudflare Project Think](https://developers.cloudflare.com/agents/harnesses/think/) and its [announcement](https://blog.cloudflare.com/project-think/). nimplex borrows the shape of the promise, durable identity, persistence, resumable interaction, and tool integration, and implements it on Pi with explicit commit barriers, hard USD budgets, and a durable workspace instead of platform-owned actors. Comparison and open questions: [`docs/product/2026-09-16-cloudflare-think-reference.md`](docs/product/2026-09-16-cloudflare-think-reference.md), positioning: [`docs/product/2026-09-16-positioning-map.md`](docs/product/2026-09-16-positioning-map.md).
+- **Durable cloud agents**: [Cloudflare Project Think](https://developers.cloudflare.com/agents/harnesses/think/) and its [announcement](https://blog.cloudflare.com/project-think/). nimplex borrows the shape of the promise, durable identity, persistence, resumable interaction, and tool integration, and implements it on Pi with explicit commit barriers and a durable workspace instead of platform-owned actors. Comparison and open questions: [`docs/product/2026-09-16-cloudflare-think-reference.md`](docs/product/2026-09-16-cloudflare-think-reference.md), positioning: [`docs/product/2026-09-16-positioning-map.md`](docs/product/2026-09-16-positioning-map.md).
 - **Log is the runtime**: Apache Maka, [`docs/blogs/log-is-the-runtime.md`](https://github.com/apache/maka/blob/main/docs/blogs/log-is-the-runtime.md). nimplex adds what a cloud runtime needs on top of the event log: durable workspace, sandbox generations, and lease fencing across workers.
 - **Loop kernel**: [Pi](https://github.com/earendil-works/pi) with custom tool `operations` and one-turn-per-work-item scheduling.
 - **Agent interface**: Vercel AI SDK v7 `Agent`; `version` keeps interface evolution explicit.

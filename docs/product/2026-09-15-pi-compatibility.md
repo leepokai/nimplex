@@ -14,9 +14,9 @@ additional version-specific behavior is discovered.
 | Capability | Current nimplex behavior | Remaining work |
 | --- | --- | --- |
 | Model/tool loop | Pi Agent, durable nimplex executor steps | Preserve when changing session composition |
-| Codex subscription auth | Pi ModelRuntime OAuth, browser/device login, locked refresh | Live account verification; broader provider login parity |
-| Model catalogs | Anthropic priced list and installed Codex subscription catalog | Other Pi providers, dynamic catalogs, custom models and provider extensions |
-| Thinking and model cycling | No thinking selector or scoped-model cycling; Codex currently uses low effort | Model-aware controls, persistence, shortcuts and accounting |
+| Codex subscription auth | Pi ModelRuntime OAuth, browser/device login, locked refresh | Additional provider login delegates to Pi OAuth/API-key flows; live account verification remains provider-dependent |
+| Model catalogs | All installed Pi built-in providers/models on the opt-in harness engine; catalog, provider adapters and credential resolution come from Pi | Live credential verification for every provider, dynamic catalogs, custom models and provider extensions |
+| Thinking and model cycling | `/thinking` and `--thinking` set Pi levels on the harness; model and level sync into the lane each turn. Pi retains its native thinking/output limits without a monetary cap. The legacy executor rejects non-off levels | Scoped-model cycling shortcuts |
 | Text input and terminal editing | Pi TUI editor with nimplex presentation and keymap profiles | Audit exact Pi bindings and customization-file compatibility |
 | Interactive and headless modes | nimplex TUI and one-shot/piped commands | Pi JSON/RPC protocol and SDK client compatibility |
 | Session creation/resume/naming | nimplex durable session operations | Pi session format import/export and migration semantics |
@@ -26,15 +26,15 @@ additional version-specific behavior is discovered.
 | Skills | Explicit body expansion and selected discovery roots | Automatic discovery/use parity, assets/scripts and all parent/global roots |
 | Context files | Selected AGENTS.md/CLAUDE.md loading | AGENTS.override.md, global and parent precedence, no-context-files option |
 | System prompt customization | nimplex instructions and sandbox prompt | SYSTEM.md and APPEND_SYSTEM.md semantics |
-| `/reload` | Declarative resources and nimplex preferences | Executable extensions, custom tools, themes and full Pi lifecycle reload |
-| Extensions | Not loaded as executable code | Public ExtensionRunner/AgentSession integration, hooks and UI bridge |
+| `/reload` | Declarative resources, nimplex preferences, and Pi extension modules (reloaded on the next harness turn) | Themes and full Pi lifecycle reload |
+| Extensions | Pi harness sessions load user extensions from the Pi agent directory and, after `/trust`, `<cwd>/.pi/extensions`, through Pi's public `DefaultResourceLoader` + `ExtensionRunner` (`packages/runtime/src/pi-extensions/bridge.ts`): registered tools (replay never), `before_agent_start` system prompt, `context`, `before_provider_request`, `tool_call` (block/rewrite args), `tool_result`, `session_start`, `sendMessage`/`sendUserMessage` as steer/follow-up through the durable inbox. Not bridged: commands, UI, `appendEntry`, `setModel`/`setThinkingLevel`/`setActiveTools`, `sessionManager` transcript reads (empty view), Pi packages/themes, `session_*` lifecycle events other than start, hosted execution | Command/UI bridge, transcript projection, hosted per-tenant extension host |
 | Custom tools/providers/commands | No general Pi extension registration | Preserve registration and event contracts with explicit execution authority |
 | Built-in file/shell tools | Pi read/write/edit via VFS; custom bash routing | grep/find/ls, PowerShell and user shell modes with supported backends |
 | Steering and follow-up queues | Separate sessions may run in background | In-flight steering, ordered follow-ups and durable inbox semantics |
 | Multimodal input | Selected text-file attachments | Image paste/files, rich model input and persistence limits |
 | Settings, themes and keybindings | nimplex preferences and built-in themes | Pi configuration formats and custom theme/keybinding files |
 | Packages | No Pi package install/update/remove integration | Package resource discovery, dependency and trust lifecycle |
-| Trust and extension permissions | Host secrets stay outside sandbox; read-only tool mode | Pi project-trust events and trusted extension execution policy |
+| Trust and extension permissions | Host secrets stay outside sandbox; read-only tool mode; project extensions execute only when Pi's shared `trust.json` marks the directory trusted (`/trust`, `/extensions`); a load error fails the harness turn closed | Pi `project_trust` extension event and session-only trust |
 | Export/copy/session diagnostics | nimplex variants | Pi import/share/export and diagnostic behavior parity |
 | Upgrade/offline behavior | Source changes require restart; resource reload is separate | Pi update/offline settings and restart recovery contract |
 
@@ -71,7 +71,7 @@ is still open; neither requirement may be silently traded away.
 
 For each capability, record its Pi baseline, intended behavior, adapter location,
 and executable verification. Command names alone do not establish compatibility.
-Run the existing recovery, budget, cancellation, workspace and tenant tests after
+Run the existing recovery, accounting, cancellation, workspace and tenant tests after
 changing execution composition. Preserve existing local and hosted histories.
 
 ## Experimental adapter evidence, 2026-09-16
@@ -124,10 +124,14 @@ model accounting or automatic recovery reuse of those responses.
 ## Opt-in production engine, 2026-09-17
 
 `NIMPLEX_ENGINE=pi-harness` runs new sessions on the public AgentHarness with
-nimplex's transaction, reservation and workspace commits. The capability table
+nimplex's transaction, dispatch intent and workspace commits. The capability table
 above still describes the default engine. On the harness engine the model/tool
 loop, session history, cancellation, crash recovery, model-generated compaction
-and branch summaries, root reset, Pi-policy branching, steering/follow-up queues
-and Codex subscription dispatch are Pi-native and durable. Executable extensions,
-Pi resource loading and hosted execution are not yet bridged. See the
+and branch summaries, root reset, Pi-policy branching, steering/follow-up queues,
+per-turn thinking levels, Anthropic/OpenAI API and Codex subscription dispatch are
+Pi-native and durable. Since 2026-09-18 the hosted worker runs harness sessions as
+one leased `harness` work item with fenced PostgreSQL commits and takeover (see the
+[hosted harness section](2026-09-10-harness-runtime.md#pi-harness-on-the-hosted-worker-2026-09-18)),
+and local harness sessions execute trust-gated Pi extensions. Pi packages, themes,
+extension commands/UI and hosted extension execution are not bridged. See the
 [runtime contract](2026-09-13-local-runtime.md#pi-harness-engine-opt-in-added-2026-09-17).

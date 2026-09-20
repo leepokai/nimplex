@@ -64,7 +64,7 @@ describe.skipIf(backend !== "docker" && backend !== "e2b")("native session integ
       const run = async (sessionId: string) => {
         const turn = await runtime.startTurn(
           sessionId,
-          startTurnRequest.parse({ prompt: "Increment", sandbox: backend, budget: 0.2 }),
+          startTurnRequest.parse({ prompt: "Increment", sandbox: backend }),
         );
         for await (const _event of runtime.events(turn.runId)) {
           /* Wait for the native result. */

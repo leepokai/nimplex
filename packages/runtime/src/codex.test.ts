@@ -35,7 +35,6 @@ const request = (prompt = "Write a file", extra = {}) =>
     prompt,
     model: DEFAULT_CODEX_MODEL,
     sandbox: "docker",
-    budget: 0.000001,
     ...extra,
   });
 function response(item: Record<string, unknown>) {
@@ -109,8 +108,6 @@ it("runs the real Codex adapter with nimplex tools, records quota usage, and res
   expect(result).toMatchObject({
     billing_mode: "subscription",
     spent_usd: 0,
-    reserved_usd: 0,
-    budget_usd: null,
   });
   expect(calls).toHaveLength(2);
   expect(calls[0]?.url).toBe(`${CODEX_BASE_URL}/codex/responses`);
@@ -209,7 +206,7 @@ it("keeps read-only tools and stops a blocked subscription request on cancellati
   expect(f.runtime.files(run.runId)).toEqual([]);
 });
 
-it("runs the Codex adapter on the Pi harness engine with zero-dollar reservations", async () => {
+it("runs the Codex adapter on the Pi harness engine with durable dispatch intents", async () => {
   const calls: { url: string; body: Record<string, unknown>; headers: Headers }[] = [];
   vi.stubGlobal(
     "fetch",
@@ -247,8 +244,6 @@ it("runs the Codex adapter on the Pi harness engine with zero-dollar reservation
   expect(result).toMatchObject({
     billing_mode: "subscription",
     spent_usd: 0,
-    reserved_usd: 0,
-    budget_usd: null,
   });
   expect(calls).toHaveLength(2);
   expect(calls[0]?.url).toBe(`${CODEX_BASE_URL}/codex/responses`);
@@ -258,10 +253,9 @@ it("runs the Codex adapter on the Pi harness engine with zero-dollar reservation
   expect(f.runtime.readFile(run.runId, "/workspace/subscription.txt")).toEqual(
     new TextEncoder().encode("persisted"),
   );
-  const reserved = events.filter((e) => e.type === "model.reserved");
+  const reserved = events.filter((e) => e.type === "model.started");
   expect(reserved).toHaveLength(2);
-  for (const event of reserved)
-    expect((event.payload as { reserved_usd: number }).reserved_usd).toBe(0);
+  for (const event of reserved) expect(event.payload).not.toHaveProperty("reserved_usd");
   const models = events.filter((e) => e.type === "model.call");
   expect(models).toHaveLength(2);
   expect(models[0]?.payload).toMatchObject({

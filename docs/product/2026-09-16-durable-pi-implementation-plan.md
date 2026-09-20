@@ -50,7 +50,7 @@ flowchart TD
 
 Existing source already contains:
 
-- `packages/runtime/src/pi-executor.ts`: Pi Agent orchestration, model reservation,
+- `packages/runtime/src/pi-executor.ts`: Pi Agent orchestration, model dispatch intent,
   persisted assistant responses, pending-tool recovery, tool/workspace commits.
 - `packages/core/src/executor.ts`: awaited persistence callbacks and a shared
   executor contract used by local and hosted adapters.
@@ -110,7 +110,7 @@ arbitrary external API action. Define retention and replay guarantees explicitly
 
 1. Validate input, assign identity, and durably accept it before acknowledging.
 2. Acquire the session's execution authority and restore its committed projection.
-3. Reserve model budget before dispatch. Persist the full response, tool intents,
+3. Commit model dispatch intent before dispatch. Persist the full response, tool intents,
    usage and settlement before tool execution. Unknown requests retain uncertainty.
 4. Persist tool intent, execute through the chosen backend, and commit result plus
    workspace revision before the next dependent action.
@@ -345,3 +345,30 @@ steering/follow-up input, and a PostgreSQL Storage adapter passing the shared
 conformance suite (Phase 1 gate for both stores). Phase 3 native/browser work,
 Phase 4 resource reload, Phase 5 hosted harness execution/takeover and Phase 6
 release qualification remain open.
+
+## Status on 2026-09-18
+
+Implemented and verified since the 2026-09-17 opt-in engine:
+
+- Phase 5 (cloud): hosted harness runs on PostgreSQL through the engine's host port,
+  one leased `harness` work item, fenced commits, SIGKILL/SIGSTOP takeover, continuation
+  lineage, and `start_at` scheduled runs. Remote attach is the existing resumable SSE.
+- Phase 2/4 (behavior): per-turn thinking levels and per-turn model switching synced
+  into Pi's lane configuration; OpenAI API models via Pi's Responses adapter with
+  priced settlement and provider output floors; `/thinking`, `--thinking`,
+  `nimplex login openai`.
+- Phase 3 (extensions): trust-gated Pi extension bridge for local harness sessions
+  (`pi-extensions/bridge.ts`), `/trust`, `/extensions`, fail-closed load errors.
+- Evidence: `pnpm bench` and `2026-09-18-harness-benchmark.md`.
+
+Still open: web client, subagents/agent graphs, an agent-facing schedule tool,
+extension commands/UI/`setModel`, transcript projection for extensions, hosted
+extension execution, native/browser snapshots, default-engine cutover.
+
+## Scope revision on 2026-09-20
+
+Kevin removed USD budget enforcement and selected Pi's native providers as the
+model/auth foundation. Preserve call identity, usage accounting and all durable
+commit/ownership/recovery requirements. Historical reservation/budget milestones
+above describe the earlier implementation, not current admission policy. See the
+[updated runtime contract](2026-09-13-local-runtime.md#budget-removal-and-pi-providers-2026-09-20).

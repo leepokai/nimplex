@@ -13,12 +13,13 @@ import { PI_TENANT } from "./pi-harness-engine.ts";
 import { SqlitePiStorage } from "./pi-storage/sqlite.ts";
 import { NimplexRuntime } from "./runtime.ts";
 
-type Boundary = "after-response" | "after-tool" | "during-request";
+type Boundary = "after-response" | "after-tool" | "during-request" | "legacy-request";
 const ofType = (events: RunEvent[], type: string) => events.filter((e) => e.type === type);
 
-it.each<Boundary>(["after-response", "after-tool", "during-request"])(
+it.each<Boundary>(["after-response", "after-tool", "during-request", "legacy-request"])(
   "resumes a harness turn after SIGKILL %s without repeating committed work",
-  async (boundary) => {
+  async (scenario) => {
+    const boundary = scenario === "legacy-request" ? "during-request" : scenario;
     const child = fork(
       fileURLToPath(new URL("./testing/pi-harness-engine-child.ts", import.meta.url)),
       [boundary],
@@ -65,6 +66,15 @@ it.each<Boundary>(["after-response", "after-tool", "during-request"])(
         .prepare("SELECT id,parent_id,seq,data FROM pi_store_entries ORDER BY seq")
         .all();
       const eventsBefore = db.prepare("SELECT COUNT(*) AS count FROM events").get()?.count;
+      if (scenario === "legacy-request") {
+        // Recreate persisted version-3 records before restarting the killed process.
+        db.exec(`UPDATE events SET data=json_set(data, '$.type', 'model.reserved',
+          '$.payload.reserved_usd', 0.01, '$.payload.input_token_bound', 1,
+          '$.payload.max_output_tokens', 1) WHERE json_extract(data, '$.type')='model.started';
+          UPDATE turns SET data=json_set(data, '$.request.budget', 0.000001,
+          '$.result.budget_usd', 0.000001, '$.result.reserved_usd', 0.01);
+          PRAGMA user_version=3;`);
+      }
       db.close();
       // The killed request may or may not have reached the child's upstream before the kill.
       if (boundary === "during-request") expect([1, 2]).toContain(witness.requests);
@@ -100,22 +110,23 @@ it.each<Boundary>(["after-response", "after-tool", "during-request"])(
       // The bash effect happened exactly once across both processes.
       expect(decode(runtime.readFile(witness.runId, "/workspace/append.txt"))).toBe("once\n");
       const events = runtime.getSession(witness.sessionId).turns[0]?.events ?? [];
-      const reserved = ofType(events, "model.reserved").length;
+      const reserved =
+        ofType(events, "model.started").length + ofType(events, "model.reserved").length;
       expect(ofType(events, "spend.updated")).toHaveLength(reserved);
       expect(
         ofType(events, "tool.result").map((e) => (e.payload as { name: string }).name),
       ).toEqual(["write", "bash", "read"]);
       // Requests after restart: a committed response is never re-requested.
       if (boundary === "during-request") {
-        // The in-flight request has an unknown outcome: its reservation stays allocated
+        // The in-flight request has an unknown outcome: its intent remains recorded
         // and Pi's durable retry issues a new identified attempt.
         expect(ofType(events, "model.unknown")).toHaveLength(1);
-        expect(turn.reserved_usd).toBeGreaterThan(0);
+        expect(turn).not.toHaveProperty("reserved_usd");
         expect(upstream.state.messagesCalls).toHaveLength(3);
         expect(reserved).toBe(5);
       } else {
         expect(ofType(events, "model.unknown")).toHaveLength(0);
-        expect(turn.reserved_usd).toBe(0);
+        expect(turn).not.toHaveProperty("reserved_usd");
         expect(upstream.state.messagesCalls).toHaveLength(2);
         expect(reserved).toBe(4);
       }
@@ -229,7 +240,6 @@ it("finishes a durably cancelled turn as canceled when the process died before r
       instructions: "Complete the task.",
       model: "claude-haiku-4-5",
       sandbox: "docker",
-      budget: 1,
       timeout: 180,
       contextMode: "continue",
       executionMode: "build",
@@ -297,17 +307,17 @@ it("records an interrupted summary request as unknown and completes the compacti
     }
     const turn = runtime.getTurn(witness.runId);
     expect(turn.status).toBe("completed");
-    // The interrupted summary request keeps its reservation as an unknown outcome; the
-    // retry and the prompt are new identified reservations.
+    // The interrupted summary request has a recorded unknown outcome; the
+    // retry and the prompt are new identified attempts.
     expect(upstream.state.messagesCalls).toHaveLength(2);
     expect(upstream.state.messagesCalls[0]?.body.tools).toBeUndefined();
     const events = runtime.getSession(witness.sessionId).turns[1]?.events ?? [];
     expect(ofType(events, "model.unknown")).toHaveLength(1);
     expect(ofType(events, "model.unknown")[0]?.payload).toMatchObject({ step: "summary" });
     expect(ofType(events, "model.call")).toHaveLength(2);
-    expect(ofType(events, "spend.updated")).toHaveLength(ofType(events, "model.reserved").length);
+    expect(ofType(events, "spend.updated")).toHaveLength(ofType(events, "model.started").length);
     expect(ofType(events, "context.compacted")).toHaveLength(1);
-    expect(turn.reserved_usd).toBeGreaterThan(0);
+    expect(turn).not.toHaveProperty("reserved_usd");
     const db = new DatabaseSync(join(directory, "runtime.sqlite"));
     try {
       const storage = new SqlitePiStorage(

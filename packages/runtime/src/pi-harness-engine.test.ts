@@ -7,14 +7,16 @@ import { operationResult } from "@earendil-works/pi-agent-core/harness/session";
 import { type RunEvent, startTurnRequest } from "@nimplex/contracts";
 import { computeCost } from "@nimplex/core";
 import { type FakeAnthropicOptions, startFakeAnthropic } from "@nimplex/testkit";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { PI_TENANT } from "./pi-harness-engine.ts";
+import * as hosts from "./pi-harness-local-host.ts";
 import { initializePiStorage } from "./pi-storage/schema.ts";
 import { SqlitePiStorage } from "./pi-storage/sqlite.ts";
 import { NimplexRuntime, type RuntimeOptions } from "./runtime.ts";
 
 const cleanup: (() => void | Promise<void>)[] = [];
 afterEach(async () => {
+  vi.restoreAllMocks();
   for (const close of cleanup.splice(0).reverse()) await close();
 });
 
@@ -44,7 +46,7 @@ async function setup(upstream: FakeAnthropicOptions = {}, extra: Partial<Runtime
   return { runtime, dir, options, upstream: fake };
 }
 const request = (prompt = "Work", extra = {}) =>
-  startTurnRequest.parse({ prompt, sandbox: "docker", budget: 1, ...extra });
+  startTurnRequest.parse({ prompt, sandbox: "docker", ...extra });
 async function finish(runtime: NimplexRuntime, id: string) {
   for await (const _event of runtime.events(id)) {
     /* Drain committed events. */
@@ -60,6 +62,117 @@ function piStorage(dir: string, sessionId: string) {
 }
 
 describe("Pi harness engine", () => {
+  it("preserves a concurrently registered model attempt while committing steering input", async () => {
+    const gate = () => {
+      let release!: () => void;
+      const ready = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return { ready, release };
+    };
+    const attemptWaiting = gate();
+    const allowAttempt = gate();
+    const inputWaiting = gate();
+    const allowInput = gate();
+    const original = hosts.localHarnessHost;
+    vi.spyOn(hosts, "localHarnessHost").mockImplementation((options) => {
+      const host = original(options);
+      const start = host.startModel;
+      const commit = host.commit;
+      host.startModel = async (extra) => {
+        const attempt = await start(extra);
+        attemptWaiting.release();
+        await allowAttempt.ready;
+        return attempt;
+      };
+      host.commit = async (writes, steps) => {
+        const receipt = await commit(writes, steps);
+        if (steps.some((step) => step.events.some((event) => event.type === "input.queued"))) {
+          inputWaiting.release();
+          await allowInput.ready;
+        }
+        return receipt;
+      };
+      return host;
+    });
+    const f = await setup({ script: [] });
+    const session = f.runtime.createSession(f.dir);
+    const turn = await f.runtime.startTurn(session.id, request());
+    await attemptWaiting.ready;
+    const queued = f.runtime.queueInput(session.id, { kind: "steer", text: "Remember this" });
+    await inputWaiting.ready;
+    allowAttempt.release();
+    while (!f.upstream.state.messagesCalls.length)
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    allowInput.release();
+    await queued;
+    expect((await finish(f.runtime, turn.runId)).status).toBe("completed");
+    const events = f.runtime.getSession(session.id).turns[0]?.events ?? [];
+    expect(ofType(events, "model.started")).toHaveLength(f.upstream.state.messagesCalls.length);
+    expect(ofType(events, "spend.updated")).toHaveLength(f.upstream.state.messagesCalls.length);
+    expect(ofType(events, "model.unknown")).toHaveLength(0);
+  });
+  it("retains attempt identity when a response commit loses a cancellation race", async () => {
+    const original = hosts.localHarnessHost;
+    let rejected = false;
+    vi.spyOn(hosts, "localHarnessHost").mockImplementation((options) => {
+      const host = original(options);
+      const abort = new AbortController();
+      const commit = host.commit;
+      host.signal = abort.signal;
+      host.commit = async (writes, steps) => {
+        if (!rejected && steps.some((step) => step.kind === "settlement")) {
+          rejected = true;
+          abort.abort(new Error("canceled"));
+          throw new Error("response commit rejected by terminal host");
+        }
+        return commit(writes, steps);
+      };
+      return host;
+    });
+    const f = await setup({ script: [] });
+    const session = f.runtime.createSession(f.dir);
+    const turn = await f.runtime.startTurn(session.id, request());
+    expect((await finish(f.runtime, turn.runId)).status).toBe("canceled");
+    expect(f.upstream.state.messagesCalls).toHaveLength(1);
+    const storage = piStorage(f.dir, session.id);
+    expect(
+      (await storage.getValue(operationResult(turn.runId), context))?.value.status,
+      JSON.stringify(f.runtime.getTurn(turn.runId)),
+    ).toBe("aborted");
+    const events = f.runtime.getSession(session.id).turns[0]?.events ?? [];
+    expect(ofType(events, "model.started")).toHaveLength(1);
+    expect(ofType(events, "model.unknown")).toHaveLength(1);
+    expect(ofType(events, "spend.updated")).toHaveLength(1);
+    const next = await f.runtime.startTurn(session.id, request("Continue"));
+    expect((await finish(f.runtime, next.runId)).status).toBe("completed");
+  });
+  it("completes after a transient dispatch-intent commit failure without retaining the old denial", async () => {
+    const original = hosts.localHarnessHost;
+    let attempts = 0;
+    vi.spyOn(hosts, "localHarnessHost").mockImplementation((options) => {
+      const host = original(options);
+      const start = host.startModel;
+      host.startModel = async (extra) => {
+        if (++attempts === 1) throw new Error("503 Service Unavailable");
+        return start(extra);
+      };
+      return host;
+    });
+    const f = await setup({ script: [] });
+    const session = f.runtime.createSession(f.dir);
+    const turn = await f.runtime.startTurn(session.id, request());
+    expect((await finish(f.runtime, turn.runId)).status).toBe("completed");
+    expect(attempts).toBe(2);
+    expect(f.upstream.state.messagesCalls).toHaveLength(1);
+    const storage = piStorage(f.dir, session.id);
+    expect((await storage.getValue(operationResult(turn.runId), context))?.value.status).toBe(
+      "completed",
+    );
+    const events = f.runtime.getSession(session.id).turns[0]?.events ?? [];
+    expect(ofType(events, "model.started")).toHaveLength(1);
+    expect(ofType(events, "spend.updated")).toHaveLength(1);
+  });
   it("runs a tool turn with atomic Pi/nimplex commits, exact accounting and continued history", async () => {
     const f = await setup();
     const session = f.runtime.createSession(f.dir);
@@ -71,7 +184,7 @@ describe("Pi harness engine", () => {
     expect(text(f.runtime.readFile(a.runId, "/workspace/a.txt"))).toBe("first\n");
     expect(text(f.runtime.readFile(a.runId, "/workspace/append.txt"))).toBe("once\n");
     const events = f.runtime.getSession(session.id).turns[0]?.events ?? [];
-    expect(ofType(events, "model.reserved")).toHaveLength(4);
+    expect(ofType(events, "model.started")).toHaveLength(4);
     expect(ofType(events, "model.call")).toHaveLength(4);
     expect(ofType(events, "spend.updated")).toHaveLength(4);
     expect(ofType(events, "model.unknown")).toHaveLength(0);
@@ -94,7 +207,7 @@ describe("Pi harness engine", () => {
       0,
     );
     expect(turn.spent_usd).toBeCloseTo(expected, 6);
-    expect(turn.reserved_usd).toBe(0);
+    expect(turn).not.toHaveProperty("reserved_usd");
     // The tool result and its workspace revision share one commit: no result without files.
     const order = events.map((e) => e.type);
     for (const [index, type] of order.entries()) {
@@ -123,19 +236,19 @@ describe("Pi harness engine", () => {
     expect(text(reopened.readFile(b.runId, "/workspace/append.txt"))).toBe("once\n");
   });
 
-  it("denies unaffordable dispatch before any provider call and kills the turn", async () => {
-    const f = await setup();
+  it("completes above the former spending cap and records all model attempts", async () => {
+    const f = await setup({ inputTokens: 100000 });
     const session = f.runtime.createSession(f.dir);
-    const a = await f.runtime.startTurn(session.id, request("Tiny", { budget: 0.000001 }));
+    const a = await f.runtime.startTurn(session.id, request("Complete all tools"));
     const turn = await finish(f.runtime, a.runId);
-    expect(turn.status).toBe("killed");
-    expect(turn.error).toBe("budget_exceeded");
-    expect(f.upstream.state.messagesCalls).toHaveLength(0);
-    expect(turn.spent_usd).toBe(0);
-    expect(turn.reserved_usd).toBe(0);
+    expect(turn.status).toBe("completed");
+    expect(turn.error).toBeNull();
+    expect(turn.spent_usd).toBeGreaterThan(0.2);
+    expect(turn).not.toHaveProperty("budget_usd");
     const events = f.runtime.getSession(session.id).turns[0]?.events ?? [];
-    expect(ofType(events, "model.reserved")).toHaveLength(0);
-    expect(ofType(events, "model.call")).toHaveLength(0);
+    expect(ofType(events, "model.started")).toHaveLength(4);
+    expect(ofType(events, "model.call")).toHaveLength(4);
+    expect(ofType(events, "tool.result")).toHaveLength(3);
   });
 
   it("keeps read-only turns from writing", async () => {
@@ -232,14 +345,14 @@ describe("Pi harness engine", () => {
     expect(f.upstream.state.messagesCalls).toHaveLength(1);
     expect(db.prepare("SELECT COUNT(*) AS count FROM pi_store_usage").get()?.count).toBe(0);
     const events = f.runtime.getSession(session.id).turns[0]?.events ?? [];
-    expect(ofType(events, "model.reserved")).toHaveLength(1);
+    expect(ofType(events, "model.started")).toHaveLength(1);
     expect(ofType(events, "model.call")).toHaveLength(0);
     expect(ofType(events, "spend.updated")).toHaveLength(0);
     expect(ofType(events, "tool.call")).toHaveLength(0);
     expect(f.runtime.files(a.runId)).toEqual([]);
-    // The dispatched request's outcome is unknown to accounting: its reservation stays allocated.
+    // The dispatched request's outcome is unknown to accounting: its intent remains recorded.
     expect(turn.spent_usd).toBe(0);
-    expect(turn.reserved_usd).toBeGreaterThan(0);
+    expect(turn).not.toHaveProperty("reserved_usd");
     const storage = piStorage(f.dir, session.id);
     expect((await storage.scanEntries({ type: "message" }, context)).map((e) => e.type)).toEqual([
       "message",
@@ -252,7 +365,7 @@ describe("Pi harness engine", () => {
     const session = f.runtime.createSession(f.dir);
     const a = await f.runtime.startTurn(session.id, request("Slow"));
     for await (const event of f.runtime.events(a.runId)) {
-      if (event.type === "model.reserved") {
+      if (event.type === "model.started") {
         await f.runtime.stopTurn(a.runId);
         break;
       }
@@ -275,7 +388,7 @@ describe("Pi harness engine", () => {
     expect((await finish(f.runtime, b.runId)).status).toBe("completed");
   });
 
-  it("compacts on request with a budgeted summary that settles atomically with Pi's usage", async () => {
+  it("compacts on request with a durable summary that settles atomically with Pi's usage", async () => {
     const f = await setup();
     const session = f.runtime.createSession(f.dir);
     const a = await f.runtime.startTurn(session.id, request("Write, run, read"));
@@ -299,13 +412,13 @@ describe("Pi harness engine", () => {
       "summary",
       ...requests.slice(1).map(() => "assistant"),
     ]);
-    expect(ofType(events, "model.reserved")).toHaveLength(requests.length);
+    expect(ofType(events, "model.started")).toHaveLength(requests.length);
     expect(ofType(events, "spend.updated")).toHaveLength(requests.length);
     expect(ofType(events, "context.compacted")).toHaveLength(1);
     // The summary is context maintenance, not transcript output.
     for (const event of ofType(events, "message.delta"))
       expect((event.payload as { text: string }).text).not.toContain("summary of the conversation");
-    expect(turn.reserved_usd).toBe(0);
+    expect(turn).not.toHaveProperty("reserved_usd");
     expect(turn.spent_usd).toBeGreaterThan(0);
     const storage = piStorage(f.dir, session.id);
     const compactions = await storage.scanEntries({ type: "compaction" }, context);
@@ -324,24 +437,20 @@ describe("Pi harness engine", () => {
     expect((await finish(f.runtime, c.runId)).status).toBe("completed");
   });
 
-  it("denies an unaffordable summary before dispatch and kills the turn", async () => {
+  it("runs summary and prompt requests without a budget", async () => {
     const f = await setup();
     const session = f.runtime.createSession(f.dir);
     const a = await f.runtime.startTurn(session.id, request("Write, run, read"));
     expect((await finish(f.runtime, a.runId)).status).toBe("completed");
     const before = f.upstream.state.messagesCalls.length;
-    const b = await f.runtime.startTurn(
-      session.id,
-      request("Compact", { contextMode: "compact", budget: 0.000001 }),
-    );
+    const b = await f.runtime.startTurn(session.id, request("Compact", { contextMode: "compact" }));
     const turn = await finish(f.runtime, b.runId);
-    expect(turn.status).toBe("killed");
-    expect(turn.error).toBe("budget_exceeded");
-    expect(f.upstream.state.messagesCalls).toHaveLength(before);
-    expect(turn.spent_usd).toBe(0);
-    expect(turn.reserved_usd).toBe(0);
+    expect(turn.status).toBe("completed");
+    expect(turn.error).toBeNull();
+    expect(f.upstream.state.messagesCalls.length).toBeGreaterThan(before);
+    expect(turn.spent_usd).toBeGreaterThan(0);
     const storage = piStorage(f.dir, session.id);
-    expect(await storage.scanEntries({ type: "compaction" }, context)).toEqual([]);
+    expect(await storage.scanEntries({ type: "compaction" }, context)).toHaveLength(1);
   });
 
   it("resets context at the root while preserving the earlier history in Pi's tree", async () => {
@@ -418,7 +527,7 @@ describe("Pi harness engine", () => {
     expect(messages.filter((e) => e.id === steered?.entryId)).toHaveLength(1);
     expect(messages.filter((e) => e.id === followed?.entryId)).toHaveLength(1);
     expect(JSON.stringify(messages).split("STEER NOW")).toHaveLength(2);
-    expect(ofType(events, "spend.updated")).toHaveLength(ofType(events, "model.reserved").length);
+    expect(ofType(events, "spend.updated")).toHaveLength(ofType(events, "model.started").length);
     // Legacy engine sessions have no in-flight inbox.
     await f.runtime.close();
     const legacy = new NimplexRuntime({ ...f.options, engine: "pi-executor" });
@@ -552,7 +661,7 @@ describe("Pi harness engine", () => {
     const events = reopened.getSession(session.id).turns[0]?.events ?? [];
     expect(ofType(events, "model.call")).toHaveLength(4);
     expect(ofType(events, "run.resumed")).toHaveLength(1);
-    expect(ofType(events, "spend.updated")).toHaveLength(ofType(events, "model.reserved").length);
+    expect(ofType(events, "spend.updated")).toHaveLength(ofType(events, "model.started").length);
   });
 
   it("isolates engines and Pi storage per session within one state root", async () => {
@@ -579,7 +688,7 @@ describe("Pi harness engine", () => {
     expect(mixed.getSession(oldSession.id).turns).toHaveLength(1);
     const db = new DatabaseSync(join(f.dir, "runtime.sqlite"));
     cleanup.push(() => db.close());
-    expect(db.prepare("PRAGMA user_version").get()?.user_version).toBe(3);
+    expect(db.prepare("PRAGMA user_version").get()?.user_version).toBe(4);
     const scopes = db
       .prepare("SELECT session_id FROM pi_store_sessions ORDER BY session_id")
       .all()

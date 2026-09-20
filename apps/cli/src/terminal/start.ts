@@ -12,16 +12,16 @@ export async function startTerminal(options: ReturnType<typeof readOptions>) {
     theme: "dark",
     model: options.model,
     sandbox: options.sandbox,
-    budget: options.budget,
     timeout: options.timeout,
     mode: "build",
     expanded: false,
     statusline: true,
+    thinking: options.thinking,
   });
   if (options.explicit.has("model")) preferences.model = options.model;
   if (options.explicit.has("sandbox")) preferences.sandbox = options.sandbox;
-  if (options.explicit.has("budget")) preferences.budget = options.budget;
   if (options.explicit.has("timeout")) preferences.timeout = options.timeout;
+  if (options.explicit.has("thinking")) preferences.thinking = options.thinking;
   const controller = new Controller(client, store, preferences, process.cwd());
   const view = new View(controller);
   controller.view = view;

@@ -78,6 +78,20 @@
       "when": 1789586978599,
       "tag": "0010_reflective_blacklash",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1789674817641,
+      "tag": "0011_empty_bastion",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1789888846698,
+      "tag": "0012_dapper_jamie_braddock",
+      "breakpoints": true
     }
   ]
 }

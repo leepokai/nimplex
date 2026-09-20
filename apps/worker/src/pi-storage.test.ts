@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { BACKGROUND_CONTEXT as context } from "@earendil-works/pi-agent-core/harness/context";
 import {
@@ -268,5 +269,30 @@ describe("PostgreSQL Pi storage durability and tenancy", () => {
     const reopened = await open(s.scope.tenantId, s.scope.sessionId);
     expect((await reopened.getValue(address, context))?.value).toEqual({ items: ["accepted"] });
     expect((await reopened.getValue(marker, context))?.value).toBe("second");
+  });
+});
+
+it("migrates pending monetary reservations to dispatch intents without losing usage or identity", async (t) => {
+  if (unavailable) {
+    t.skip(unavailable);
+    return;
+  }
+  const migration = readFileSync(
+    new URL("../../../packages/db/migrations/0012_dapper_jamie_braddock.sql", import.meta.url),
+    "utf8",
+  );
+  await client().begin(async (tx) => {
+    await tx`CREATE TEMP TABLE model_calls (id text, status text, reserved_usd numeric, input_token_bound integer, max_output_tokens integer, cost_usd numeric) ON COMMIT DROP`;
+    await tx`CREATE TEMP TABLE runs (id text, budget_usd numeric, reserved_usd numeric, spent_usd numeric) ON COMMIT DROP`;
+    await tx`INSERT INTO model_calls VALUES ('pending', 'reserved', 1, 100, 4096, null), ('settled', 'settled', 1, 100, 4096, 0.1), ('unknown', 'unknown', 1, 100, 4096, null)`;
+    await tx`INSERT INTO runs VALUES ('run', 1, 1, 0.1)`;
+    for (const statement of migration.split("--> statement-breakpoint"))
+      await tx.unsafe(statement.trim());
+    expect(await tx`SELECT * FROM model_calls ORDER BY id`).toEqual([
+      { id: "pending", status: "started", cost_usd: null },
+      { id: "settled", status: "settled", cost_usd: "0.1" },
+      { id: "unknown", status: "unknown", cost_usd: null },
+    ]);
+    expect(await tx`SELECT * FROM runs`).toEqual([{ id: "run", spent_usd: "0.1" }]);
   });
 });

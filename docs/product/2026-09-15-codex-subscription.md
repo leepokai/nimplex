@@ -53,8 +53,8 @@ provider quota errors end the turn without automatic model/provider fallback.
 
 ## Billing and execution semantics
 
-Subscription turns have `billing_mode: "subscription"` and `budget_usd: null`.
-Their API `spent_usd` and `reserved_usd` are zero. These values mean no API charge
+Subscription turns have `billing_mode: "subscription"`.
+Their API `spent_usd` is zero. These values mean no API charge
 is attributed by nimplex, not free or unlimited model usage. The subscription
 price, plan quota, and any provider-side credits are not calculated here.
 
@@ -64,7 +64,8 @@ existing checkpoint sequence. Pi's API-price estimate is not recorded as an
 actual subscription charge. `/cost`, completed turns, and the footer distinguish
 subscription access from API costs.
 
-`--budget` and `/budget` apply to API models; they cannot cap subscription quota.
+USD budgets, `--budget`, and `/budget` were removed on 2026-09-20.
+Subscription quota remains provider-managed.
 `--timeout`, cancellation, read-only mode, and workspace limits still apply.
 Sandbox charges remain separate. The adapter uses SSE, disables transport retries,
 and currently uses low reasoning effort. Interactive thinking-level selection is

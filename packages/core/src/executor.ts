@@ -3,8 +3,8 @@
 
 import type {
   ContextCheckpoint,
+  ModelAttempt,
   ModelProvider,
-  ModelReservation,
   WorkspaceMetadata,
 } from "@nimplex/contracts";
 import type { ExecResult } from "./sandbox.ts";
@@ -26,7 +26,9 @@ export interface ExecutorRunContext {
   workspaceMetadata: WorkspaceMetadata;
   /** Model credential resolved by the host. Stays in this process; never enters any sandbox. */
   credential: {
-    apiKey: string;
+    apiKey?: string;
+    headers?: Record<string, string | null>;
+    env?: Record<string, string>;
     baseUrl: string | null;
     billingMode?: "subscription";
   };
@@ -46,9 +48,9 @@ export interface ExecutorRunContext {
   persistence: {
     readEvents(): Promise<ExecutorEvent[]>;
     checkpointContext(checkpoint: ContextCheckpoint): Promise<void>;
-    reserveModel(inputTokenBound: number): Promise<ModelReservation>;
+    startModel(): Promise<ModelAttempt>;
     commitModel(
-      reservation: ModelReservation,
+      attempt: ModelAttempt,
       events: ExecutorEvent[],
       costUsd: number,
       uncertain: boolean,

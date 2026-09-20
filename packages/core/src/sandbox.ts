@@ -8,7 +8,7 @@
 // Workers are replaceable, so cleanup must not rely on an in-memory handle.
 // Persist sandbox identity in runs.sandbox_state so another worker can reconnect
 // and destroy the environment after reading durable state.
-// Budget cancellation depends on this hard-kill path.
+// Cancellation depends on this hard-kill path.
 //
 // Also retain backendId provider identity and versioned state.
 // Omit the broader Manifest/snapshot/pathGrants machinery until needed.

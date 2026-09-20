@@ -90,14 +90,11 @@ describe("local session authority", () => {
     expect((await finish(f.runtime, a.runId)).status).toBe("completed");
     expect((await finish(f.runtime, b.runId)).status).toBe("completed");
   });
-  it("prevents unaffordable calls and enforces read-only tools", async () => {
+  it("enforces read-only tools without a budget", async () => {
     const f = await setup({
       script: [{ name: "write", input: { path: "/workspace/no.txt", content: "forbidden" } }],
     });
     const session = f.runtime.createSession(f.dir);
-    const a = await f.runtime.startTurn(session.id, request("Tiny", { budget: 0.000001 }));
-    expect((await finish(f.runtime, a.runId)).error).toBe("budget_exceeded");
-    expect(f.upstream.state.messagesCalls).toHaveLength(0);
     const b = await f.runtime.startTurn(
       session.id,
       request("Read only", { executionMode: "read_only" }),
@@ -113,18 +110,18 @@ describe("local session authority", () => {
         ),
     ).toBe(true);
   });
-  it("settles cancellation, retains unknown reservations, and sends no subsequent tool", async () => {
+  it("settles cancellation, records unknown outcomes, and sends no subsequent tool", async () => {
     const f = await setup({ delayMs: 200, toolCalls: 1 });
     const session = f.runtime.createSession(f.dir);
     const a = await f.runtime.startTurn(session.id, request());
     for await (const event of f.runtime.events(a.runId)) {
-      if (event.type === "model.reserved") {
+      if (event.type === "model.started") {
         await f.runtime.stopTurn(a.runId);
         break;
       }
     }
     expect(f.runtime.getTurn(a.runId).status).toBe("canceled");
-    expect(f.runtime.getTurn(a.runId).reserved_usd).toBeGreaterThan(0);
+    expect(f.runtime.getTurn(a.runId)).not.toHaveProperty("reserved_usd");
     expect(f.runtime.files(a.runId)).toEqual([]);
   });
   it("resumes interrupted work explicitly and never commits a partial workspace", async () => {
@@ -258,4 +255,15 @@ describe("local session authority", () => {
     );
     expect(kept.sandboxState?.providerState?.containerId).toBe("journal-box");
   });
+});
+
+it("completes legacy-engine requests above the former cap using Pi catalog pricing", async () => {
+  const f = await setup({ inputTokens: 100000, toolCalls: 2 });
+  const session = f.runtime.createSession(f.dir);
+  const run = await f.runtime.startTurn(session.id, request());
+  const result = await finish(f.runtime, run.runId);
+  expect(result.status).toBe("completed");
+  expect(result.spent_usd).toBeGreaterThan(0.2);
+  expect(result).not.toHaveProperty("budget_usd");
+  expect(f.upstream.state.messagesCalls).toHaveLength(3);
 });

@@ -24,7 +24,7 @@ A work item drives one Pi turn, with multiple awaited commit boundaries:
 
 | Boundary | Atomic writes | Recovery after a crash |
 | --- | --- | --- |
-| Before model dispatch | Call ID, `model_calls` reservation, `reserved_usd`, `model.reserved` | Calls reserved without a saved response become unknown and retain their reservation |
+| Before model dispatch | Call ID, `model_calls` intent, `model.started` | Calls without a saved response become unknown |
 | Complete model response | Full assistant message, tool calls, usage, settlement, `model.call` | Reuse the saved response and finish pending tools first |
 | Each completed tool | Tool result, file byte deltas, complete metadata, workspace revision | Skip committed tools; discard and rerun uncommitted private VFS changes |
 | End of turn | Work-item completion and the next item, or terminal run state | Do not duplicate scheduling or overwrite an existing kill/terminal state |
@@ -35,14 +35,20 @@ Event sequence allocation and insertion share a transaction. SSE resumes through
 
 ## Accounting and cancellation
 
-- The first version supports priced Anthropic models. Unknown prices are rejected before dispatch.
-- Each request reserves a conservative input bound from its actual serialized payload's UTF-8 bytes plus a 4096-token framing allowance, and limits `max_tokens` to the available budget, up to 4096.
-- Available budget is `budget - spent - reserved`. Insufficient funds prevent paid dispatch. Conservative bounds can exceed actual token counts, so a run may stop below its spending cap when it cannot reserve the next request. Amounts round upward to micro-USD; call IDs deduplicate settlement.
-- Hidden SDK retries, prompt caching, and paid server tools are disabled. If reported cost exceeds the reservation, record the actual cost and fail the run rather than concealing the overage.
-- Output-limited responses continue within remaining budget. Truncated tool calls do not execute; tool errors ask the model to retry in smaller steps.
-- A lost response is not free. Errors or interrupted responses produce `model.unknown`, not a completed `model.call`. Unknown reservations remain allocated and are not released automatically. Provider invoice reconciliation is not implemented.
-- `budget_usd` covers model cost only. E2B, Docker, storage, and network charges are separate. The guarantee depends on the price table and conservative input bound.
-- Kill and duration caps cancel models/tools through heartbeats. Late responses cannot overwrite a durable terminal state. The worker reaper deletes terminal sandboxes; its default interval is 10 seconds.
+Updated 2026-09-20: USD budgets and monetary reservations are removed.
+
+- Every request commits a call ID and `model.started` before provider dispatch.
+  A failed intent commit prevents the request. Pi's own output/thinking settings
+  are preserved; model selection does not depend on nimplex's price table.
+- Responses, tool intents, usage and settlement commit together. Cost estimates
+  come from Pi usage; settlements round upward to micro-USD and deduplicate by ID.
+- Hidden SDK retries remain disabled so Pi's durable retry policy identifies each
+  attempt. Output-limited responses may continue; incomplete tool calls never run.
+- Lost responses produce `model.unknown`; their actual provider charge remains
+  unknown. Invoice reconciliation is not implemented. No amount is reserved.
+- Model, sandbox, storage and network charges are separate.
+- Kill and duration caps still cancel through heartbeats. Late responses cannot
+  overwrite terminal state; the reaper destroys terminal sandboxes.
 
 ## Tier 0 / Tier 1 / native
 
@@ -105,10 +111,42 @@ Acceptance covers all four tools, binary/rename/delete behavior, contiguous and 
 
 The 09-10 implementation received an Opus high review and a follow-up review after fixes. Actionable findings included cancellation races, SSE disconnect polling, native timeouts, DB lock scope during pause/delete, result loss after pause failure, tool argument descriptions, truncated-response continuation, and unknown model outcomes. These were fixed, with fault-injection coverage for truncation, cancellation races, and sandbox lifecycle behavior. This record applies to that implementation, not to later unreviewed changes.
 
-Unknown reservations retain budget because the provider may have billed a request whose response was never received or saved. Pi 0.85.1's `failToolCallsFromTruncatedMessage` rejects truncated tools in live turns; recovery applies the same rule, and E2E covers live turns. Conservative input bounds, no new paid calls after terminal state, and lease checks before lifecycle operations retain their respective responsibilities.
+Historical note: before 2026-09-20, unknown reservations retained budget because the provider might have billed a lost response. Monetary reservations have since been removed. Pi 0.85.1's `failToolCallsFromTruncatedMessage` rejects truncated tools in live turns; recovery applies the same rule, and E2E covers live turns. No new model calls after terminal state and lease checks before lifecycle operations remain required.
 
 The test-only `examples/quickstart/src/pause-fault.ts` uses Node preload to inject failed or delayed E2B pause calls; production workers never load it. Pause failure records `sandbox.pause_failed` while committing the completed tool result normally. API kill can still update terminal state immediately during a slow pause.
 
 ## Terminal continuation (2026-09-13)
 
 A new run can reference `parent_run_id`. The API locks the organization-scoped parent, requires terminal state, and atomically seeds its workspace and canonical conversation into the child. Branches have independent workspace rows; attachment overrides affect only the child. `context_mode: reset` omits inherited messages; `compact` requests extractive compaction. `execution_mode: read_only` removes write, edit, and bash tools in the worker. Continuation history does not trigger completed-turn recovery when a new user message follows it.
+
+## Scheduled start (2026-09-18)
+
+`POST /v1/runs` accepts `start_at` (ISO 8601 with offset; SDK `startAt`). The run
+and its work item are created immediately, so the schedule survives API and worker
+restarts, and the item carries `available_at`. Workers claim only items whose
+`available_at` has passed, ordered by that time, so a scheduled run stays `queued`
+until then and runs like any other run afterwards (accounting, lease, fence, takeover).
+An invalid timestamp is a 400. This is the durable primitive for wake-ups; an
+agent-facing "schedule a follow-up" tool is not implemented yet. Verified by the
+scheduled-start scenario in `examples/quickstart/src/harness-e2e.ts`
+(migration `0011_empty_bastion.sql`).
+
+## Pi harness on the hosted worker (2026-09-18)
+
+A run created with `engine: "pi-harness"` (`POST /v1/runs`, SDK `engine`) is one
+leased work item of kind `harness`: the worker drives the whole Pi operation under
+a single lease with heartbeat, instead of scheduling a work item per model/tool
+step. `apps/worker/src/pi-harness-host.ts` implements the engine's host port on
+PostgreSQL: Pi's session writes (`pi_*` tables, tenant-scoped by organization) and
+nimplex's events, reservations, settlements and workspace snapshots commit in one
+fenced transaction (`lockOwnedRun`), so a worker whose lease was taken over cannot
+commit a stale boundary. Run configuration records `engine`, `context_mode`,
+`thinking` and the Pi `session` id (the root run's id); continuations inherit the
+engine (`engine_mismatch_with_parent` otherwise) and share the Pi session tree.
+Lease loss detaches the operation, which the successor resumes from committed
+state without repeating requests or tools; SIGKILL and SIGSTOP takeover are covered
+by the `Pi harness` scenarios in `examples/quickstart/src/harness-e2e.ts`. Pi
+extensions do not run on the hosted worker: they are tenant-supplied host code and
+would need a per-tenant extension host. OpenAI models and thinking levels are
+accepted for harness runs only; the legacy executor returns
+`provider_requires_harness` / `thinking_requires_harness`.

@@ -15,7 +15,7 @@ References: [Claude Code commands](https://code.claude.com/docs/en/commands), [i
 - [x] Appearance: full-screen scrollable conversation, Markdown/code, compact tool cards, fixed composer, model/mode/cost/status footer, dark/light themes, narrow windows, CJK input.
 - [x] Input: slash filtering/Tab completion, multiline input, paste, prompt history, Ctrl+R search, external editor, @ file attachments, shortcut help.
 - [x] Conversations: /new, /clear, /resume, /continue, /fork, /rename, /compact, /rewind; continuation preserves workspace/history, branches leave their source unchanged.
-- [x] Execution: /model, /plan, /permissions, /sandbox, /budget, /review; read-only is enforced by available tools, model lists come from the API.
+- [x] Execution: /model, /plan, /permissions, /sandbox, /review; read-only is enforced by available tools, model lists come from the API.
 - [x] Observation: /status, /cost and /usage, /context, /tasks and /ps, /stop and /kill, /background, /doctor; a disconnected observer does not imply a stopped server task.
 - [x] Files/output: /files, /read, /diff, /mention, /copy, /export, /init, /memory; distinguish local IO from server workspace IO.
 - [x] Settings: /help, /config, /theme, /keybindings and /keymap, /terminal-setup, /statusline, /login, /logout, /exit and /quit.
@@ -37,7 +37,7 @@ Models remain limited to the runtime's supported Anthropic catalog. Vendor billi
 ## Acceptance record (2026-09-13)
 
 - `pnpm check` and `pnpm lint` passed; `pnpm test` reported 69 passed and 36 skipped for unavailable providers.
-- `pnpm e2e` passed continuation, independent branch files, cross-tenant rejection, enforced read-only tools, budget accounting, cancellation races, and checkpoint/lease recovery.
+- `pnpm e2e` passed continuation, independent branch files, cross-tenant rejection, enforced read-only tools, usage accounting, cancellation races, and checkpoint/lease recovery.
 - A real Haiku terminal session wrote/read a file, then continued in a second run to edit/read the same workspace. The two run sequences cost $0.009531 total.
 - PTY checks covered model navigation, plan/build switching, workspace read/diff, theme switching, 120-column and 60-column layouts, resume search, and clean exit.
 - Separate PTY authentication checks verified hidden key entry, authenticated connection persistence with mode 600, and logout removing the saved credential.

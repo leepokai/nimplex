@@ -5,9 +5,11 @@
   "type": "module",
   "scripts": {
     "start": "tsx src/index.ts",
+    "bench": "tsx src/harness-bench.ts",
     "check": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@earendil-works/pi-agent-core": "0.85.1",
     "@nimplex/db": "workspace:*",
     "@nimplex/sandbox": "workspace:*",
     "@nimplex/sdk": "workspace:*",

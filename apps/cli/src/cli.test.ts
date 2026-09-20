@@ -193,6 +193,26 @@ describe("local CLI integration", () => {
     expect(await invalid.done).toBe(1);
     expect(invalid.output()).toContain("NIMPLEX_ENGINE");
   }, 30000);
+  it("applies --thinking on harness sessions and rejects it on the legacy engine", async () => {
+    const f = await fixture();
+    const invalid = f.launch(["--thinking", "deep", "Task"]);
+    invalid.child.stdin.end();
+    expect(await invalid.done).toBe(1);
+    expect(invalid.output()).toContain("--thinking must be one of");
+    const legacy = f.launch(["--thinking", "low", "Task"]);
+    legacy.child.stdin.end();
+    expect(await legacy.done).toBe(1);
+    expect(legacy.output()).toContain("Pi harness engine");
+    expect(f.upstream.state.messagesCalls).toHaveLength(0);
+    const harness = f.launch(["--thinking", "low", "Write a file"], {
+      NIMPLEX_ENGINE: "pi-harness",
+    });
+    expect(await harness.done).toBe(0);
+    expect(harness.output()).toContain("completed");
+    expect(f.upstream.state.messagesCalls.length).toBeGreaterThan(0);
+    for (const call of f.upstream.state.messagesCalls)
+      expect(call.body.thinking).toMatchObject({ type: "enabled", budget_tokens: 2048 });
+  }, 30000);
   it("recognizes login after leading flags and never submits it as a prompt", async () => {
     const f = await fixture();
     const login = f.launch(["--state-dir", join(f.dir, "s2"), "logout"]);
@@ -208,7 +228,7 @@ describe("local CLI integration", () => {
     expect(JSON.stringify(f.upstream.state.messagesCalls[0]?.body.messages)).toContain("@alice");
     // Larger than one pipe buffer so a multi-byte character straddles a chunk boundary.
     const text = `${"中文句子，".repeat(8_000)}END`;
-    const piped = f.launch(["--budget", "1"]);
+    const piped = f.launch([]);
     piped.child.stdin.end(text);
     expect(await piped.done).toBe(0);
     const sent = JSON.stringify(f.upstream.state.messagesCalls.at(-1)?.body.messages);

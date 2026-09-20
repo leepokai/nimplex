@@ -46,10 +46,9 @@ const stream = await nimplex
     sandbox: { provider: "local" },
     instructions:
       "Create /workspace/hello.txt containing today's date (use the date command), then grep it for the digit 2. Reply DONE when finished.",
-    budgetUsd: 0.2,
   })
   .stream({ prompt: "go" });
-console.log(`run ${stream.runId} created (budget $0.20)`);
+console.log(`run ${stream.runId} created`);
 
 const events: RunEvent[] = [];
 let modelCalls = 0;
@@ -82,7 +81,7 @@ const run = await stream.wait();
 workerB?.kill();
 await fake?.close();
 
-console.log(`\nrun ${run.status}, spent $${run.spent_usd} of $${run.budget_usd}`);
+console.log(`\nrun ${run.status}, spent $${run.spent_usd}`);
 const files = await nimplex.runs.files(run.id);
 for (const f of files) {
   const body = new TextDecoder().decode(await nimplex.runs.readFile(run.id, f.path)).trim();

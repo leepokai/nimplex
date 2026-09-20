@@ -6,31 +6,27 @@ import type {
   Models,
   ModelsSimpleStreamOptions,
 } from "@earendil-works/pi-ai";
-import { streamSimple as streamAnthropic } from "@earendil-works/pi-ai/api/anthropic-messages";
-import { streamSimple as streamCodex } from "@earendil-works/pi-ai/api/openai-codex-responses";
-import type { ModelReservation } from "@nimplex/contracts";
+import { builtinProviders } from "@earendil-works/pi-ai/providers/all";
+import type { ModelAttempt } from "@nimplex/contracts";
+import type { ExecutorRunContext } from "@nimplex/core";
 
-export interface BudgetedModelsOptions {
+const providers = new Map(builtinProviders().map((provider) => [provider.id, provider]));
+
+export interface DurableModelsOptions {
   model: Model<Api>;
-  apiKey: string;
-  /** API dispatch injects the budgeted output cap; subscription dispatch keeps the provider limit. */
-  billing: "api" | "subscription";
-  /** Commit a reservation before dispatch, or throw to deny the request. */
-  reserve(inputTokenBound: number): ModelReservation;
-  /** Observe a denied dispatch so the host can classify the terminal outcome. */
+  credential: ExecutorRunContext["credential"];
+  /** A failed intent commit must prevent dispatch, including summary requests. */
+  startModel(): ModelAttempt | Promise<ModelAttempt>;
   onDenied(error: unknown): void;
-  /** Pi stores structural (summary) usage without the response; the host settles it from here. */
-  onStructural(reservation: ModelReservation, message: AssistantMessage): void;
+  /** Pi stores structural usage separately; retain the response for atomic settlement. */
+  onStructural(attempt: ModelAttempt, message: AssistantMessage): void;
 }
 
 /**
- * Enforced accounting boundary for the pinned AgentHarness. Its `before_request`
- * and `before_payload` hooks swallow rejections, so reservation lives inside the
- * Models port that every assistant and summary request must pass through. A denied
- * reservation surfaces as the provider-side error Pi settles without HTTP dispatch.
- * Deferred requests are not budgeted here and fail closed.
+ * Pi owns provider behavior and output/thinking defaults. The host owns the awaited
+ * dispatch intent: harness event observers alone are not a durable commit barrier.
  */
-export function budgetedModels(options: BudgetedModelsOptions): Models {
+export function durableModels(options: DurableModelsOptions): Models {
   const selected = options.model;
   const matches = (provider: string, id: string) =>
     provider === selected.provider && id === selected.id;
@@ -38,43 +34,41 @@ export function budgetedModels(options: BudgetedModelsOptions): Models {
     model: Model<Api>,
     context: Context,
     streamOptions: ModelsSimpleStreamOptions | undefined,
-    onReserved: (reservation: ModelReservation) => void,
+    onStarted: (attempt: ModelAttempt) => void,
   ) => {
     if (!matches(model.provider, model.id))
       throw new Error("Harness dispatch requested a model outside the turn's selection");
-    const shared = {
+    const provider = providers.get(selected.provider);
+    if (!provider) throw new Error(`Unsupported Pi provider: ${selected.provider}`);
+    return provider.streamSimple(selected, context, {
       ...streamOptions,
-      apiKey: options.apiKey,
-      // Hidden SDK retries and cache writes would spend outside the reservation;
-      // Pi's durable retry policy owns retries and reserves each attempt.
-      cacheRetention: "none" as const,
+      apiKey: options.credential.apiKey,
+      headers: {
+        ...provider.headers,
+        ...selected.headers,
+        ...options.credential.headers,
+        ...streamOptions?.headers,
+      },
+      env: options.credential.env,
+      // Every retry must pass through the durable Pi operation and receive its own ID.
       maxRetries: 0,
-      onPayload: async (payload: unknown, requestModel: Model<Api>) => {
+      cacheRetention: "none",
+      ...(selected.api === "openai-codex-responses"
+        ? { transport: "sse", reasoning: streamOptions?.reasoning ?? "low" }
+        : {}),
+      onPayload: async (payload, requestModel) => {
         const next = (await streamOptions?.onPayload?.(payload, requestModel)) ?? payload;
-        let reservation: ModelReservation;
         try {
-          // Text-only messages and local tool schemas: one token per serialized UTF-8
-          // byte, plus a framing allowance. Thinking and paid server tools are off.
-          reservation = options.reserve(Buffer.byteLength(JSON.stringify(next), "utf8") + 4096);
+          streamOptions?.signal?.throwIfAborted();
+          onStarted(await options.startModel());
+          streamOptions?.signal?.throwIfAborted();
         } catch (error) {
           options.onDenied(error);
           throw error;
         }
-        onReserved(reservation);
-        return options.billing === "subscription"
-          ? next
-          : { ...(next as object), max_tokens: reservation.max_output_tokens };
+        return next;
       },
-    };
-    if (selected.api === "anthropic-messages")
-      return streamAnthropic(selected as Model<"anthropic-messages">, context, shared);
-    if (selected.api === "openai-codex-responses")
-      return streamCodex(selected as Model<"openai-codex-responses">, context, {
-        ...shared,
-        transport: "sse",
-        reasoning: "low",
-      });
-    throw new Error(`Unsupported harness model API: ${selected.api}`);
+    });
   };
   const facade = {
     getModel(provider: string, id: string): Model<Api> | undefined {
@@ -88,11 +82,11 @@ export function budgetedModels(options: BudgetedModelsOptions): Models {
       context: Context,
       streamOptions?: ModelsSimpleStreamOptions,
     ) {
-      let reserved: ModelReservation | undefined;
-      const message = await dispatch(model, context, streamOptions, (reservation) => {
-        reserved = reservation;
+      let attempt: ModelAttempt | undefined;
+      const message = await dispatch(model, context, streamOptions, (started) => {
+        attempt = started;
       }).result();
-      if (reserved) options.onStructural(reserved, message);
+      if (attempt) options.onStructural(attempt, message);
       return message;
     },
   };
@@ -100,7 +94,7 @@ export function budgetedModels(options: BudgetedModelsOptions): Models {
     get(target, property) {
       if (property in target) return Reflect.get(target, property, target);
       return () => {
-        throw new Error(`Models.${String(property)} is not budgeted by the Pi harness engine`);
+        throw new Error(`Models.${String(property)} has no durable dispatch adapter`);
       };
     },
   });

@@ -27,7 +27,7 @@ const CELLS = [
     n: "04",
     title: "The plumbing you'd rather not write",
     body: "Provisioning, harness install, credential injection, a resumable event stream, lifecycle and a hard kill. This is the part that takes a month and never becomes your product.",
-    chips: ["event stream", "SSE resume", "hard kill", "spend ceiling", "audit log"],
+    chips: ["event stream", "SSE resume", "hard kill", "usage tracking", "audit log"],
     off: [],
   },
 ];

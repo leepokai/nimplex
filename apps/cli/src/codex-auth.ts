@@ -5,7 +5,7 @@ import { createInterface } from "node:readline/promises";
 import { Writable } from "node:stream";
 import type { AuthInteraction } from "@earendil-works/pi-ai";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
-import { CODEX_BASE_URL, CODEX_PROVIDER, DEFAULT_CODEX_MODEL } from "@nimplex/runtime/models";
+import { CODEX_BASE_URL, CODEX_PROVIDER } from "@nimplex/runtime/models";
 
 export const codexCredentialPath = () =>
   join(process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config"), "nimplex", "codex-auth.json");
@@ -42,9 +42,9 @@ export async function logoutCodex() {
   console.log("Nimplex Codex login removed. Other applications' logins are unchanged.");
 }
 
-export async function loginCodex() {
+export async function loginPiProvider(provider = CODEX_PROVIDER) {
   if (!process.stdin.isTTY || !process.stdout.isTTY)
-    throw new Error("Run nimplex login codex in an interactive terminal.");
+    throw new Error(`Run nimplex login ${provider} in an interactive terminal.`);
   const abort = new AbortController();
   let hidden = false;
   const output = new Writable({
@@ -99,15 +99,17 @@ export async function loginCodex() {
     },
   };
   try {
-    await (await codexAccounts()).login(CODEX_PROVIDER, "oauth", interaction);
-    console.log(
-      `Codex subscription login saved. Start with: nimplex --model ${DEFAULT_CODEX_MODEL}`,
-    );
+    const accounts = await piAccounts(provider);
+    const selected = accounts.getProvider(provider);
+    if (!selected) throw new Error(`Unknown Pi provider: ${provider}`);
+    const method = selected.auth.oauth?.login ? "oauth" : "api_key";
+    await accounts.login(provider, method, interaction);
+    console.log(`Pi provider login saved: ${provider}. Select a model with /model.`);
   } catch {
     throw new Error(
       abort.signal.aborted
         ? "Login canceled."
-        : "Codex login did not complete. Retry nimplex login codex; device-code login is available.",
+        : `Login did not complete. Retry nimplex login ${provider}.`,
     );
   } finally {
     hidden = false;
@@ -115,3 +117,35 @@ export async function loginCodex() {
     process.stdin.pause();
   }
 }
+
+/** Credentials stay in nimplex's private store; Pi owns provider-specific resolution and refresh. */
+export function piAccounts(provider: string) {
+  return codexAccounts(
+    provider === CODEX_PROVIDER
+      ? codexCredentialPath()
+      : join(process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config"), "nimplex", "pi-auth.json"),
+  );
+}
+export async function readPiCredential(provider: string, signal?: AbortSignal) {
+  const accounts = await piAccounts(provider);
+  const resolved = await accounts.getAuth(provider, { signal });
+  if (!resolved)
+    throw new Error(
+      `Missing ${provider} credential. Run nimplex login ${provider} or configure Pi's provider environment variables.`,
+    );
+  const auth = await accounts.checkAuth(provider, { signal });
+  const subscription =
+    auth?.type === "oauth" && accounts.getProvider(provider)?.auth.oauth?.isSubscription === true;
+  return {
+    apiKey: resolved.auth.apiKey,
+    headers: resolved.auth.headers,
+    env: resolved.env,
+    baseUrl: resolved.auth.baseUrl ?? null,
+    ...(subscription ? { billingMode: "subscription" as const } : {}),
+  };
+}
+export async function logoutPiProvider(provider: string) {
+  await (await piAccounts(provider)).logout(provider);
+  console.log(`Saved ${provider} login removed. Environment credentials remain available.`);
+}
+export const loginCodex = () => loginPiProvider(CODEX_PROVIDER);

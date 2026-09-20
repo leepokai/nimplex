@@ -4,7 +4,6 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { RunStatus } from "@nimplex/contracts";
 import {
-  checkBudget,
   checkWorkspaceLimits,
   durationExceeded,
   type ExecutorStepResult,
@@ -27,15 +26,12 @@ import {
   workItems,
 } from "@nimplex/db";
 import { piExecutor } from "@nimplex/runtime/pi-executor";
+import { runHarnessTurn } from "@nimplex/runtime/pi-harness-engine";
 import { getSandboxProvider, hasSandboxProvider } from "@nimplex/sandbox";
 import { and, eq, isNotNull, sql } from "drizzle-orm";
-import {
-  BudgetExceededError,
-  createCheckpoints,
-  LostLeaseError,
-  lockOwnedRun,
-} from "./checkpoints.ts";
+import { createCheckpoints, LostLeaseError, lockOwnedRun } from "./checkpoints.ts";
 import { createNativeBash } from "./native-bash.ts";
+import { postgresHarnessHost } from "./pi-harness-host.ts";
 
 // Root .env (sandbox provider keys, ...); existing env vars win.
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -58,7 +54,7 @@ interface ClaimedItem {
   id: string;
   run_id: string;
   org_id: string;
-  kind: "model" | "tool";
+  kind: "model" | "tool" | "harness";
   payload: unknown;
   fence: number;
   attempts: number;
@@ -108,12 +104,11 @@ for (;;) {
           snapshot,
         );
         if (!isTerminal(current.status)) {
-          const killed = err instanceof BudgetExceededError || message === "max_duration";
+          const killed = message === "max_duration";
           await finishRun(tx, current, killed ? "killed" : "failed", message, {
             error: message,
             reason: message,
             spent_usd: current.spentUsd,
-            reserved_usd: current.reservedUsd,
           });
         }
         await tx
@@ -136,8 +131,9 @@ async function claimNext(): Promise<ClaimedItem | null> {
       attempts = attempts + 1
     where id = (
       select id from work_items
-      where status = 'pending' or (status = 'leased' and lease_expires_at < now())
-      order by created_at
+      where (status = 'pending' or (status = 'leased' and lease_expires_at < now()))
+        and available_at <= now()
+      order by available_at, created_at
       for update skip locked
       limit 1
     )
@@ -153,6 +149,10 @@ async function processItem(item: ClaimedItem) {
     where: and(eq(runs.id, item.run_id), eq(runs.orgId, item.org_id)),
   });
   if (!run || isTerminal(run.status)) {
+    if (run && item.kind === "harness") {
+      await processHarness(item, run);
+      return;
+    }
     if (run) await destroySandbox(run);
     await releaseItem(item, "done");
     return;
@@ -188,15 +188,15 @@ async function processItem(item: ClaimedItem) {
             eq(modelCalls.orgId, run.orgId),
             eq(modelCalls.runId, run.id),
             eq(modelCalls.workItemId, item.id),
-            eq(modelCalls.status, "reserved"),
+            eq(modelCalls.status, "started"),
           ),
         )
-        .returning({ id: modelCalls.id, reserved: modelCalls.reservedUsd });
+        .returning({ id: modelCalls.id });
       await appendRunEvents(tx, run, [
         { type: "run.resumed", payload: { worker: workerId, attempt: item.attempts } },
         ...unknown.map((call) => ({
           type: "model.unknown",
-          payload: { call_id: call.id, reserved_usd: call.reserved },
+          payload: { call_id: call.id },
         })),
       ]);
     });
@@ -205,20 +205,89 @@ async function processItem(item: ClaimedItem) {
   // Wall-clock cap: checked before every step, and again by the lease heartbeat during it.
   if (durationExceeded(run.startedAt, run.maxDurationSeconds)) {
     await killRun(db, run, "max_duration", "worker");
+    if (item.kind === "harness") {
+      await processHarness(item, { ...run, status: "killed" });
+      return;
+    }
     await destroySandbox(run);
     await releaseItem(item, "done");
     return;
   }
 
-  // USD hard cap: checked before every step; once exceeded no further work is issued.
-  if (run.budgetUsd !== null && checkBudget(run.spentUsd, run.budgetUsd).exceeded) {
-    await killRun(db, run, "budget_exceeded", "worker");
-    await destroySandbox(run);
-    await releaseItem(item, "done");
-    return;
-  }
+  if (item.kind === "harness") await processHarness(item, run);
+  else await processStep(item, run);
+}
 
-  await processStep(item, run);
+/**
+ * One leased Pi harness operation. Pi commits every boundary through the fenced host;
+ * this function only settles the run after the operation ends. Lease loss detaches so
+ * the successor resumes the same operation from committed state.
+ */
+async function processHarness(item: ClaimedItem, run: RunRow) {
+  const key = await findProviderKeyRow(db, run.orgId, run.modelProvider, null);
+  if (!key) throw new Error(`no ${run.modelProvider} provider key for org ${run.orgId}`);
+  const lease = { id: item.id, owner: workerId, fence: item.fence };
+  const abort = new AbortController();
+  if (isTerminal(run.status)) abort.abort(new Error(`run ${run.id} is ${run.status}`));
+  let ticking = false;
+  const heartbeat = setInterval(() => {
+    if (ticking) return;
+    ticking = true;
+    void extendLease(item, abort).finally(() => {
+      ticking = false;
+    });
+  }, HEARTBEAT_MS);
+  let outcome: Exclude<Outcome, { kind: "continue" }>;
+  try {
+    const host = await postgresHarnessHost({
+      db,
+      client,
+      lease,
+      run,
+      credential: { apiKey: open(key), baseUrl: key.baseUrl },
+      nativeBash: createNativeBash(db, lease, run),
+      signal: abort.signal,
+      onTerminal: () => abort.abort(new Error(`run ${run.id} is terminal`)),
+    });
+    const result = await runHarnessTurn(host);
+    outcome =
+      result.status === "completed"
+        ? { kind: "completed" }
+        : { kind: "failed", error: result.error };
+  } catch (error) {
+    if (abort.signal.reason instanceof LostLeaseError) throw abort.signal.reason;
+    if (error instanceof LostLeaseError) throw error;
+    const message = error instanceof Error ? error.message : String(error);
+    if (abort.signal.reason === "max_duration")
+      outcome = { kind: "killed", reason: "max_duration" };
+    // A durable cancellation only follows an API kill or cancel; the run is already terminal.
+    else if (message === "canceled") outcome = { kind: "failed", error: "aborted" };
+    else outcome = { kind: "failed", error: message };
+  } finally {
+    clearInterval(heartbeat);
+  }
+  await db.transaction(async (tx) => {
+    const current = await lockOwnedRun(tx, lease, run);
+    await tx
+      .update(workItems)
+      .set({ status: "done", completedAt: new Date() })
+      .where(eq(workItems.id, item.id));
+    if (isTerminal(current.status)) return;
+    switch (outcome.kind) {
+      case "completed":
+        await finishRun(tx, current, "completed", null, { spent_usd: current.spentUsd });
+        break;
+      case "killed":
+        await finishRun(tx, current, "killed", outcome.reason, {
+          reason: outcome.reason,
+          spent_usd: current.spentUsd,
+        });
+        break;
+      case "failed":
+        await finishRun(tx, current, "failed", outcome.error, { error: outcome.error });
+    }
+  });
+  if (outcome.kind !== "completed") await destroySandbox(run);
 }
 
 /** Model and tool boundaries commit while Pi runs; this transaction only schedules the next turn. */
@@ -267,8 +336,7 @@ async function processStep(item: ClaimedItem, run: RunRow) {
       .set({ status: "done", completedAt: new Date() })
       .where(eq(workItems.id, item.id));
     if (isTerminal(current.status)) return;
-    const exceeded = current.budgetUsd !== null && current.spentUsd > current.budgetUsd;
-    const outcome = decideOutcome(result, exceeded, abort.signal.reason);
+    const outcome = decideOutcome(result, abort.signal.reason);
     switch (outcome.kind) {
       case "continue":
         await tx.insert(workItems).values({ runId: run.id, kind: "model" });
@@ -280,7 +348,6 @@ async function processStep(item: ClaimedItem, run: RunRow) {
         await finishRun(tx, current, "killed", outcome.reason, {
           reason: outcome.reason,
           spent_usd: current.spentUsd,
-          budget_usd: current.budgetUsd,
         });
         break;
       case "failed":
@@ -289,12 +356,7 @@ async function processStep(item: ClaimedItem, run: RunRow) {
   });
 }
 
-function decideOutcome(
-  result: ExecutorStepResult,
-  exceeded: boolean,
-  abortReason: unknown,
-): Outcome {
-  if (exceeded) return { kind: "killed", reason: "budget_exceeded" };
+function decideOutcome(result: ExecutorStepResult, abortReason: unknown): Outcome {
   const tooLarge = checkWorkspaceLimits(result.files);
   if (tooLarge) return { kind: "failed", error: tooLarge };
   switch (result.stopReason) {

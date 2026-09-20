@@ -1,5 +1,7 @@
 import { z } from "zod";
+import { runEngine, thinkingLevel } from "./engine.ts";
 
+export * from "./engine.ts";
 export * from "./pi-storage.ts";
 export * from "./runtime.ts";
 
@@ -18,8 +20,8 @@ export type RunStatus = z.infer<typeof runStatus>;
 
 // LLM provider selection and BYOK.
 // Customer provider keys remain in the trusted API/worker boundary, never in sandboxes.
-export const MODEL_PROVIDERS = ["anthropic", "openai", "openrouter", "openai-codex"] as const;
-export const modelProvider = z.enum(MODEL_PROVIDERS);
+/** Provider identifiers are supplied by Pi; each deployment validates its supported set. */
+export const modelProvider = z.string().min(1);
 export type ModelProvider = z.infer<typeof modelProvider>;
 
 // ---- organizations ----
@@ -113,6 +115,10 @@ export const createRunRequest = z.object({
   parent_run_id: z.string().uuid().optional(),
   context_mode: z.enum(["continue", "reset", "compact"]).default("continue"),
   execution_mode: z.enum(["build", "read_only"]).default("build"),
+  /** Execution engine; a continuation inherits its parent's engine when omitted. */
+  engine: runEngine.optional(),
+  /** Pi thinking level for the harness engine; thinking output is billed as output tokens. */
+  thinking: thinkingLevel.optional(),
   attachments: z
     .array(
       z.object({
@@ -127,10 +133,10 @@ export const createRunRequest = z.object({
   sandbox: sandboxSpec.default({ provider: "local" }),
   instructions: z.string().min(1),
   input: z.string().optional(),
-  /** Hard USD cap: the run is killed the moment spend reaches it. */
-  budget_usd: z.number().positive(),
-  /** Optional wall-clock cap on top of the USD cap. */
+  /** Optional wall-clock limit. */
   max_duration_seconds: z.number().int().positive().max(86_400).optional(),
+  /** Earliest start (ISO 8601). The run is created now and stays queued until this time. */
+  start_at: z.string().datetime({ offset: true }).optional(),
   client_nonce: z.string().min(1).optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
@@ -143,11 +149,9 @@ export const runResponse = z.object({
   model: modelSpec,
   sandbox: sandboxSpec,
   sandbox_ref: z.string().nullable(),
-  budget_usd: z.number().nullable(),
   spent_usd: z.number(),
   /** Subscription usage has no per-request API charge; quota is provider-managed. */
   billing_mode: z.enum(["api", "subscription"]).optional(),
-  reserved_usd: z.number().optional(),
   workspace_revision: z.number().int().nonnegative().optional(),
   sandbox_generation: z.number().int().nonnegative().optional(),
   error: z.string().nullable(),
@@ -169,13 +173,10 @@ export const runEvent = z.object({
 export type RunEvent = z.infer<typeof runEvent>;
 
 // Durable execution identifiers survive worker leases and process restarts.
-export const modelReservation = z.object({
+export const modelAttempt = z.object({
   call_id: z.string().uuid(),
-  input_token_bound: z.number().int().positive(),
-  max_output_tokens: z.number().int().positive(),
-  reserved_usd: z.number().nonnegative(),
 });
-export type ModelReservation = z.infer<typeof modelReservation>;
+export type ModelAttempt = z.infer<typeof modelAttempt>;
 
 export const durableToolCall = z.object({
   id: z.string().min(1),

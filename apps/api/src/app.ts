@@ -391,11 +391,12 @@ export function createApp(db: Db, auth: Auth) {
 
     // Slice 1 runs every tool in-process (just-bash); no sandbox is allocated, so provider
     // availability is not checked here. Re-gate when Tier 2 escalation lands.
-    if (body.model.provider !== "anthropic") {
+    // OpenAI additionally requires the harness engine; run seeding enforces that.
+    if (body.model.provider !== "anthropic" && body.model.provider !== "openai") {
       return c.json(
         {
           error: "unsupported_provider",
-          detail: `model provider "${body.model.provider}" is not wired yet (anthropic only)`,
+          detail: `model provider "${body.model.provider}" is not wired yet (anthropic, openai)`,
         },
         400,
       );
@@ -436,9 +437,17 @@ export function createApp(db: Db, auth: Auth) {
               prior_messages: seed.priorMessages,
               execution_mode: body.execution_mode,
               compact_context: body.context_mode === "compact",
+              engine: seed.engine,
+              ...(seed.engine === "pi-harness"
+                ? {
+                    context_mode: body.context_mode,
+                    ...(body.thinking ? { thinking: body.thinking } : {}),
+                    // The root run's id names the Pi session shared by its continuations.
+                    ...(seed.session ? { session: seed.session } : {}),
+                  }
+                : {}),
             },
             workspaceMetadata: seed.metadata,
-            budgetUsd: body.budget_usd,
             maxDurationSeconds: body.max_duration_seconds ?? null,
             clientNonce: body.client_nonce,
             eventSeq: 1,
@@ -454,13 +463,15 @@ export function createApp(db: Db, auth: Auth) {
             external_user_id: externalUserId,
             model: body.model,
             sandbox: body.sandbox,
-            budget_usd: body.budget_usd,
           },
         });
+        // A harness run is one leased operation; the default executor schedules per turn.
         await tx.insert(workItems).values({
           runId: created.id,
-          kind: "model",
+          kind: seed.engine === "pi-harness" ? "harness" : "model",
           payload: { step: 1 },
+          // A scheduled run is durable immediately; workers claim it once the time arrives.
+          ...(body.start_at ? { availableAt: new Date(body.start_at) } : {}),
         });
         await tx.insert(auditEvents).values({
           orgId,
@@ -471,7 +482,6 @@ export function createApp(db: Db, auth: Auth) {
           meta: {
             sandbox_provider: body.sandbox.provider,
             model: body.model,
-            budget_usd: body.budget_usd,
           },
         });
         return created;
@@ -757,9 +767,7 @@ function toRunResponse(run: RunRow, endUserExternalId: string) {
     model: { provider: run.modelProvider as ModelProvider, id: run.model },
     sandbox: run.sandbox,
     sandbox_ref: run.sandboxRef,
-    budget_usd: run.budgetUsd,
     spent_usd: run.spentUsd,
-    reserved_usd: run.reservedUsd,
     workspace_revision: run.workspaceRevision,
     sandbox_generation: run.sandboxGeneration,
     error: run.error,

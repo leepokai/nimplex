@@ -16,7 +16,6 @@ const preferences: Preferences = {
   theme: "dark",
   model: "claude-haiku-4-5",
   sandbox: "docker",
-  budget: 0.2,
   timeout: 180,
   mode: "build",
   expanded: false,
@@ -142,6 +141,17 @@ describe("terminal runtime client", () => {
     expect(f.client.getSession(source.id).turns).toHaveLength(1);
     expect(branch.parentSessionId).toBe(source.id);
   });
+  it("surfaces the legacy engine's refusal of a thinking preference without creating a turn", async () => {
+    const f = fixture();
+    f.controller.preferences.thinking = "low";
+    await f.controller.submit("Think hard");
+    expect(f.calls).toHaveLength(0);
+    expect(f.controller.session.turns).toHaveLength(0);
+    expect(f.view.notice).toHaveBeenCalledWith(
+      "Task needs attention",
+      expect.stringContaining("Pi harness engine"),
+    );
+  });
   it("resumes the live session owner while work is backgrounded", async () => {
     const f = fixture(true);
     const source = f.controller.session;
@@ -184,6 +194,7 @@ describe("Pi harness steering", () => {
       authenticate: async () => {},
     };
     expect(controller.session.engine).toBe("pi-harness");
+    controller.preferences.thinking = "low";
     const running = controller.submit("Slow task");
     const deadline = Date.now() + 10_000;
     while (!controller.active?.turn.events.some((e) => e.type === "tool.result")) {
@@ -196,6 +207,9 @@ describe("Pi harness steering", () => {
     await running;
     expect(controller.session.turns).toHaveLength(1);
     expect(controller.session.turns[0]?.result?.status).toBe("completed");
+    // The thinking preference reaches every provider request of the turn.
+    for (const call of upstream.state.messagesCalls)
+      expect(call.body.thinking).toMatchObject({ type: "enabled", budget_tokens: 2048 });
     const bodies = upstream.state.messagesCalls.map((call) => JSON.stringify(call.body.messages));
     expect(bodies.some((body) => body.includes("STEER FROM ENTER"))).toBe(true);
     expect(bodies.at(-1)).toContain("FOLLOW UP FROM COMMAND");

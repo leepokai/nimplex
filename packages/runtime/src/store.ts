@@ -8,7 +8,7 @@ import type {
   StartTurnRequest,
   WorkspaceMetadata,
 } from "@nimplex/contracts";
-import { acceptedTurnInput } from "@nimplex/contracts";
+import { acceptedTurnInput, runResponse, startTurnRequest } from "@nimplex/contracts";
 import type { ExecutorEvent, SandboxSessionState } from "@nimplex/core";
 
 /**
@@ -80,9 +80,9 @@ export class RuntimeStore {
       this.db = openedDb = new DatabaseSync(path);
       chmodSync(path, 0o600);
       const version = Number(this.db.prepare("PRAGMA user_version").get()?.user_version ?? 0);
-      // Version 3 records the per-session engine; older readers must not run the
-      // default executor against a harness-owned session.
-      if (version > 3) {
+      // Version 4 removes budget enforcement; older readers must not reapply it.
+      // Version 3 introduced per-session engine ownership.
+      if (version > 4) {
         throw new Error(`Unsupported runtime database version: ${version}`);
       }
       this.db.exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;");
@@ -98,7 +98,7 @@ export class RuntimeStore {
           data TEXT NOT NULL,
           PRIMARY KEY(session_id,request_id)
         );
-        PRAGMA user_version=3;`),
+        PRAGMA user_version=4;`),
       );
     } catch (error) {
       openedDb?.close();
@@ -127,7 +127,7 @@ export class RuntimeStore {
     return this.read<StoredSession>("sessions", id);
   }
   turn(id: string) {
-    return this.read<StoredTurn>("turns", id);
+    return normalizeTurn(this.read<StoredTurn>("turns", id));
   }
   sessions(): StoredSession[] {
     return this.db
@@ -139,7 +139,7 @@ export class RuntimeStore {
     return this.db
       .prepare("SELECT data FROM turns")
       .all()
-      .map((row) => JSON.parse(String(row.data)) as StoredTurn);
+      .map((row) => normalizeTurn(JSON.parse(String(row.data)) as StoredTurn));
   }
   /** Only for sessions that own no turns; turn history is never deleted through this path. */
   deleteSession(id: string) {
@@ -223,4 +223,13 @@ export class RuntimeStore {
       this.owner.close();
     }
   }
+}
+
+/** Read old JSON without retaining removed budget settings in current projections. */
+function normalizeTurn(turn: StoredTurn): StoredTurn {
+  return {
+    ...turn,
+    request: startTurnRequest.parse(turn.request),
+    result: runResponse.parse(turn.result),
+  };
 }

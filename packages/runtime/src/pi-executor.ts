@@ -17,13 +17,8 @@ import {
   createReadTool,
   createWriteTool,
 } from "@earendil-works/pi-coding-agent";
-import type { ModelReservation } from "@nimplex/contracts";
-import {
-  computeCost,
-  type ExecutorEvent,
-  type RunExecutor,
-  WORKSPACE_MAX_BYTES,
-} from "@nimplex/core";
+import type { ModelAttempt } from "@nimplex/contracts";
+import { type ExecutorEvent, type RunExecutor, WORKSPACE_MAX_BYTES } from "@nimplex/core";
 import { Bash } from "just-bash";
 import { z } from "zod";
 import { needsNativeSandbox } from "./bash-routing.ts";
@@ -105,7 +100,7 @@ export const piExecutor: RunExecutor = async (run, signal) => {
     history = compacted.messages as unknown as AgentMessage[];
   }
   let assistant: AssistantMessage | undefined;
-  let reservation: ModelReservation | undefined;
+  let attempt: ModelAttempt | undefined;
   let infrastructureError: unknown;
 
   const persistTool = async (message: ToolResultMessage) => {
@@ -204,15 +199,8 @@ export const piExecutor: RunExecutor = async (run, signal) => {
         onPayload: async (payload: unknown) => {
           try {
             signal.throwIfAborted();
-            // Text-only messages and local tool schemas: one token per serialized UTF-8 byte,
-            // plus framing allowance. Anthropic cache writes, thinking and paid server tools
-            // are disabled; subscription requests use a zero-dollar dispatch reservation.
-            const inputTokenBound = Buffer.byteLength(JSON.stringify(payload), "utf8") + 4096;
-            reservation = await run.persistence.reserveModel(inputTokenBound);
-            // Codex subscription requests do not accept Anthropic's output-cap parameter.
-            return subscription
-              ? payload
-              : { ...(payload as object), max_tokens: reservation.max_output_tokens };
+            attempt = await run.persistence.startModel();
+            return payload;
           } catch (error) {
             infrastructureError = error;
             throw error;
@@ -272,24 +260,19 @@ export const piExecutor: RunExecutor = async (run, signal) => {
               cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
             },
           };
-        if (!reservation) {
+        if (!attempt) {
           if (infrastructureError) throw infrastructureError;
-          throw new Error("model response without reservation");
+          throw new Error("model response without attempt");
         }
         const cost = subscription
           ? { costUsd: 0, estimated: false }
-          : computeCost(run.modelProvider, run.model, {
-              inputTokens: assistant.usage.input,
-              outputTokens: assistant.usage.output,
-              cacheWriteTokens: assistant.usage.cacheWrite,
-              cacheReadTokens: assistant.usage.cacheRead,
-            });
+          : { costUsd: assistant.usage.cost.total, estimated: true };
         const uncertain = assistant.stopReason === "error" || assistant.stopReason === "aborted";
         const events: ExecutorEvent[] = [
           {
             type: uncertain ? "model.unknown" : "model.call",
             payload: {
-              call_id: reservation.call_id,
+              call_id: attempt.call_id,
               model: assistant.model,
               stop_reason: assistant.stopReason,
               usage: {
@@ -326,7 +309,7 @@ export const piExecutor: RunExecutor = async (run, signal) => {
             },
           });
         }
-        await run.persistence.commitModel(reservation, events, cost.costUsd, uncertain);
+        await run.persistence.commitModel(attempt, events, cost.costUsd, uncertain);
       } else if (event.message.role === "toolResult") {
         await persistTool(event.message);
       }
@@ -415,19 +398,7 @@ export function buildCodexModel(id: string): Model<"openai-codex-responses"> {
 export function buildModel(id: string, baseUrl: string): Model<"anthropic-messages"> {
   const known = getBuiltinModels("anthropic").find((m) => m.id === id);
   if (known) return { ...known, baseUrl };
-  // Preserve the requested ID; the reservation gate rejects models without a known rate.
-  return {
-    id,
-    name: id,
-    api: "anthropic-messages",
-    provider: "anthropic",
-    baseUrl,
-    reasoning: false,
-    input: ["text"],
-    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: 200_000,
-    maxTokens: 8192,
-  };
+  throw new Error(`Unsupported Anthropic model: ${id}. Select a model from Pi's catalog.`);
 }
 
 /** Pi's file tools with their operations pointed at the just-bash VFS instead of the host disk. */

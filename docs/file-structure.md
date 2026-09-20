@@ -45,19 +45,19 @@ apps/
   site/                         Marketing site
 packages/
   contracts/src/                Shared Zod schemas and public session/turn contracts
-  core/src/                     Pure budget/pricing/state/conversation functions and ports
+  core/src/                     Pure pricing/state/conversation functions and ports
   runtime/src/
     runtime.ts                  Session execution authority, lifecycle, cancellation and events
     sessions.ts                 Session operations, turn seeding and read projections
     store.ts                    SQLite persistence and state-root OS ownership lock
-    models.ts                   Local model selection and installed Codex subscription catalog
+    models.ts                   Local selection over the complete installed Pi provider/model catalog
     checkpoints.ts              Local atomic model/tool/workspace commits
     pi-executor.ts              Shared Pi loop, tool composition and model projection
     pi-harness-engine.ts        Opt-in AgentHarness engine: atomic commits, context operations, inbox, recovery
-    pi-harness-models.ts        Enforced reservation inside the Models port for assistant and summary requests
+    pi-harness-models.ts        Awaited dispatch intent inside Pi Models for assistant and summary requests
     pi-storage/                 SQLite Pi Storage with host transactions, journal, summary responses and conformance
     pi-summary-models.ts         Experimental public Models facade for summary-response validation
-    pi-extensions/              Atomic Pi projection, durable extension actions, mutation barriers and tool adapter
+    pi-extensions/              Production extension bridge (bridge.ts: trust-gated loading, hooks, tools) plus Codex's projection/settings adapters
     pi-harness-*.test.ts         Pinned candidate lifecycle, commit and process-recovery gates
     context.ts                  Checkpoints, digests, compaction and output archive
     workspace.ts                just-bash workspace snapshot/restore

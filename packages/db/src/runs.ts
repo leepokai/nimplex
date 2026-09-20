@@ -1,5 +1,5 @@
-import { eq, sql } from "drizzle-orm";
-import type { Db, DbExecutor } from "./client.ts";
+import { sql } from "drizzle-orm";
+import type { Db } from "./client.ts";
 import { appendRunEvents } from "./events.ts";
 import { auditEvents, runs } from "./schema.ts";
 
@@ -12,7 +12,7 @@ export type RunRow = typeof runs.$inferSelect;
  */
 export async function killRun(
   db: Db,
-  run: Pick<RunRow, "id" | "orgId" | "endUserId" | "budgetUsd" | "spentUsd">,
+  run: Pick<RunRow, "id" | "orgId" | "endUserId" | "spentUsd">,
   reason: string,
   actor: string,
 ): Promise<void> {
@@ -26,12 +26,11 @@ export async function killRun(
       .where(
         sql`${runs.id} = ${run.id} and ${runs.orgId} = ${run.orgId} and ${runs.status} in ('queued','running','awaiting_input')`,
       )
-      .returning({ id: runs.id, spentUsd: runs.spentUsd, budgetUsd: runs.budgetUsd });
+      .returning({ id: runs.id, spentUsd: runs.spentUsd });
     if (!updated) return; // Already terminal; do not duplicate events.
     const spentUsd = updated.spentUsd;
-    const budgetUsd = updated.budgetUsd;
     await appendRunEvents(tx, run, [
-      { type: "run.killed", payload: { reason, spent_usd: spentUsd, budget_usd: budgetUsd } },
+      { type: "run.killed", payload: { reason, spent_usd: spentUsd } },
     ]);
     await tx.insert(auditEvents).values({
       orgId: run.orgId,
@@ -39,19 +38,7 @@ export async function killRun(
       runId: run.id,
       actor,
       action: "run.killed",
-      meta: { reason, spent_usd: spentUsd, budget_usd: budgetUsd },
+      meta: { reason, spent_usd: spentUsd },
     });
   });
-}
-
-/** Atomically adjust reservations for concurrent admission. */
-export async function adjustReserved(
-  executor: DbExecutor,
-  runId: string,
-  deltaUsd: number,
-): Promise<void> {
-  await executor
-    .update(runs)
-    .set({ reservedUsd: sql`greatest(0, ${runs.reservedUsd} + ${deltaUsd})` })
-    .where(eq(runs.id, runId));
 }

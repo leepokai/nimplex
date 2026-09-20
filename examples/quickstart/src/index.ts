@@ -41,7 +41,6 @@ const agent = nimplex.agent({
   model: { provider: "anthropic", id: "claude-sonnet-5" },
   sandbox: { provider: sandboxProvider as "docker" },
   instructions: "demo run",
-  budgetUsd: 0.05, // USD hard cap: killable mid-run
 });
 
 const run = await agent.stream({ prompt: "hello" });
@@ -50,4 +49,4 @@ for await (const event of run.events) {
   console.log(`  [${event.seq}] ${event.type}`, JSON.stringify(event.payload)?.slice(0, 120) ?? "");
 }
 const final = await run.wait();
-console.log(`done: ${final.status}, spent $${final.spent_usd} (cap $${final.budget_usd})`);
+console.log(`done: ${final.status}, spent $${final.spent_usd}`);

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { ProjectTrustStore } from "@earendil-works/pi-coding-agent";
 import { NimplexRuntime } from "@nimplex/runtime";
 import { readCredential } from "./auth.ts";
 
@@ -21,17 +22,29 @@ export function engineFromEnvironment(value = process.env.NIMPLEX_ENGINE) {
   if (value === "pi-harness") return value;
   throw new Error("NIMPLEX_ENGINE must be pi-executor or pi-harness.");
 }
+/** Pi's agent directory: user extensions load from here and project trust is recorded here. */
+export function piAgentDirectory() {
+  return process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
+}
 export function openRuntime(directory = stateDirectory()) {
+  const agentDir = piAgentDirectory();
   return new NimplexRuntime({
     directory,
     engine: engineFromEnvironment(),
+    extensions: {
+      agentDir,
+      // Shared with Pi: a project trusted in Pi is trusted here, and /trust records here.
+      projectTrusted: (cwd) => new ProjectTrustStore(agentDir).get(cwd) === true,
+    },
     credential: async (provider, signal) => {
+      if (provider === "openai") return readCredential("openai");
       if (provider === "openai-codex") {
         const { readCodexCredential } = await import("./codex-auth.ts");
         return readCodexCredential(signal);
       }
-      if (provider !== "anthropic") throw new Error("Unsupported local model provider.");
-      return readCredential();
+      if (provider === "anthropic") return readCredential();
+      const { readPiCredential } = await import("./codex-auth.ts");
+      return readPiCredential(provider, signal);
     },
   });
 }

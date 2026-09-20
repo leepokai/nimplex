@@ -1,5 +1,5 @@
 /**
- * e2e smoke test: Better Auth sign-up -> auto org -> API key -> SDK run -> budget kill -> tenant isolation.
+ * e2e smoke test: Better Auth sign-up -> auto org -> API key -> SDK run -> tenant isolation.
  *
  *   pnpm --filter @nimplex/example-quickstart exec tsx src/e2e.ts
  *
@@ -12,7 +12,7 @@ import { Nimplex, NimplexError } from "@nimplex/sdk";
 import { startFakeAnthropic } from "@nimplex/testkit";
 import { API, ok, sessionFetch, signUp } from "./lib.ts";
 
-// Budget assertions always use a deterministic fake upstream, even when real keys are set.
+// Accounting assertions always use a deterministic fake upstream, even when real keys are set.
 const fake = await startFakeAnthropic(8790, { toolCalls: 4 });
 if (fake) ok(`fake Anthropic upstream ${fake.url} (no-key mode)`);
 
@@ -57,17 +57,16 @@ const providers = await nimplex.sandbox.listProviders();
 assert.ok(providers.length > 0, "sandbox provider list must not be empty");
 ok(`sandbox providers ${providers.map((p) => `${p.id}${p.available ? "" : "(x)"}`).join(" / ")}`);
 
-const agentWith = (instructions: string, budgetUsd: number) =>
+const agentWith = (instructions: string) =>
   nimplex.agent({
     model: { provider: "anthropic", id: "claude-sonnet-5" },
     sandbox: { provider: "local" },
     instructions,
-    budgetUsd,
   });
 
-// 5. the Pi loop completes: 5 model calls, 4 bash tool calls in the just-bash VFS ($0.035 < $1 cap)
+// 5. the Pi loop completes: 5 model calls, 4 bash tool calls in the just-bash VFS ($0.035)
 {
-  const result = await agentWith("e2e smoke", 1).generate({ prompt: "hello" });
+  const result = await agentWith("e2e smoke").generate({ prompt: "hello" });
   assert.equal(result.run.status, "completed", `run ${result.run.id}: ${result.run.error}`);
   const calls = result.events.filter((e) => e.type === "model.call").length;
   const toolResults = result.events.filter((e) => e.type === "tool.result").length;
@@ -77,33 +76,17 @@ const agentWith = (instructions: string, budgetUsd: number) =>
     Math.abs(result.spentUsd - 0.035) < 1e-9,
     `spent should be 0.035, got ${result.spentUsd}`,
   );
-  ok(
-    `run completed: ${calls} model calls, ${toolResults} tool results, spent $${result.spentUsd} (cap $1)`,
-  );
+  ok(`run completed: ${calls} model calls, ${toolResults} tool results, spent $${result.spentUsd}`);
 }
 
-// 6. The USD cap rejects the next unaffordable call before dispatch.
+// 6. Creating a run needs no budget parameter.
 {
-  const result = await agentWith("e2e budget kill", 0.02).generate({ prompt: "burn" });
-  assert.equal(result.run.status, "killed");
-  assert.equal(result.run.error, "budget_exceeded");
-  assert.ok(result.run.spent_usd <= 0.02, "spend must never exceed the cap");
-  ok(`mid-run kill: killed(budget_exceeded) at $${result.run.spent_usd}`);
-}
-
-// 7. missing budget is rejected by the contract
-{
-  const res = await fetch(`${API}/v1/runs`, {
-    method: "POST",
-    headers: { authorization: `Bearer ${created.key}`, "content-type": "application/json" },
-    body: JSON.stringify({
-      model: { provider: "anthropic", id: "claude-sonnet-5" },
-      sandbox: { provider: "local" },
-      instructions: "no budget",
-    }),
-  });
-  assert.equal(res.status, 400, "a run without budget_usd must be rejected");
-  ok("budget_usd is mandatory");
+  const result = await agentWith("No budget required").generate({ prompt: "continue" });
+  assert.equal(result.run.status, "completed");
+  assert.equal(result.run.error, null);
+  assert.ok(!("budget_usd" in result.run));
+  assert.ok(result.run.spent_usd > 0);
+  ok("runs complete without a budget parameter");
 }
 
 // 8. tenant isolation

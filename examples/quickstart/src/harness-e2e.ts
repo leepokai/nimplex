@@ -118,7 +118,6 @@ try {
     .agent({
       model: { provider: "anthropic", id: "claude-haiku-4-5" },
       instructions: "Exercise the workspace tools",
-      budgetUsd: 0.2,
     })
     .stream({ prompt: "go" });
   const events: RunEvent[] = [];
@@ -157,7 +156,6 @@ try {
     .agent({
       model: { provider: "anthropic", id: "claude-haiku-4-5" },
       instructions: "Continue the conversation",
-      budgetUsd: 0.2,
     })
     .generate({ prompt: "Now inspect the result", parentRunId: run.id });
   assert.equal(continued.run.status, "completed", diagnostic);
@@ -176,7 +174,6 @@ try {
     .agent({
       model: { provider: "anthropic", id: "claude-haiku-4-5" },
       instructions: "Branch the conversation",
-      budgetUsd: 0.2,
     })
     .generate({
       prompt: "Use attached input",
@@ -196,7 +193,6 @@ try {
         .agent({
           model: { provider: "anthropic", id: "claude-haiku-4-5" },
           instructions: "cross tenant",
-          budgetUsd: 0.2,
         })
         .stream({ parentRunId: run.id, prompt: "go" }),
     (error: unknown) => error instanceof NimplexError && error.status === 404,
@@ -205,7 +201,6 @@ try {
     .agent({
       model: { provider: "anthropic", id: "claude-haiku-4-5" },
       instructions: "Plan only",
-      budgetUsd: 0.2,
     })
     .generate({ prompt: "Plan", executionMode: "read_only" });
   assert.equal(readOnly.run.status, "completed", diagnostic);
@@ -238,7 +233,6 @@ try {
     .agent({
       model: { provider: "anthropic", id: "claude-haiku-4-5" },
       instructions: "Exercise large output paging",
-      budgetUsd: 0.2,
     })
     .generate({ prompt: "go" });
   assert.equal(archived.run.status, "completed", diagnostic);
@@ -269,37 +263,19 @@ try {
   console.log("PASS binary deltas stay archived while the transcript and SSE carry hashes");
 
   const callsBefore = fake.state.messagesCalls.length;
-  const low = await client
+  const uncapped = await client
     .agent({
       model: { provider: "anthropic", id: "claude-haiku-4-5" },
-      instructions: "Cannot afford a request",
-      budgetUsd: 0.000001,
+      instructions: "Exercise the workspace tools without a spending limit",
     })
     .generate({ prompt: "go" });
-  assert.equal(low.run.status, "killed");
-  assert.equal(low.run.error, "budget_exceeded");
-  assert.equal(low.run.spent_usd, 0);
-  assert.equal(fake.state.messagesCalls.length, callsBefore);
-  console.log("PASS insufficient budget dispatches zero paid requests");
-  const firstReservation = events.find((event) => event.type === "model.reserved")?.payload as {
-    input_token_bound: number;
-  };
-  const midBudget = firstReservation.input_token_bound / 1e6 + 0.004;
-  const beforeMid = fake.state.messagesCalls.length;
-  const mid = await client
-    .agent({
-      model: { provider: "anthropic", id: "claude-haiku-4-5" },
-      instructions: "Exercise the workspace tools",
-      budgetUsd: midBudget,
-    })
-    .generate({ prompt: "go" });
-  assert.equal(mid.run.status, "killed");
-  assert.equal(mid.run.error, "budget_exceeded");
-  assert.ok(mid.run.spent_usd <= midBudget);
-  assert.ok(
-    fake.state.messagesCalls.length > beforeMid && fake.state.messagesCalls.length < beforeMid + 5,
-  );
-  console.log("PASS mid-run budget stops before issuing an unaffordable next call");
+  assert.equal(uncapped.run.status, "completed", uncapped.run.error ?? "unexpected run failure");
+  assert.equal(uncapped.run.error, null);
+  assert.ok(uncapped.run.spent_usd > 0);
+  assert.ok(!("budget_usd" in uncapped.run));
+  assert.ok(!("reserved_usd" in uncapped.run));
+  assert.ok(fake.state.messagesCalls.length > callsBefore);
+  console.log("PASS runs complete and settle usage without a budget parameter");
 
   for (const hasTruncatedTool of [false, true]) {
     const truncatedFake = await startFakeAnthropic(0, {
@@ -323,7 +299,6 @@ try {
       .agent({
         model: { provider: "anthropic", id: "claude-haiku-4-5" },
         instructions: "Continue after a truncated response",
-        budgetUsd: 0.2,
       })
       .generate({ prompt: "go" });
     assert.equal(truncated.run.status, "completed", diagnostic);
@@ -340,7 +315,7 @@ try {
       );
   }
   console.log(
-    "PASS output truncation continues within budget and never executes incomplete tool calls",
+    "PASS output truncation continues to completion and never executes incomplete tool calls",
   );
 
   const stranger = await tenant("stranger", fake.url);
@@ -363,7 +338,6 @@ try {
     .agent({
       model: { provider: "anthropic", id: "claude-haiku-4-5" },
       instructions: "Survive worker death",
-      budgetUsd: 0.2,
     })
     .stream({ prompt: "go" });
   await until(async () => slow.state.messagesCalls.length === 2);
@@ -372,16 +346,12 @@ try {
   assert.equal(recovered.status, "completed", `${recovered.error}\n${diagnostic}`);
   assert.equal(await read(recovery, recovered.id, "/workspace/durable.txt"), "once\n");
   const ledger =
-    await db.client`select status, reserved_usd, cost_usd from model_calls where run_id = ${recovered.id}`;
+    await db.client`select status, cost_usd from model_calls where run_id = ${recovered.id}`;
   assert.equal(ledger.filter((row) => row.status === "unknown").length, 1);
   assert.equal(ledger.filter((row) => row.status === "settled").length, 3);
-  const [balance] =
-    await db.client`select spent_usd, reserved_usd, budget_usd from runs where id = ${recovered.id}`;
-  assert.ok(Number(balance?.reserved_usd) > 0);
-  assert.ok(
-    Number(balance?.spent_usd) + Number(balance?.reserved_usd) <= Number(balance?.budget_usd),
-  );
-  console.log("PASS SIGKILL recovery, no duplicate append, unknown model spend stays reserved");
+  assert.ok(ledger.filter((row) => row.status === "unknown").every((row) => row.cost_usd === null));
+  assert.ok(recovered.spent_usd > 0);
+  console.log("PASS SIGKILL recovery, no duplicate append, unknown model outcomes retained");
 
   const batchFake = await startFakeAnthropic(0, {
     batchSize: 2,
@@ -396,7 +366,6 @@ try {
     .agent({
       model: { provider: "anthropic", id: "claude-haiku-4-5" },
       instructions: "Recover between tools in one model response",
-      budgetUsd: 0.2,
     })
     .stream({ prompt: "go" });
   await until(async () => {
@@ -431,7 +400,6 @@ try {
     .agent({
       model: { provider: "anthropic", id: "claude-haiku-4-5" },
       instructions: "Recover from a compacted history",
-      budgetUsd: 0.2,
     })
     .stream({ prompt: "go" });
   await until(async () => contextFake.state.messagesCalls.length === 4);
@@ -456,7 +424,6 @@ try {
     .agent({
       model: { provider: "anthropic", id: "claude-haiku-4-5" },
       instructions: "Stop at the wall-clock cap",
-      budgetUsd: 0.2,
       maxDurationSeconds: 1,
     })
     .generate({ prompt: "go" });
@@ -470,7 +437,6 @@ try {
     .agent({
       model: { provider: "anthropic", id: "claude-haiku-4-5" },
       instructions: "Cancel while model is running",
-      budgetUsd: 0.2,
     })
     .stream({ prompt: "go" });
   const prior = slow.state.messagesCalls.length;
@@ -501,7 +467,6 @@ try {
     .agent({
       model: { provider: "anthropic", id: "claude-haiku-4-5" },
       instructions: "Terminal CAS fixture",
-      budgetUsd: 0.2,
     })
     .stream({ prompt: "go" });
   let cancelResult: ReturnType<typeof client.runs.cancel> | undefined;
@@ -535,7 +500,6 @@ try {
     .agent({
       model: { provider: "anthropic", id: "claude-haiku-4-5" },
       instructions: "Old worker must not commit after takeover",
-      budgetUsd: 0.2,
     })
     .stream({ prompt: "go" });
   await until(async () => fenceFake.state.messagesCalls.length === 1);
@@ -559,6 +523,337 @@ try {
   console.log(
     "PASS SIGSTOP lease takeover rejects the old worker's late result without double settlement",
   );
+
+  // ---- Pi harness engine on PostgreSQL: fenced commits, SIGKILL takeover, SIGSTOP fence ----
+  const harnessFake = await startFakeAnthropic(0, {
+    honorToolAvailability: true,
+    delayMs: 150,
+    script: [
+      { name: "write", input: { path: "/workspace/h.txt", content: "first\n" } },
+      { name: "bash", input: { command: "echo once >> /workspace/h-append.txt" } },
+      { name: "read", input: { path: "/workspace/h.txt" } },
+    ],
+  });
+  upstreams.push(harnessFake);
+  const harnessClient = await tenant("harness", harnessFake.url);
+  const harnessAgent = harnessClient.agent({
+    model: { provider: "anthropic", id: "claude-haiku-4-5" },
+    instructions: "Run on the Pi harness",
+    engine: "pi-harness",
+  });
+  const harnessRun = await harnessAgent.generate({ prompt: "Write, run, read" });
+  assert.equal(harnessRun.run.status, "completed", `${harnessRun.run.error}\n${diagnostic}`);
+  assert.equal(await read(harnessClient, harnessRun.run.id, "/workspace/h.txt"), "first\n");
+  assert.equal(await read(harnessClient, harnessRun.run.id, "/workspace/h-append.txt"), "once\n");
+  const harnessTypes = harnessRun.events.map((e) => e.type);
+  assert.equal(harnessTypes.filter((t) => t === "model.call").length, 4);
+  assert.equal(harnessTypes.filter((t) => t === "tool.result").length, 3);
+  assert.equal(harnessTypes.filter((t) => t === "workspace.committed").length, 3);
+  assert.equal(harnessTypes.filter((t) => t === "spend.updated").length, 4);
+  assert.ok(!("reserved_usd" in harnessRun.run));
+  assert.ok(harnessRun.run.spent_usd > 0);
+  const [harnessItem] =
+    await db.client`select kind, status from work_items where run_id = ${harnessRun.run.id}`;
+  assert.deepEqual(harnessItem, { kind: "harness", status: "done" });
+  const harnessLedger =
+    await db.client`select status from model_calls where run_id = ${harnessRun.run.id}`;
+  assert.equal(harnessLedger.filter((row) => row.status === "settled").length, 4);
+  const [piSession] =
+    await db.client`select next_seq from pi_sessions where session_id = ${harnessRun.run.id}`;
+  assert.ok(Number(piSession?.next_seq) > 1, "Pi session rows are scoped by org and run");
+  // The legacy executor cannot honor thinking levels or OpenAI models; the API fails closed.
+  await assert.rejects(
+    () =>
+      harnessClient
+        .agent({
+          model: { provider: "anthropic", id: "claude-haiku-4-5" },
+          instructions: "legacy with thinking",
+          thinking: "low",
+        })
+        .generate({ prompt: "Think" }),
+    (error: unknown) =>
+      error instanceof NimplexError &&
+      error.status === 400 &&
+      error.code === "thinking_requires_harness",
+  );
+  await harnessClient.providerKeys.put({
+    provider: "openai",
+    api_key: "fake-openai-local-only",
+    base_url: harnessFake.url,
+    scope: "org",
+  });
+  await assert.rejects(
+    () =>
+      harnessClient
+        .agent({
+          model: { provider: "openai", id: "gpt-5.4-mini" },
+          instructions: "legacy with openai",
+        })
+        .generate({ prompt: "Route" }),
+    (error: unknown) =>
+      error instanceof NimplexError &&
+      error.status === 400 &&
+      error.code === "provider_requires_harness",
+  );
+  const [legacyRuns] = await db.client`select count(*)::int as count from runs where
+    config->>'instructions' in ('legacy with thinking', 'legacy with openai')`;
+  assert.equal(legacyRuns?.count, 0, "rejected runs are never created");
+  console.log("PASS legacy engine fails closed for thinking levels and OpenAI models");
+
+  // A scheduled run is durable at creation and waits in the queue until its start time.
+  const scheduledAt = new Date(Date.now() + 4_000);
+  const scheduledStarted = Date.now();
+  const scheduled = await harnessAgent.stream({ prompt: "Write, run, read", startAt: scheduledAt });
+  assert.equal(scheduled.run.status, "queued");
+  const [scheduledItem] =
+    await db.client`select status, available_at from work_items where run_id = ${scheduled.runId}`;
+  assert.equal(scheduledItem?.status, "pending");
+  assert.equal(new Date(String(scheduledItem?.available_at)).getTime(), scheduledAt.getTime());
+  await new Promise((resolve) => setTimeout(resolve, 1_500));
+  assert.equal(
+    (await harnessClient.runs.get(scheduled.runId)).status,
+    "queued",
+    "a scheduled run must not start early",
+  );
+  const scheduledRun = await scheduled.wait();
+  assert.equal(scheduledRun.status, "completed", `${scheduledRun.error}`);
+  assert.ok(
+    Date.now() - scheduledStarted >= 3_500,
+    "the worker claimed the scheduled run only after its start time",
+  );
+  await assert.rejects(
+    () => harnessAgent.generate({ prompt: "bad time", startAt: "tomorrow" }),
+    (error: unknown) => error instanceof NimplexError && error.status === 400,
+  );
+  console.log("PASS scheduled start waits durably in the queue until its time");
+  const piMessages =
+    await db.client`select count(*)::int as count from pi_entries where session_id = ${harnessRun.run.id} and type = 'message'`;
+  assert.equal(piMessages[0]?.count, 1 + 4 + 3);
+  // A continuation shares the parent's Pi session and stays on the harness engine.
+  const harnessNext = await harnessAgent.generate({
+    prompt: "Say hello",
+    parentRunId: harnessRun.run.id,
+  });
+  assert.equal(harnessNext.run.status, "completed", `${harnessNext.run.error}\n${diagnostic}`);
+  const harnessContinued = JSON.stringify(harnessFake.state.messagesCalls.at(-1)?.body.messages);
+  assert.ok(
+    harnessContinued.includes("Write, run, read") && harnessContinued.includes("Say hello"),
+  );
+  const [continuedItem] =
+    await db.client`select kind from work_items where run_id = ${harnessNext.run.id}`;
+  assert.equal(continuedItem?.kind, "harness");
+  console.log("PASS Pi harness run on PostgreSQL: fenced commits, accounting, Pi session lineage");
+
+  const harnessSlow = await startFakeAnthropic(0, {
+    honorToolAvailability: true,
+    delayMs: 400,
+    script: [
+      { name: "bash", input: { command: "echo once >> /workspace/durable.txt" } },
+      { name: "bash", input: { command: "cat /workspace/durable.txt" } },
+    ],
+  });
+  upstreams.push(harnessSlow);
+  const harnessRecovery = await tenant("harness-recovery", harnessSlow.url);
+  const crashingHarness = await harnessRecovery
+    .agent({
+      model: { provider: "anthropic", id: "claude-haiku-4-5" },
+      instructions: "Survive worker death on the harness",
+      engine: "pi-harness",
+    })
+    .stream({ prompt: "go" });
+  await until(async () => harnessSlow.state.messagesCalls.length === 2);
+  await restartWorker();
+  const recoveredHarness = await harnessRecovery.runs.wait(
+    crashingHarness.runId,
+    AbortSignal.timeout(60000),
+  );
+  assert.equal(recoveredHarness.status, "completed", `${recoveredHarness.error}\n${diagnostic}`);
+  assert.equal(
+    await read(harnessRecovery, recoveredHarness.id, "/workspace/durable.txt"),
+    "once\n",
+  );
+  const harnessRecoveryLedger =
+    await db.client`select status from model_calls where run_id = ${recoveredHarness.id}`;
+  assert.equal(harnessRecoveryLedger.filter((row) => row.status === "unknown").length, 1);
+  assert.equal(harnessRecoveryLedger.filter((row) => row.status === "settled").length, 3);
+  const recoveredEvents = [];
+  for await (const event of harnessRecovery.runs.events(recoveredHarness.id)) {
+    recoveredEvents.push(event);
+    if (
+      event.type.startsWith("run.") &&
+      ["run.completed", "run.failed", "run.killed"].includes(event.type)
+    )
+      break;
+  }
+  const recoveredTypes = recoveredEvents.map((e) => e.type);
+  assert.equal(recoveredTypes.filter((t) => t === "run.resumed").length, 1);
+  assert.equal(recoveredTypes.filter((t) => t === "tool.result").length, 2);
+  assert.equal(recoveredTypes.filter((t) => t === "model.call").length, 3);
+  const harnessUnknown =
+    await db.client`select status from model_calls where run_id = ${recoveredHarness.id} and status = 'unknown'`;
+  assert.equal(harnessUnknown.length, 1);
+  console.log(
+    "PASS Pi harness SIGKILL takeover resumes the same Pi operation without repeating work",
+  );
+
+  const harnessFence = await startFakeAnthropic(0, {
+    honorToolAvailability: true,
+    delayMs: 800,
+    toolCalls: 1,
+  });
+  upstreams.push(harnessFence);
+  const harnessFenceClient = await tenant("harness-fence", harnessFence.url);
+  const fencedHarness = await harnessFenceClient
+    .agent({
+      model: { provider: "anthropic", id: "claude-haiku-4-5" },
+      instructions: "Old worker must not commit after takeover",
+      engine: "pi-harness",
+    })
+    .stream({ prompt: "go" });
+  await until(async () => harnessFence.state.messagesCalls.length === 1);
+  const [harnessLeased] =
+    await db.client`select id from work_items where run_id = ${fencedHarness.runId} and status = 'leased'`;
+  const frozenHarness = worker;
+  frozenHarness.kill("SIGSTOP");
+  worker = startWorker();
+  const fencedHarnessRun = await harnessFenceClient.runs.wait(
+    fencedHarness.runId,
+    AbortSignal.timeout(60000),
+  );
+  assert.equal(fencedHarnessRun.status, "completed", diagnostic);
+  frozenHarness.kill("SIGCONT");
+  await until(async () => diagnostic.includes(`lost lease on work item ${harnessLeased?.id}`));
+  frozenHarness.kill("SIGKILL");
+  await exited(frozenHarness);
+  const fencedHarnessCalls =
+    await db.client`select status from model_calls where run_id = ${fencedHarness.runId}`;
+  // The frozen worker's in-flight request is unknown; the successor settled its own two.
+  assert.equal(fencedHarnessCalls.filter((row) => row.status === "settled").length, 2);
+  assert.equal(fencedHarnessCalls.filter((row) => row.status === "unknown").length, 1);
+  const fencedTerminal =
+    await db.client`select seq from events where run_id = ${fencedHarness.runId} and type = 'run.completed'`;
+  assert.equal(fencedTerminal.length, 1);
+  const fencedResults =
+    await db.client`select count(*)::int as count from events where run_id = ${fencedHarness.runId} and type = 'tool.result'`;
+  assert.equal(fencedResults[0]?.count, 1);
+  console.log("PASS Pi harness SIGSTOP takeover: stale worker cannot commit, no double settlement");
+
+  const beforeUnknown = harnessFake.state.messagesCalls.length;
+  const unknownModel = await harnessClient
+    .agent({
+      model: { provider: "anthropic", id: "claude-unknown-for-accounting" },
+      instructions: "Reject unpriced unknown models before dispatch",
+    })
+    .generate({ prompt: "hello" });
+  assert.equal(unknownModel.run.status, "failed");
+  assert.match(unknownModel.run.error ?? "", /Unsupported Anthropic model/);
+  assert.equal(harnessFake.state.messagesCalls.length, beforeUnknown);
+  const unknownLedger =
+    await db.client`select id from model_calls where run_id = ${unknownModel.run.id}`;
+  assert.equal(unknownLedger.length, 0);
+  console.log("PASS unknown model is rejected before dispatch instead of recording free usage");
+
+  const cancellationDb = db;
+  for (const action of [
+    "kill",
+    "cancel",
+    "duration",
+    "kill-restart",
+    "kill-tool",
+    "kill-race",
+  ] as const) {
+    const slow = await startFakeAnthropic(
+      0,
+      action === "kill-tool"
+        ? {
+            script: [
+              {
+                name: "bash",
+                input: { command: "echo partial > /workspace/canceled.txt; sleep 10" },
+              },
+            ],
+          }
+        : { toolCalls: 1, delayMs: action === "kill-race" ? 250 : 10_000 },
+    );
+    upstreams.push(slow);
+    const stoppedClient = await tenant(`harness-${action}`, slow.url);
+    const stopped = await stoppedClient
+      .agent({
+        model: { provider: "anthropic", id: "claude-haiku-4-5" },
+        instructions: "Cancel without blocking the session lineage",
+        engine: "pi-harness",
+        ...(action === "duration" ? { maxDurationSeconds: 1 } : {}),
+      })
+      .stream({ prompt: "go" });
+    await until(async () => slow.state.messagesCalls.length === 1);
+    if (action === "kill-tool")
+      await until(async () => {
+        const rows =
+          await cancellationDb.client`select seq from events where run_id = ${stopped.runId} and type = 'tool.started'`;
+        return rows.length === 1;
+      });
+    const stopAt = Date.now();
+    if (action === "kill-restart") worker.kill("SIGSTOP");
+    if (action === "cancel") await stoppedClient.runs.cancel(stopped.runId);
+    else if (action !== "duration") await stoppedClient.runs.kill(stopped.runId);
+    if (action === "kill-restart") {
+      await assert.rejects(
+        () =>
+          stoppedClient
+            .agent({
+              model: { provider: "anthropic", id: "claude-haiku-4-5" },
+              instructions: "Wait for fenced cleanup",
+              engine: "pi-harness",
+            })
+            .generate({ prompt: "Too early", parentRunId: stopped.runId }),
+        (error: unknown) =>
+          error instanceof NimplexError && error.code === "parent_run_cleanup_pending",
+      );
+      await restartWorker();
+    }
+    await until(async () => {
+      const [item] =
+        await cancellationDb.client`select status from work_items where run_id = ${stopped.runId}`;
+      return item?.status === "done";
+    });
+    assert.ok(
+      Date.now() - stopAt < 8_000,
+      `abort must finish before the upstream response (${action})`,
+    );
+    const result = await stoppedClient.runs.get(stopped.runId);
+    assert.equal(result.status, action === "cancel" ? "canceled" : "killed", diagnostic);
+    const afterStop: { type: string }[] =
+      await cancellationDb.client`select type from events where run_id = ${stopped.runId}`;
+    assert.equal(
+      afterStop.filter((row) => row.type === "tool.started").length,
+      action === "kill-tool" ? 1 : 0,
+    );
+    assert.equal(afterStop.filter((row) => row.type === "workspace.committed").length, 0);
+    const calls: { status: string }[] =
+      await cancellationDb.client`select status from model_calls where run_id = ${stopped.runId}`;
+    assert.deepEqual(
+      calls.map((row) => row.status),
+      [action === "kill-tool" ? "settled" : "unknown"],
+    );
+    assert.equal(slow.state.messagesCalls.length, 1);
+    await stoppedClient.providerKeys.put({
+      provider: "anthropic",
+      api_key: "fake-only",
+      base_url: harnessFake.url,
+      scope: "org",
+    });
+    const continuation = await stoppedClient
+      .agent({
+        model: { provider: "anthropic", id: "claude-haiku-4-5" },
+        instructions: "Continue after cancellation",
+        engine: "pi-harness",
+      })
+      .generate({ prompt: "Continue", parentRunId: stopped.runId });
+    assert.equal(continuation.run.status, "completed", `${continuation.run.error}\n${diagnostic}`);
+    console.log(
+      `PASS hosted Pi ${action}: prompt abort, no tool dispatch, durable settlement and continuation`,
+    );
+  }
 
   if (process.env.NIMPLEX_E2E_SANDBOX === "e2b") {
     assert.ok(process.env.E2B_API_KEY, "E2B_API_KEY is required for the cloud acceptance test");
@@ -588,7 +883,6 @@ try {
         model: { provider: "anthropic", id: "claude-haiku-4-5" },
         sandbox: { provider: "e2b" },
         instructions: "Run native commands and survive worker death",
-        budgetUsd: 0.2,
       })
       .stream({ prompt: "go" });
     await until(async () => {
@@ -659,7 +953,6 @@ try {
         model: { provider: "anthropic", id: "claude-haiku-4-5" },
         sandbox: { provider: "e2b" },
         instructions: "Restore a lost environment",
-        budgetUsd: 0.2,
       })
       .stream({ prompt: "go" });
     await until(async () => {
@@ -692,7 +985,6 @@ try {
         model: { provider: "anthropic", id: "claude-haiku-4-5" },
         sandbox: { provider: "e2b" },
         instructions: "Keep the sandbox alive across lease takeover",
-        budgetUsd: 0.2,
       })
       .stream({ prompt: "go" });
     await until(async () => {
@@ -752,7 +1044,6 @@ try {
         model: { provider: "anthropic", id: "claude-haiku-4-5" },
         sandbox: { provider: "e2b" },
         instructions: "Keep native caches after a command timeout",
-        budgetUsd: 0.2,
       })
       .generate({ prompt: "go", signal: AbortSignal.timeout(90000) });
     assert.equal(timeoutRun.run.status, "completed", diagnostic);
@@ -771,7 +1062,6 @@ try {
         model: { provider: "anthropic", id: "claude-haiku-4-5" },
         sandbox: { provider: "e2b" },
         instructions: "Stop native work when the API kills the run",
-        budgetUsd: 0.2,
       })
       .stream({ prompt: "go" });
     await until(async () => {
@@ -823,7 +1113,6 @@ try {
         model: { provider: "anthropic", id: "claude-haiku-4-5" },
         sandbox: { provider: "e2b" },
         instructions: "Keep completed results if pause fails",
-        budgetUsd: 0.2,
       })
       .generate({ prompt: "go", signal: AbortSignal.timeout(90000) });
     assert.equal(pauseRun.run.status, "completed", diagnostic);
@@ -845,7 +1134,6 @@ try {
         model: { provider: "anthropic", id: "claude-haiku-4-5" },
         sandbox: { provider: "e2b" },
         instructions: "Allow kill while the provider pause API is slow",
-        budgetUsd: 0.2,
       })
       .stream({ prompt: "go" });
     await until(async () => diagnostic.includes("E2E_PAUSE_ENTER"), 60000);
@@ -882,7 +1170,6 @@ try {
         .agent({
           model: { provider: "anthropic", id: "claude-haiku-4-5" },
           sandbox: { provider: "e2b" },
-          budgetUsd: 0.25,
           instructions:
             "Use bash to run exactly: node -e \"require('fs').writeFileSync('real-e2e.txt', 'native model verified')\". Then use read to verify /workspace/real-e2e.txt and finish. Do not install packages or access the network.",
         })

@@ -1,9 +1,9 @@
 import type { Context, Model } from "@earendil-works/pi-ai";
 import { getBuiltinModels } from "@earendil-works/pi-ai/providers/all";
-import type { ModelReservation } from "@nimplex/contracts";
+import type { ModelAttempt } from "@nimplex/contracts";
 import { startFakeAnthropic } from "@nimplex/testkit";
-import { afterEach, expect, it } from "vitest";
-import { budgetedModels } from "./pi-harness-models.ts";
+import { afterEach, expect, it, vi } from "vitest";
+import { durableModels } from "./pi-harness-models.ts";
 
 const cleanup: (() => Promise<void>)[] = [];
 afterEach(async () => {
@@ -21,24 +21,20 @@ async function fixture() {
   const model: Model<"anthropic-messages"> = { ...known, baseUrl: upstream.url };
   return { upstream, model };
 }
-const reservation = (maxOutput: number): ModelReservation => ({
+const attempt = (): ModelAttempt => ({
   call_id: "11111111-1111-4111-8111-111111111111",
-  input_token_bound: 1,
-  max_output_tokens: maxOutput,
-  reserved_usd: 0.01,
 });
 
-it("reserves from the final payload, caps max_tokens and preserves the caller's payload hook", async () => {
+it("records dispatch intent and preserves Pi defaults and the caller's payload hook", async () => {
   const f = await fixture();
-  const bounds: number[] = [];
+  const starts: number[] = [];
   const structural: unknown[] = [];
-  const models = budgetedModels({
+  const models = durableModels({
     model: f.model,
-    apiKey: "fake-key",
-    billing: "api",
-    reserve: (bound) => {
-      bounds.push(bound);
-      return reservation(77);
+    credential: { apiKey: "fake-key", baseUrl: null },
+    startModel: () => {
+      starts.push(1);
+      return attempt();
     },
     onDenied: () => {
       throw new Error("must not be denied");
@@ -52,50 +48,47 @@ it("reserves from the final payload, caps max_tokens and preserves the caller's 
   });
   const message = await stream.result();
   expect(message.stopReason).toBe("stop");
-  expect(bounds).toHaveLength(1);
+  expect(starts).toHaveLength(1);
   const sent = f.upstream.state.messagesCalls[0];
-  expect(sent?.maxTokens).toBe(77);
+  expect(sent?.maxTokens).toBeGreaterThan(4096);
   expect(sent?.body.metadata).toEqual({ user_id: "hook" });
-  // The bound covers the payload the hook produced, not only the original request.
-  expect(bounds[0]).toBeGreaterThan(Buffer.byteLength(JSON.stringify(sent?.body)) - 4096);
+  expect(starts).toEqual([1]);
   expect(structural).toEqual([]);
-  // A structural completion reports its reservation and response for host settlement.
+  // A structural completion reports its attempt and response for host settlement.
   const summary = await models.completeSimple(f.model, context);
   expect(summary.stopReason).toBe("stop");
-  expect(structural).toEqual([[reservation(77), summary]]);
-  expect(bounds).toHaveLength(2);
+  expect(structural).toEqual([[attempt(), summary]]);
+  expect(starts).toHaveLength(2);
 });
 
-it("keeps the provider output limit for subscription dispatch while still reserving", async () => {
+it("keeps the provider output limit while recording dispatch intent", async () => {
   const f = await fixture();
-  let reserved = 0;
-  const models = budgetedModels({
+  let started = 0;
+  const models = durableModels({
     model: f.model,
-    apiKey: "fake-key",
-    billing: "subscription",
-    reserve: () => {
-      reserved++;
-      return { ...reservation(9), reserved_usd: 0 };
+    credential: { apiKey: "fake-key", baseUrl: null },
+    startModel: () => {
+      started++;
+      return attempt();
     },
     onDenied: () => {},
     onStructural: () => {},
   });
-  const message = await models.streamSimple(f.model, context).result();
+  const message = await models.streamSimple(f.model, context, { maxTokens: 12000 }).result();
   expect(message.stopReason).toBe("stop");
-  expect(reserved).toBe(1);
-  // No budgeted cap is injected; the fake reports the request's own limit.
-  expect(f.upstream.state.messagesCalls[0]?.maxTokens).not.toBe(9);
+  expect(started).toBe(1);
+  // The fake reports Pi's original request limit.
+  expect(f.upstream.state.messagesCalls[0]?.maxTokens).toBe(12000);
 });
 
-it("turns a denied reservation into a settled error without any provider dispatch", async () => {
+it("turns a failed intent commit into an error without any provider dispatch", async () => {
   const f = await fixture();
   const denied: unknown[] = [];
-  const models = budgetedModels({
+  const models = durableModels({
     model: f.model,
-    apiKey: "fake-key",
-    billing: "api",
-    reserve: () => {
-      throw new Error("budget_exceeded");
+    credential: { apiKey: "fake-key", baseUrl: null },
+    startModel: () => {
+      throw new Error("intent commit failed");
     },
     onDenied: (error) => denied.push(error),
     onStructural: () => {
@@ -104,26 +97,155 @@ it("turns a denied reservation into a settled error without any provider dispatc
   });
   const message = await models.streamSimple(f.model, context).result();
   expect(message.stopReason).toBe("error");
-  expect(message.errorMessage).toBe("budget_exceeded");
+  expect(message.errorMessage).toBe("intent commit failed");
   expect(message.usage.totalTokens).toBe(0);
   expect(denied).toHaveLength(1);
   expect(f.upstream.state.messagesCalls).toHaveLength(0);
 });
 
-it("fails closed for unbudgeted Models members and foreign models", async () => {
+it("fails closed for unadapted Models members and foreign models", async () => {
   const f = await fixture();
-  const models = budgetedModels({
+  const models = durableModels({
     model: f.model,
-    apiKey: "fake-key",
-    billing: "api",
-    reserve: () => reservation(1),
+    credential: { apiKey: "fake-key", baseUrl: null },
+    startModel: () => attempt(),
     onDenied: () => {},
     onStructural: () => {},
   });
-  expect(() => models.streamDeferred(f.model, { id: "x" } as never)).toThrow("not budgeted");
-  expect(() => models.getProviders()).toThrow("not budgeted");
+  expect(() => models.streamDeferred(f.model, { id: "x" } as never)).toThrow(
+    "no durable dispatch adapter",
+  );
+  expect(() => models.getProviders()).toThrow("no durable dispatch adapter");
   expect(() => models.streamSimple({ ...f.model, id: "claude-opus-5" }, context)).toThrow(
     "outside the turn's selection",
   );
   expect(f.upstream.state.messagesCalls).toHaveLength(0);
 });
+
+it("preserves OpenAI Responses reasoning and provider output defaults", async () => {
+  const openai = getBuiltinModels("openai").find((m) => m.id === "gpt-5.4-mini");
+  if (!openai) throw new Error("Missing pinned OpenAI model");
+  const starts: number[] = [];
+  const calls: { url: string; headers: Headers; body: Record<string, unknown> }[] = [];
+  const { zstdDecompressSync } = await import("node:zlib");
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string, init: RequestInit) => {
+      const headers = new Headers(init.headers);
+      calls.push({
+        url: String(url),
+        headers,
+        body: JSON.parse(
+          headers.get("content-encoding") === "zstd"
+            ? zstdDecompressSync(init.body as Uint8Array).toString()
+            : String(init.body),
+        ),
+      });
+      const item = {
+        type: "message",
+        id: "msg_1",
+        role: "assistant",
+        status: "completed",
+        content: [{ type: "output_text", text: "Done", annotations: [] }],
+      };
+      return new Response(
+        [
+          { type: "response.output_item.added", output_index: 0, item },
+          { type: "response.output_item.done", output_index: 0, item },
+          {
+            type: "response.completed",
+            response: {
+              id: "resp_1",
+              status: "completed",
+              output: [item],
+              usage: { input_tokens: 10, output_tokens: 2 },
+            },
+          },
+        ]
+          .map((event) => `data: ${JSON.stringify(event)}\n\n`)
+          .join(""),
+        { headers: { "Content-Type": "text/event-stream" } },
+      );
+    }),
+  );
+  cleanup.push(async () => {
+    vi.unstubAllGlobals();
+  });
+  const models = durableModels({
+    model: { ...openai, baseUrl: "https://openai.test/v1" },
+    credential: { apiKey: "sk-openai-test", baseUrl: null },
+    startModel: () => {
+      starts.push(1);
+      return attempt();
+    },
+    onDenied: () => {
+      throw new Error("must not be denied");
+    },
+    onStructural: () => {},
+  });
+  const message = await models
+    .streamSimple(openai, context, { reasoning: "medium", maxTokens: 8192 })
+    .result();
+  expect(message.stopReason).toBe("stop");
+  expect(starts).toEqual([1]);
+  expect(calls).toHaveLength(1);
+  expect(calls[0]?.url).toBe("https://openai.test/v1/responses");
+  expect(calls[0]?.headers.get("authorization")).toBe("Bearer sk-openai-test");
+  expect(calls[0]?.body.max_output_tokens).toBe(8192);
+  expect(calls[0]?.body).not.toHaveProperty("max_tokens");
+  expect(calls[0]?.body.reasoning).toMatchObject({ effort: "medium" });
+});
+
+it("preserves Anthropic high thinking without a monetary output cap", async () => {
+  const f = await fixture();
+  const models = durableModels({
+    model: f.model,
+    credential: { apiKey: "fake-key", baseUrl: null },
+    startModel: () => attempt(),
+    onDenied: () => {
+      throw new Error("must not be denied");
+    },
+    onStructural: () => {},
+  });
+  const message = await models.streamSimple(f.model, context, { reasoning: "high" }).result();
+  expect(message.stopReason).toBe("stop");
+  const sent = f.upstream.state.messagesCalls[0];
+  expect(sent?.maxTokens).toBeGreaterThan(16384);
+  expect(sent?.body.thinking).toMatchObject({ type: "enabled", budget_tokens: 16384 });
+});
+
+it.each([false, true])(
+  "awaits the intent commit before HTTP dispatch (cancel=%s)",
+  async (cancel) => {
+    const f = await fixture();
+    let enter!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      enter = resolve;
+    });
+    let commit!: (attempt: ModelAttempt) => void;
+    const committed = new Promise<ModelAttempt>((resolve) => {
+      commit = resolve;
+    });
+    const controller = new AbortController();
+    const denied: unknown[] = [];
+    const models = durableModels({
+      model: f.model,
+      credential: { apiKey: "fake-key", baseUrl: null },
+      startModel: () => {
+        enter();
+        return committed;
+      },
+      onDenied: (error) => denied.push(error),
+      onStructural: () => {},
+    });
+    const response = models.streamSimple(f.model, context, { signal: controller.signal }).result();
+    await entered;
+    expect(f.upstream.state.messagesCalls).toHaveLength(0);
+    if (cancel) controller.abort(new Error("cancel during commit"));
+    commit(attempt());
+    const message = await response;
+    expect(f.upstream.state.messagesCalls).toHaveLength(cancel ? 0 : 1);
+    expect(denied).toHaveLength(cancel ? 1 : 0);
+    expect(message.stopReason).toBe(cancel ? "aborted" : "stop");
+  },
+);

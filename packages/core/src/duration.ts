@@ -1,5 +1,5 @@
 // Pure max_duration_seconds checks.
-// Duration limits complement model budgets and remain independent of model usage.
+// Duration limits remain independent of model usage.
 // The worker checks them during execution and through its watchdog.
 
 export function durationExceeded(

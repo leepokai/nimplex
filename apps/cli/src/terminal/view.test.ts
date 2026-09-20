@@ -34,7 +34,6 @@ const preferences: Preferences = {
   theme: "dark",
   model: "claude-haiku-45",
   sandbox: "e2b",
-  budget: 0.2,
   timeout: 180,
   mode: "build",
   expanded: false,

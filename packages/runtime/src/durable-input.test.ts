@@ -63,7 +63,7 @@ it("rejects conflicting content under an accepted ID and scopes deduplication to
   await expect(f.runtime.startTurn(f.session.id, request({ prompt: "Different" }))).rejects.toThrow(
     "different content",
   );
-  await expect(f.runtime.startTurn(f.session.id, request({ budget: 0.4 }))).rejects.toThrow(
+  await expect(f.runtime.startTurn(f.session.id, request({ timeout: 240 }))).rejects.toThrow(
     "different content",
   );
   await finish(f.runtime, first.runId);
@@ -162,5 +162,27 @@ it("rolls a failed schema migration back and releases the owner for a subsequent
   db.exec("DROP INDEX accepted_inputs");
   const store = new RuntimeStore(directory);
   cleanup.push(() => store.close());
-  expect(db.prepare("PRAGMA user_version").get()?.user_version).toBe(3);
+  expect(db.prepare("PRAGMA user_version").get()?.user_version).toBe(4);
+});
+
+it("retries a legacy accepted request after upgrade without replaying its model call", async () => {
+  const f = await fixture();
+  const first = await f.runtime.startTurn(f.session.id, request());
+  await finish(f.runtime, first.runId);
+  await f.runtime.close();
+  const db = new DatabaseSync(join(f.directory, "runtime.sqlite"));
+  const row = db.prepare("SELECT data FROM accepted_inputs WHERE session_id=?").get(f.session.id);
+  const legacy = JSON.parse(String(row?.data));
+  legacy.request.budget = 0.2;
+  db.prepare("UPDATE accepted_inputs SET data=? WHERE session_id=?").run(
+    JSON.stringify(legacy),
+    f.session.id,
+  );
+  db.exec("PRAGMA user_version=3");
+  db.close();
+  const reopened = new NimplexRuntime(f.options);
+  cleanup.push(() => reopened.close());
+  expect(await reopened.startTurn(f.session.id, request())).toEqual(first);
+  expect(f.upstream.state.messagesCalls).toHaveLength(1);
+  expect(reopened.getTurn(first.runId)).not.toHaveProperty("budget_usd");
 });

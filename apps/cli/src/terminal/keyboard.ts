@@ -95,7 +95,7 @@ export function keyboardHelp(profile: Keymap = "nimplex") {
     "Option as Meta is needed for Alt keys on macOS. Ctrl+J is the portable newline.",
     "Terminal Cmd+C / Cmd+V and bracketed text paste remain terminal controls.",
     "Profiles adapt available nimplex actions; they are not full product emulations.",
-    "Image/voice input, Vim mode, fast/thinking toggles and queued-message shortcuts are not implemented.",
+    "Image/voice input, Vim mode and fast-mode toggles are not implemented; /thinking sets the Pi thinking level.",
     "Ctrl+T in the default/Claude profile lists running conversations, not model-generated todos.",
     "Background work stays in this process. Exiting closes the local runtime.",
   ].join("\n");

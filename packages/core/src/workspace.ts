@@ -1,4 +1,4 @@
-// Tier 0 ceilings. budget_usd prices model tokens only, so the file tree needs its own cap or a
+// Tier 0 ceilings. the file tree needs its own cap or a
 // single `head -c 1G /dev/zero > big` turn would be stored for free.
 // ponytail: flat per-run limits; per-org quotas when someone actually asks.
 

@@ -6,6 +6,9 @@
   "exports": {
     ".": "./src/index.ts",
     "./pi-executor": "./src/pi-executor.ts",
+    "./pi-harness-engine": "./src/pi-harness-engine.ts",
+    "./pi-storage/sqlite": "./src/pi-storage/sqlite.ts",
+    "./pi-storage/schema": "./src/pi-storage/schema.ts",
     "./models": "./src/models.ts",
     "./context": "./src/context.ts",
     "./workspace": "./src/workspace.ts",

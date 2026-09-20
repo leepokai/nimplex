@@ -54,7 +54,6 @@ const submit = (prompt: string, contextMode: "continue" | "compact" = "continue"
     instructions: "Complete the task.",
     model: "claude-haiku-4-5",
     sandbox: "docker",
-    budget: 1,
     timeout: 180,
     contextMode,
     executionMode: "build",
@@ -68,7 +67,7 @@ if (boundary === "during-summary") {
   const second = await submit("Summarize then continue", "compact");
   process.send?.({ stage: "started", runId: second.runId, firstRunId: first.runId });
   for await (const event of runtime.events(second.runId)) {
-    if (event.type === "model.reserved") {
+    if (event.type === "model.started") {
       process.send?.({ stage: "committed", requests: upstream.state.messagesCalls.length });
       await hang();
     }
@@ -78,7 +77,7 @@ const turn = await submit("Write, run, read");
 process.send?.({ stage: "started", runId: turn.runId });
 if (boundary === "cancel-pending") {
   for await (const event of runtime.events(turn.runId)) {
-    if (event.type === "model.reserved") {
+    if (event.type === "model.started") {
       cancelRequested = true;
       void runtime.stopTurn(turn.runId);
       break;
@@ -88,7 +87,7 @@ if (boundary === "cancel-pending") {
 if (boundary === "during-request") {
   let reserved = 0;
   for await (const event of runtime.events(turn.runId)) {
-    if (event.type === "model.reserved" && ++reserved === 2) {
+    if (event.type === "model.started" && ++reserved === 2) {
       // The second request is in flight against a slow upstream; report and wait to be killed.
       process.send?.({ stage: "committed", requests: upstream.state.messagesCalls.length });
       await hang();

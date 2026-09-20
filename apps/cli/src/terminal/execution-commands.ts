@@ -22,7 +22,7 @@ export const executionCommands: Command[] = [
         ));
       if (!value) return;
       if (!models.some((m) => m.model === value))
-        throw new Error("This model is not in the runtime's priced catalog.");
+        throw new Error("This model is not in the runtime's Pi catalog.");
       c.preferences.model = value;
       c.settingsChanged();
     },
@@ -89,32 +89,6 @@ export const executionCommands: Command[] = [
     },
   },
   {
-    name: "budget",
-    group: "Run",
-    description: "Set the model budget for subsequent turns",
-    action: (c, arg) => {
-      if (!arg) {
-        c.view.notice(
-          "Model budget",
-          c.preferences.model.startsWith("openai-codex/")
-            ? "Codex uses subscription quota. USD model budgets do not cap subscription usage. /timeout still applies. Sandbox charges are separate."
-            : `$${c.preferences.budget} per turn. Use /budget 0.50 to change it. Sandbox charges are separate.`,
-        );
-        return;
-      }
-      const value = Number(arg);
-      if (!Number.isFinite(value) || value <= 0)
-        throw new Error("Budget must be a positive USD amount.");
-      c.preferences.budget = value;
-      c.settingsChanged();
-      if (c.preferences.model.startsWith("openai-codex/"))
-        c.view.notice(
-          "API budget saved",
-          "This budget applies when using an API model. Codex subscription quota is provider-managed; /timeout still applies.",
-        );
-    },
-  },
-  {
     name: "stop",
     aliases: ["kill"],
     group: "Run",
@@ -169,7 +143,7 @@ export const executionCommands: Command[] = [
       const run = c.head ? await c.client.getTurn(c.head) : undefined;
       c.view.notice(
         "Session status",
-        `Conversation: ${c.session.title}\nModel: ${c.preferences.model}\nMode: ${c.preferences.mode}\nSandbox: ${c.preferences.sandbox}\nWorkspace: /workspace (isolated session)\nNext-turn billing: ${c.preferences.model.startsWith("openai-codex/") ? "subscription quota (USD cap does not apply)" : `$${c.preferences.budget} API budget`}\nRun: ${run?.id ?? "none"}\nStatus: ${run?.status ?? "ready"}`,
+        `Conversation: ${c.session.title}\nModel: ${c.preferences.model}\nMode: ${c.preferences.mode}\nSandbox: ${c.preferences.sandbox}\nWorkspace: /workspace (isolated session)\nNext-turn billing: ${c.preferences.model.startsWith("openai-codex/") ? "subscription quota" : "API usage"}\nRun: ${run?.id ?? "none"}\nStatus: ${run?.status ?? "ready"}`,
       );
     },
   },

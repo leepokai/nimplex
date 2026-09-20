@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { thinkingLevel } from "./engine.ts";
 import type { RunEvent, RunResponse } from "./index.ts";
 
 /** Local session commands are independent of HTTP, organizations, and work queues. */
@@ -14,10 +15,11 @@ export const startTurnRequest = z.object({
   instructions: z.string().default("Complete the user's task in /workspace."),
   model: z.string().min(1).default("claude-haiku-4-5"),
   sandbox: z.enum(["e2b", "docker"]).default("e2b"),
-  budget: z.number().positive().default(0.2),
   timeout: z.number().int().min(1).max(86400).default(180),
   contextMode: z.enum(["continue", "reset", "compact"]).default("continue"),
   executionMode: z.enum(["build", "read_only"]).default("build"),
+  /** Pi thinking level for the turn's model requests; thinking output is billed as output tokens. */
+  thinking: thinkingLevel.optional(),
   attachments: z
     .array(z.object({ path: z.string().max(1024), content: z.string().max(131072) }))
     .max(16)

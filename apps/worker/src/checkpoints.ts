@@ -1,11 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
-import type { ModelReservation } from "@nimplex/contracts";
+import type { ModelAttempt } from "@nimplex/contracts";
 import {
   checkWorkspaceLimits,
+  type ExecutorEvent,
   type ExecutorRunContext,
   isTerminal,
-  lookupRate,
-  planReservation,
 } from "@nimplex/core";
 import {
   appendRunEvents,
@@ -28,12 +27,6 @@ export class LostLeaseError extends Error {
     this.name = "LostLeaseError";
   }
 }
-export class BudgetExceededError extends Error {
-  constructor() {
-    super("budget_exceeded");
-  }
-}
-
 export interface Lease {
   id: string;
   fence: number;
@@ -70,6 +63,132 @@ export async function lockOwnedRun(
   return current;
 }
 
+export const alive = (current: RunRow) => {
+  if (isTerminal(current.status)) throw new Error(`run is ${current.status}`);
+};
+
+/**
+ * Transaction-free commit steps over a locked run row. `createCheckpoints` wraps each in
+ * its own fenced transaction for the default executor; the Pi harness host applies them
+ * inside the transaction that also commits Pi's session writes.
+ */
+export async function startModelIn(
+  tx: DbExecutor,
+  current: RunRow,
+  lease: Lease,
+  extra: Record<string, unknown> = {},
+): Promise<ModelAttempt> {
+  alive(current);
+  const attempt: ModelAttempt = { call_id: randomUUID() };
+  await tx.insert(modelCalls).values({
+    id: attempt.call_id,
+    orgId: current.orgId,
+    runId: current.id,
+    workItemId: lease.id,
+    fence: lease.fence,
+    status: "started",
+  });
+  await appendRunEvents(tx, current, [
+    { type: "model.started", payload: { ...attempt, ...extra } },
+  ]);
+  return attempt;
+}
+
+export async function commitModelIn(
+  tx: DbExecutor,
+  current: RunRow,
+  attempt: ModelAttempt,
+  events: ExecutorEvent[],
+  costUsd: number,
+  uncertain: boolean,
+) {
+  if (!Number.isFinite(costUsd) || costUsd < 0) throw new Error("invalid model cost");
+  const roundedCost = Math.ceil(costUsd * 1e6 - 1e-8) / 1e6;
+  // Settlement is keyed by call id, not by the lease that started it: a successor worker
+  // settles a predecessor's attempt after takeover under its own fenced transaction.
+  const [call] = await tx
+    .update(modelCalls)
+    .set({ status: uncertain ? "unknown" : "settled", costUsd: roundedCost })
+    .where(
+      and(
+        eq(modelCalls.id, attempt.call_id),
+        eq(modelCalls.orgId, current.orgId),
+        eq(modelCalls.runId, current.id),
+        eq(modelCalls.status, "started"),
+      ),
+    )
+    .returning();
+  if (!call) return;
+  const spent = Math.round((current.spentUsd + roundedCost) * 1e6) / 1e6;
+  await tx
+    .update(runs)
+    .set({ spentUsd: spent })
+    .where(and(eq(runs.id, current.id), eq(runs.orgId, current.orgId)));
+  if (!uncertain || roundedCost > 0)
+    await tx.insert(usageRecords).values({
+      orgId: current.orgId,
+      endUserId: current.endUserId,
+      runId: current.id,
+      kind: "model",
+      amountUsd: roundedCost,
+      meta: { executor: "pi", model: current.model, call_id: call.id, uncertain },
+    });
+  await appendRunEvents(tx, current, [
+    ...events,
+    {
+      type: "spend.updated",
+      payload: {
+        call_id: call.id,
+        spent_usd: spent,
+        uncertain,
+      },
+    },
+  ]);
+  current.spentUsd = spent;
+}
+
+export async function commitToolIn(
+  tx: DbExecutor,
+  current: RunRow,
+  events: ExecutorEvent[],
+  before: WorkspaceFiles,
+  after: WorkspaceFiles,
+  metadata: RunRow["workspaceMetadata"],
+) {
+  alive(current);
+  const exceeded = checkWorkspaceLimits(after, metadata);
+  if (exceeded) throw new Error(exceeded);
+  const changes = await saveWorkspace(tx, current.id, before, after, current.orgId);
+  const revision = current.workspaceRevision + 1;
+  await tx
+    .update(runs)
+    .set({ workspaceRevision: revision, workspaceMetadata: metadata })
+    .where(and(eq(runs.id, current.id), eq(runs.orgId, current.orgId)));
+  await appendRunEvents(tx, current, [
+    ...events,
+    ...changes.map((change) => ({
+      type: "file.changed",
+      payload: {
+        ...change,
+        revision,
+        sha256:
+          change.action === "write"
+            ? createHash("sha256")
+                .update(after[change.path] ?? new Uint8Array())
+                .digest("hex")
+            : undefined,
+        content_base64:
+          change.action === "write"
+            ? Buffer.from(after[change.path] ?? new Uint8Array()).toString("base64")
+            : undefined,
+      },
+    })),
+    { type: "workspace.committed", payload: { revision, metadata } },
+  ]);
+  current.workspaceRevision = revision;
+  current.workspaceMetadata = metadata;
+}
+
 export function createCheckpoints(
   db: Db,
   lease: Lease,
@@ -77,9 +196,6 @@ export function createCheckpoints(
   initialFiles: WorkspaceFiles,
 ): ExecutorRunContext["persistence"] {
   let files = initialFiles;
-  const alive = (current: RunRow) => {
-    if (isTerminal(current.status)) throw new Error(`run is ${current.status}`);
-  };
   return {
     readEvents: () => listRunEvents(db, run.id, run.orgId, true),
     async checkpointContext(checkpoint) {
@@ -88,104 +204,18 @@ export function createCheckpoints(
         await appendRunEvents(tx, run, [{ type: "context.checkpoint", payload: checkpoint }]);
       });
     },
-    async reserveModel(inputTokenBound) {
-      const rate = lookupRate(run.modelProvider, run.model);
-      if (!rate) throw new Error(`unpriced model cannot enforce a budget: ${run.model}`);
-      return db.transaction(async (tx) => {
-        const current = await lockOwnedRun(tx, lease, run);
-        alive(current);
-        const planned = planReservation(
-          (current.budgetUsd ?? 0) - current.spentUsd - current.reservedUsd,
-          inputTokenBound,
-          rate,
-        );
-        if (!planned) throw new BudgetExceededError();
-        const reservation: ModelReservation = {
-          call_id: randomUUID(),
-          input_token_bound: inputTokenBound,
-          max_output_tokens: planned.maxOutputTokens,
-          reserved_usd: planned.reservedUsd,
-        };
-        await tx.insert(modelCalls).values({
-          id: reservation.call_id,
-          orgId: run.orgId,
-          runId: run.id,
-          workItemId: lease.id,
-          fence: lease.fence,
-          status: "reserved",
-          reservedUsd: planned.reservedUsd,
-          inputTokenBound,
-          maxOutputTokens: planned.maxOutputTokens,
-        });
-        await tx
-          .update(runs)
-          .set({ reservedUsd: sql`${runs.reservedUsd} + ${planned.reservedUsd}` })
-          .where(and(eq(runs.id, run.id), eq(runs.orgId, run.orgId)));
-        await appendRunEvents(tx, run, [{ type: "model.reserved", payload: reservation }]);
-        return reservation;
-      });
-    },
-    async commitModel(reservation, events, costUsd, uncertain) {
-      if (!Number.isFinite(costUsd) || costUsd < 0) throw new Error("invalid model cost");
-      const roundedCost = Math.ceil(costUsd * 1e6 - 1e-8) / 1e6;
+    startModel: () =>
+      db.transaction(async (tx) => startModelIn(tx, await lockOwnedRun(tx, lease, run), lease)),
+    async commitModel(attempt, events, costUsd, uncertain) {
       await db.transaction(async (tx) => {
         const current = await lockOwnedRun(tx, lease, run);
-        const [call] = await tx
-          .update(modelCalls)
-          .set({ status: uncertain ? "unknown" : "settled", costUsd: roundedCost })
-          .where(
-            and(
-              eq(modelCalls.id, reservation.call_id),
-              eq(modelCalls.orgId, run.orgId),
-              eq(modelCalls.runId, run.id),
-              eq(modelCalls.status, "reserved"),
-              eq(modelCalls.fence, lease.fence),
-            ),
-          )
-          .returning();
-        if (!call) return;
-        // Unknown calls retain the unaccounted allowance, even if the stream reported partial usage.
-        const released = uncertain ? Math.min(roundedCost, call.reservedUsd) : call.reservedUsd;
-        const spent = Math.round((current.spentUsd + roundedCost) * 1e6) / 1e6;
-        const reserved = Math.max(0, Math.round((current.reservedUsd - released) * 1e6) / 1e6);
-        await tx
-          .update(runs)
-          .set({ spentUsd: spent, reservedUsd: reserved })
-          .where(and(eq(runs.id, run.id), eq(runs.orgId, run.orgId)));
-        if (!uncertain || roundedCost > 0)
-          await tx.insert(usageRecords).values({
-            orgId: run.orgId,
-            endUserId: run.endUserId,
-            runId: run.id,
-            kind: "model",
-            amountUsd: roundedCost,
-            meta: { executor: "pi", model: run.model, call_id: call.id, uncertain },
-          });
-        await appendRunEvents(tx, run, [
-          ...events,
-          {
-            type: "spend.updated",
-            payload: {
-              call_id: call.id,
-              spent_usd: spent,
-              reserved_usd: reserved,
-              budget_usd: current.budgetUsd,
-            },
-          },
-        ]);
-        if (roundedCost > call.reservedUsd && !isTerminal(current.status)) {
-          await tx
-            .update(runs)
-            .set({
-              status: "failed",
-              error: "provider_exceeded_reservation",
-              completedAt: new Date(),
-            })
-            .where(and(eq(runs.id, run.id), eq(runs.orgId, run.orgId)));
-          await appendRunEvents(tx, run, [
-            { type: "run.failed", payload: { error: "provider_exceeded_reservation" } },
-          ]);
-        }
+        // The default executor settles only its own lease's attempt.
+        const [own] = await tx
+          .select({ id: modelCalls.id })
+          .from(modelCalls)
+          .where(and(eq(modelCalls.id, attempt.call_id), eq(modelCalls.fence, lease.fence)));
+        if (!own) return;
+        await commitModelIn(tx, current, attempt, events, costUsd, uncertain);
       });
     },
     async startTool(id, name) {
@@ -197,38 +227,9 @@ export function createCheckpoints(
       });
     },
     async commitTool(events, after, metadata) {
-      const exceeded = checkWorkspaceLimits(after, metadata);
-      if (exceeded) throw new Error(exceeded);
       await db.transaction(async (tx) => {
         const current = await lockOwnedRun(tx, lease, run);
-        alive(current);
-        const changes = await saveWorkspace(tx, run.id, files, after, run.orgId);
-        const revision = current.workspaceRevision + 1;
-        await tx
-          .update(runs)
-          .set({ workspaceRevision: revision, workspaceMetadata: metadata })
-          .where(and(eq(runs.id, run.id), eq(runs.orgId, run.orgId)));
-        await appendRunEvents(tx, run, [
-          ...events,
-          ...changes.map((change) => ({
-            type: "file.changed",
-            payload: {
-              ...change,
-              revision,
-              sha256:
-                change.action === "write"
-                  ? createHash("sha256")
-                      .update(after[change.path] ?? new Uint8Array())
-                      .digest("hex")
-                  : undefined,
-              content_base64:
-                change.action === "write"
-                  ? Buffer.from(after[change.path] ?? new Uint8Array()).toString("base64")
-                  : undefined,
-            },
-          })),
-          { type: "workspace.committed", payload: { revision, metadata } },
-        ]);
+        await commitToolIn(tx, current, events, files, after, metadata);
       });
       files = after;
     },

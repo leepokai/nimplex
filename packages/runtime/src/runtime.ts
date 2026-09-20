@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { join } from "node:path";
 import {
   type CancelQueuedInputResponse,
   type ModelProvider,
@@ -16,15 +17,21 @@ import {
   type ExecutorEvent,
   type ExecutorRunContext,
   isTerminal,
-  listPricedModels,
   type RunExecutor,
 } from "@nimplex/core";
 import { getSandboxProvider, listSandboxProviders } from "@nimplex/sandbox";
 import { createCheckpoints } from "./checkpoints.ts";
-import { codexModels, resolveLocalModel } from "./models.ts";
+import { piModels, resolveLocalModel } from "./models.ts";
 import { createNativeBash } from "./native-bash.ts";
 import { piExecutor } from "./pi-executor.ts";
+import {
+  describePiExtensions,
+  type LoadedPiExtensions,
+  loadPiExtensions,
+  type PiExtensionSummary,
+} from "./pi-extensions/bridge.ts";
 import { type HarnessTurnControls, runHarnessTurn } from "./pi-harness-engine.ts";
+import { localHarnessHost } from "./pi-harness-local-host.ts";
 import { publicEvents, Sessions } from "./sessions.ts";
 import { RuntimeStore, type SessionEngine, type StoredSession, type StoredTurn } from "./store.ts";
 
@@ -40,6 +47,12 @@ export interface RuntimeOptions {
   executor?: RunExecutor;
   /** Test seam: awaited after each harness-engine commit before execution continues. */
   afterCommit?: (turnId: string, events: ExecutorEvent[]) => Promise<void> | void;
+  /**
+   * Pi extensions for harness sessions. User extensions under `<agentDir>/extensions`
+   * always load; `<cwd>/.pi/extensions` executes only when `projectTrusted(cwd)` says so.
+   * Absent means no extension code runs.
+   */
+  extensions?: { agentDir: string; projectTrusted: (cwd: string) => boolean };
 }
 
 /** Session execution authority. Product surfaces issue commands and observe committed events. */
@@ -50,6 +63,7 @@ export class NimplexRuntime {
     { id: string; abort: AbortController; done: Promise<void>; controls?: HarnessTurnControls }
   >();
   private readonly listeners = new Set<() => void>();
+  private readonly loadedExtensions = new Map<string, Promise<LoadedPiExtensions>>();
   private closing = false;
   private closePromise?: Promise<void>;
   constructor(private readonly options: RuntimeOptions) {
@@ -220,22 +234,39 @@ export class NimplexRuntime {
       if (session.engine === "pi-harness") {
         await assertActive();
         const credential = await this.options.credential(turn.result.model.provider, abort.signal);
+        if (
+          credential.billingMode === "subscription" &&
+          turn.result.billing_mode !== "subscription"
+        ) {
+          this.store.transaction(() => {
+            const current = this.store.turn(id);
+            if (current.result.status !== "running")
+              throw new Error(`turn is ${current.result.status}`);
+            current.result.billing_mode = "subscription";
+            this.store.saveTurn(current);
+          });
+          turn.result.billing_mode = "subscription";
+        }
+        const extensions = await this.extensionsFor(session.cwd);
         await assertActive();
-        const outcome = await runHarnessTurn({
-          store: this.store,
-          turn,
-          credential,
-          nativeBash,
-          signal: abort.signal,
-          notify: this.notify,
-          onControls: (controls) => {
-            const task = this.active.get(turn.sessionId);
-            if (task?.id === id) task.controls = controls;
-          },
-          afterCommit: this.options.afterCommit
-            ? (events) => this.options.afterCommit?.(id, events)
-            : undefined,
-        });
+        const outcome = await runHarnessTurn(
+          localHarnessHost({
+            store: this.store,
+            turn,
+            credential,
+            extensions,
+            nativeBash,
+            signal: abort.signal,
+            notify: this.notify,
+            onControls: (controls) => {
+              const task = this.active.get(turn.sessionId);
+              if (task?.id === id) task.controls = controls;
+            },
+            afterCommit: this.options.afterCommit
+              ? (events) => this.options.afterCommit?.(id, events)
+              : undefined,
+          }),
+        );
         // A cancel or timer landing after Pi settled the turn must not reclassify it.
         if (outcome.status !== "completed") abort.signal.throwIfAborted();
         this.finish(id, outcome.status, outcome.status === "completed" ? null : outcome.error);
@@ -281,11 +312,7 @@ export class NimplexRuntime {
           : String(error);
       this.finish(
         id,
-        reason === "canceled"
-          ? "canceled"
-          : reason === "budget_exceeded" || reason === "duration_exceeded"
-            ? "killed"
-            : "failed",
+        reason === "canceled" ? "canceled" : reason === "duration_exceeded" ? "killed" : "failed",
         reason,
       );
       if (abort.signal.aborted && reason !== "runtime_interrupted")
@@ -387,27 +414,63 @@ export class NimplexRuntime {
     if (!bytes) throw new Error(`File not found: ${path}`);
     return bytes;
   }
-  models() {
-    const apiModels = listPricedModels()
-      .filter((m) => m.provider === "anthropic")
-      .map((m) => ({
-        provider: m.provider,
-        model: m.model,
-        input_per_mtok: m.rate.inputPerMtok,
-        output_per_mtok: m.rate.outputPerMtok,
-        billing_mode: "api" as const,
-      }));
-    return [
-      ...apiModels,
-      ...codexModels().map((m) => ({
-        provider: "openai-codex" as const,
-        model: `openai-codex/${m.id}`,
-        input_per_mtok: null,
-        output_per_mtok: null,
-        billing_mode: "subscription" as const,
-      })),
-    ];
+  /** Loaded Pi extensions for a project directory; a load error fails the turn that needs them. */
+  private extensionsFor(cwd: string): Promise<LoadedPiExtensions | undefined> {
+    const sources = this.options.extensions;
+    if (!sources) return Promise.resolve(undefined);
+    const projectTrusted = sources.projectTrusted(cwd);
+    const key = `${projectTrusted ? "trusted" : "untrusted"}:${cwd}`;
+    let loading = this.loadedExtensions.get(key);
+    if (!loading) {
+      loading = loadPiExtensions({
+        cwd,
+        agentDir: sources.agentDir,
+        projectTrusted,
+        authPath: join(this.options.directory, "pi-extension-auth.json"),
+      }).then((loaded) => {
+        if (loaded.result.errors.length)
+          throw new Error(
+            `Pi extensions failed to load: ${loaded.result.errors
+              .map((error) => `${error.path}: ${error.error}`)
+              .join("; ")}`,
+          );
+        return loaded;
+      });
+      this.loadedExtensions.set(key, loading);
+      loading.catch(() => this.loadedExtensions.delete(key));
+    }
+    return loading;
   }
+  /** Describe the extensions a harness turn in `cwd` would run, including load errors. */
+  async extensions(cwd: string): Promise<PiExtensionSummary | undefined> {
+    const sources = this.options.extensions;
+    if (!sources) return undefined;
+    try {
+      const loaded = await this.extensionsFor(cwd);
+      return loaded ? describePiExtensions(loaded) : undefined;
+    } catch (error) {
+      return {
+        projectTrusted: sources.projectTrusted(cwd),
+        extensions: [],
+        errors: [{ path: cwd, error: error instanceof Error ? error.message : String(error) }],
+      };
+    }
+  }
+  /** Drop loaded extension modules so the next harness turn reloads them from disk. */
+  reloadExtensions() {
+    this.loadedExtensions.clear();
+  }
+  models() {
+    return piModels().map((model) => ({
+      provider: model.provider,
+      model: model.provider === "anthropic" ? model.id : `${model.provider}/${model.id}`,
+      input_per_mtok: model.provider === "openai-codex" ? null : model.cost.input,
+      output_per_mtok: model.provider === "openai-codex" ? null : model.cost.output,
+      billing_mode:
+        model.provider === "openai-codex" ? ("subscription" as const) : ("api" as const),
+    }));
+  }
+
   async sandboxProviders() {
     return Promise.all(
       listSandboxProviders()

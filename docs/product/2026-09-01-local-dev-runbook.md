@@ -1,5 +1,12 @@
 # Local development runbook: topology, startup, and acceptance
 
+> **2026-09-20:** USD budgets have been removed. Run migration 0012 before starting
+> updated hosted services. `pnpm e2e` now checks uncapped execution/accounting,
+> unknown outcomes, cancellation and recovery. Earlier budget acceptance below
+> is historical. Local harness sessions select from Pi's installed provider catalog;
+> use `nimplex login PROVIDER` and `NIMPLEX_ENGINE=pi-harness nimplex --model provider/id`.
+
+
 > The default terminal/headless architecture now follows [the 09-13 local runtime](2026-09-13-local-runtime.md). Hosted API/worker behavior and earlier acceptance records below retain their historical or hosted scope.
 
 > **Current acceptance as of 2026-09-10:** start Postgres with `docker compose up -d`, then run `pnpm e2e`. Use `pnpm e2e:e2b` for real E2B or `pnpm e2e:real` for Haiku + E2B.
@@ -148,4 +155,4 @@ NIMPLEX_BASE_URL=http://<ip> NIMPLEX_API_KEY=nmx_live_... ANTHROPIC_API_KEY=sk-a
 
 ## 8. Terminal client
 
-With services running, use `nimplex login`, then `nimplex`. `NIMPLEX_ENGINE=pi-harness` opts new sessions into the experimental Pi harness engine described in [the local runtime contract](2026-09-13-local-runtime.md#pi-harness-engine-opt-in-added-2026-09-17); existing sessions keep their recorded engine. `/help` lists commands. Conversations and preferences are stored under the user configuration directory, scoped to API endpoint and organization. Follow-ups seed new runs from the preceding terminal run. `@path` attaches selected local text files; local AGENTS.md/CLAUDE.md are reread on each task. Runtime code changes require service restart unless a separate development watcher is configured.
+With services running, use `nimplex login` (Anthropic), `nimplex login openai` or `nimplex login codex`, then `nimplex`. `NIMPLEX_ENGINE=pi-harness` opts new sessions into the experimental Pi harness engine described in [the local runtime contract](2026-09-13-local-runtime.md#pi-harness-engine-opt-in-added-2026-09-17); existing sessions keep their recorded engine. OpenAI models (`--model openai/gpt-5.4-mini`) and `--thinking LEVEL` require that engine. `/help` lists commands. Conversations and preferences are stored under the user configuration directory, scoped to API endpoint and organization. Follow-ups seed new runs from the preceding terminal run. `@path` attaches selected local text files; local AGENTS.md/CLAUDE.md are reread on each task. Runtime code changes require service restart unless a separate development watcher is configured.

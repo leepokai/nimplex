@@ -170,6 +170,17 @@ export class Sessions {
     const requestId = request.requestId ?? randomUUID();
     request = { ...request, requestId };
     const selected = resolveLocalModel(request.model);
+    // The legacy executor only speaks Anthropic Messages and Codex, without thinking.
+    if (session.engine !== "pi-harness") {
+      if (selected.provider !== "anthropic" && selected.provider !== "openai-codex")
+        throw new Error(
+          "Additional Pi providers run on the Pi harness engine. Start a new session with NIMPLEX_ENGINE=pi-harness.",
+        );
+      if (request.thinking && request.thinking !== "off")
+        throw new Error(
+          "Thinking levels run on the Pi harness engine. Start a new session with NIMPLEX_ENGINE=pi-harness.",
+        );
+    }
     const turn: StoredTurn = {
       sessionId,
       request,
@@ -193,10 +204,8 @@ export class Sessions {
         },
         sandbox: { provider: request.sandbox },
         sandbox_ref: null,
-        budget_usd: selected.billing === "subscription" ? null : request.budget,
         billing_mode: selected.billing,
         spent_usd: 0,
-        reserved_usd: 0,
         workspace_revision: parent?.result.workspace_revision ?? 0,
         sandbox_generation: session.sandboxGeneration,
         error: null,

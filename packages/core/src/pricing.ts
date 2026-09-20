@@ -2,7 +2,7 @@
 //
 // Prices are data; a future versioned DB table can preserve this interface.
 // Estimates for unknown models use an intentionally expensive FALLBACK_RATE.
-// Paid runtime dispatch separately requires a known rate before making a request.
+// Accounting estimates do not control model dispatch.
 
 import type { ModelProvider } from "@nimplex/contracts";
 
@@ -46,10 +46,19 @@ const ANTHROPIC_RATES: Record<string, TokenRate> = {
   "claude-haiku-4-5": { inputPerMtok: 1, outputPerMtok: 5, ...ANTHROPIC_DEFAULTS },
 };
 
+/** OpenAI API prices recorded on 2026-09-18 from Pi's model catalog; cached input bills at 10%. */
 const OPENAI_RATES: Record<string, TokenRate> = {
   "gpt-5": { inputPerMtok: 1.25, outputPerMtok: 10, cacheReadMultiplier: 0.1 },
   "gpt-5-mini": { inputPerMtok: 0.25, outputPerMtok: 2, cacheReadMultiplier: 0.1 },
   "gpt-5-nano": { inputPerMtok: 0.05, outputPerMtok: 0.4, cacheReadMultiplier: 0.1 },
+  "gpt-5.4": { inputPerMtok: 2.5, outputPerMtok: 15, cacheReadMultiplier: 0.1 },
+  "gpt-5.4-mini": { inputPerMtok: 0.75, outputPerMtok: 4.5, cacheReadMultiplier: 0.1 },
+  "gpt-5.4-nano": { inputPerMtok: 0.2, outputPerMtok: 1.25, cacheReadMultiplier: 0.1 },
+  "gpt-5.5": { inputPerMtok: 5, outputPerMtok: 30, cacheReadMultiplier: 0.1 },
+  "gpt-5.6-luna": { inputPerMtok: 0.2, outputPerMtok: 1.2, cacheReadMultiplier: 0.1 },
+  "gpt-5.6-sol": { inputPerMtok: 4, outputPerMtok: 20, cacheReadMultiplier: 0.1 },
+  "gpt-5.6-terra": { inputPerMtok: 2, outputPerMtok: 12, cacheReadMultiplier: 0.1 },
+  "gpt-6-astra": { inputPerMtok: 10, outputPerMtok: 50, cacheReadMultiplier: 0.1 },
 };
 
 const PRICES: Record<ModelProvider, Record<string, TokenRate>> = {
@@ -65,7 +74,7 @@ export const FALLBACK_RATE: TokenRate = { inputPerMtok: 15, outputPerMtok: 75 };
 
 export function lookupRate(provider: ModelProvider, model: string): TokenRate | null {
   const table = PRICES[provider];
-  const exact = table[model];
+  const exact = table?.[model];
   if (exact) return exact;
   // Normalize provider prefixes (OpenRouter) and dated model suffixes.
   const bare = model.includes("/") ? (model.split("/").at(-1) ?? model) : model;
@@ -98,7 +107,7 @@ export function listPricedModels(): { provider: ModelProvider; model: string; ra
   const out: { provider: ModelProvider; model: string; rate: TokenRate }[] = [];
   for (const [provider, table] of Object.entries(PRICES) as [
     ModelProvider,
-    typeof PRICES.anthropic,
+    Record<string, TokenRate>,
   ][]) {
     for (const [model, rate] of Object.entries(table)) out.push({ provider, model, rate });
   }
@@ -107,4 +116,9 @@ export function listPricedModels(): { provider: ModelProvider; model: string; ra
 
 function roundUsdPrecise(value: number): number {
   return Math.round(value * 1e9) / 1e9;
+}
+
+/** Round accumulated accounting amounts to the database USD micro-unit. */
+export function roundUsd(value: number): number {
+  return Math.round(value * 1e6) / 1e6;
 }

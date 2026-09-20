@@ -33,7 +33,7 @@ describe("continuationMessages", () => {
   it("keeps prior context before a new user prompt without including billing events", () => {
     const prior = [{ role: "user", content: "Earlier" }];
     const messages = continuationMessages({ input: "Next", prior_messages: prior }, [
-      { type: "model.reserved", payload: { reserved_usd: 1 } },
+      { type: "model.started", payload: { call_id: "attempt" } },
     ]);
     expect(messages.map((m) => m.content)).toEqual(["Earlier", "Next"]);
     expect(prior).toHaveLength(1);

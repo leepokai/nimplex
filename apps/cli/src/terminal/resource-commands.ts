@@ -8,6 +8,7 @@ export const resourceCommands: Command[] = [
     description: "Reload preferences, prompts, skills and context; retain this session",
     action: (c) => {
       c.reloadResources();
+      c.client.reloadExtensions();
       c.view.notice(
         "Resources reloaded",
         [
@@ -17,7 +18,7 @@ export const resourceCommands: Command[] = [
           "Conversation, draft, running tasks and workspace retained.",
           ...c.resources.diagnostics,
           "",
-          "TypeScript extensions, tool implementations, UI source and .env are not reloaded. Restart for those changes.",
+          "Pi extensions reload on the next harness turn. Built-in tool implementations, UI source and .env are not reloaded. Restart for those changes.",
         ].join("\n"),
       );
     },

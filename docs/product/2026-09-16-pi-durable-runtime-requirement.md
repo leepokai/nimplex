@@ -76,7 +76,8 @@ cloud session continuity is implemented. Track capability gaps in the
 4. Verify representative Pi extensions and session operations without bypassing
    durable state, cancellation, or ownership rules.
 5. Verify restart and reconnect behavior, plus stale-owner rejection for hosted
-   takeover, with existing budget, workspace, and tenant checks preserved.
+   takeover, with existing accounting, workspace, and tenant checks preserved.
+   USD budget enforcement was removed by Kevin on 2026-09-20.
 
 Implementation topology, database selection, and migration planning remain
 separate decisions. This record changes documentation only.

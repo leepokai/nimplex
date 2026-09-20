@@ -148,11 +148,7 @@ export const runs = pgTable(
     sandboxState: jsonb("sandbox_state").$type<SandboxSessionState>(),
     /** { instructions, input, credentials } */
     config: jsonb("config").notNull(),
-    /** Hard USD cap: the run is killed once spend reaches it. */
-    budgetUsd: usd("budget_usd"),
     spentUsd: usd("spent_usd").notNull().default(sql`0`),
-    /** Outstanding unsettled reservations. */
-    reservedUsd: usd("reserved_usd").notNull().default(sql`0`),
     maxDurationSeconds: integer("max_duration_seconds"),
     /** Atomic event sequence counter used by appendRunEvents. */
     eventSeq: integer("event_seq").notNull().default(0),
@@ -214,7 +210,8 @@ export const workItems = pgTable(
     runId: uuid("run_id")
       .notNull()
       .references(() => runs.id, { onDelete: "cascade" }),
-    kind: text("kind", { enum: ["model", "tool"] }).notNull(),
+    /** `harness` leases one whole Pi harness operation; `model`/`tool` schedule per turn. */
+    kind: text("kind", { enum: ["model", "tool", "harness"] }).notNull(),
     payload: jsonb("payload"),
     status: text("status", { enum: ["pending", "leased", "done", "failed"] })
       .notNull()
@@ -223,10 +220,15 @@ export const workItems = pgTable(
     leaseOwner: text("lease_owner"),
     leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
     attempts: integer("attempts").notNull().default(0),
+    /** Earliest claim time; a scheduled run waits here in `pending` until then. */
+    availableAt: timestamp("available_at", { withTimezone: true }).notNull().defaultNow(),
     createdAt: createdAt(),
     completedAt: timestamp("completed_at", { withTimezone: true }),
   },
-  (t) => [index("work_items_claim").on(t.status, t.leaseExpiresAt)],
+  (t) => [
+    index("work_items_claim").on(t.status, t.leaseExpiresAt),
+    index("work_items_available").on(t.status, t.availableAt),
+  ],
 );
 
 // A reservation is created before dispatch. Unknown outcomes retain their entire allowance.
@@ -244,11 +246,8 @@ export const modelCalls = pgTable(
       .notNull()
       .references(() => workItems.id),
     fence: integer("fence").notNull(),
-    status: text("status", { enum: ["reserved", "settled", "unknown"] }).notNull(),
-    reservedUsd: usd("reserved_usd").notNull(),
+    status: text("status", { enum: ["started", "settled", "unknown"] }).notNull(),
     costUsd: usd("cost_usd"),
-    inputTokenBound: integer("input_token_bound").notNull(),
-    maxOutputTokens: integer("max_output_tokens").notNull(),
     createdAt: createdAt(),
   },
   (t) => [index("model_calls_run").on(t.orgId, t.runId)],

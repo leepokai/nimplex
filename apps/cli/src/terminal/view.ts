@@ -219,7 +219,7 @@ export class View implements TerminalView {
       const native = c.session.turns.some((turn) =>
         turn.events.some((e) => e.type === "tier.escalated"),
       );
-      const detail = `${model} · ${native ? "native workspace" : "just-bash"}`;
+      const detail = `${model}${c.preferences.thinking ? ` · thinking ${c.preferences.thinking}` : ""} · ${native ? "native workspace" : "just-bash"}`;
       const left = truncateToWidth(detail, Math.max(1, width - visibleWidth(right) - 4));
       lines.push(
         t.muted(

@@ -104,12 +104,10 @@ describe("Pi-compatible declarative resources", () => {
       mode: "read_only",
       expanded: false,
       statusline: true,
-      budget: 0.2,
       timeout: 180,
     };
     writeFileSync(join(store.directory, "preferences.json"), '{"budget":-1}');
-    expect(() => store.preferences(defaults, true)).toThrow("budget");
-    expect(store.preferences(defaults).budget).toBe(0.2);
+    expect(store.preferences(defaults, true)).not.toHaveProperty("budget");
     writeFileSync(join(store.directory, "preferences.json"), '{"theme":["dark"]}');
     expect(() => store.preferences(defaults, true)).toThrow("theme");
     writeFileSync(join(store.directory, "preferences.json"), '{"theme":"light"}');

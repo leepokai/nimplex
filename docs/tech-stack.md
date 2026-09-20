@@ -29,11 +29,14 @@ An opt-in per-session engine (`NIMPLEX_ENGINE=pi-harness`) runs Pi's public
 AgentHarness over the same SQLite transaction; the hosted schema carries the
 matching organization-scoped Pi Storage tables (`pi_*`, migration 0010).
 
-Local model access includes Anthropic API credentials and Pi's Codex subscription
-OAuth provider. Subscription requests retain the shared executor but record quota
-usage separately from API charges. See [subscription access](product/2026-09-15-codex-subscription.md)
-and [Pi compatibility](product/2026-09-15-pi-compatibility.md). Hosted model dispatch
-remains Anthropic-only.
+Local harness sessions use the complete installed Pi built-in model catalog and
+provider adapters. Pi ModelRuntime resolves additional provider authentication,
+headers and cloud environment configuration; existing Anthropic/OpenAI API-key
+files and Codex OAuth remain compatible. USD budgets are removed. Pi supplies
+usage/cost estimates; call IDs and atomic commits preserve accounting and recovery.
+The legacy executor still supports Anthropic/Codex. Hosted API-key dispatch accepts
+Anthropic on both engines and OpenAI on the harness engine; other hosted providers
+remain outside the current integration.
 
 ## Optional hosted backend
 
@@ -86,7 +89,7 @@ Read these before changing the related dependencies:
 ## Runtime implemented on 2026-09-10
 
 - Pi 0.85.1 and just-bash 3.4.2; each model response and each tool has a durable checkpoint.
-- `model_calls` tracks reservations, settlements, and unknown outcomes; settled and reserved amounts are returned separately.
+- `model_calls` tracks dispatch intents, settlements, and unknown outcomes; `spent_usd` records settled estimates. No monetary reservation or budget fields remain.
 - Native routing parses the complete shell AST. E2B uses durable supervisor journals, pause/resume, and reconstruction after confirmed environment loss.
 - The workspace preserves binary data, empty directories, symlinks, and permissions; `node_modules` is a reconstructible native cache.
 - Context uses digest-verified extractive checkpoints. Original logs remain available through paginated `read_output` / `read_log` tools.

@@ -1,20 +1,70 @@
+import { join } from "node:path";
+import { ProjectTrustStore } from "@earendil-works/pi-coding-agent";
+import { piAgentDirectory } from "../local-runtime.ts";
 import type { Command } from "./commands.ts";
 
 export const unsupportedPiCommands: Record<string, string> = {
-  thinking:
-    "Extended thinking is disabled in this runtime's accounting path. /model selects supported models; /thinking is not implemented.",
   "scoped-models":
     "Model cycling scopes are not implemented. Use /model to select from the priced catalog.",
   llama:
     "The runtime currently uses Anthropic-compatible Messages endpoints; llama.cpp router management is not implemented.",
-  trust:
-    "Executable Pi extensions are not loaded. Declarative prompts and skill instructions can be inspected with /prompts and /skills.",
   import:
     "Pi JSONL import is not implemented. /resume opens nimplex SQLite sessions; /export writes Markdown.",
   share: "Public/gist sharing is not implemented. /export saves a local Markdown transcript.",
 };
 
 export const piCommands: Command[] = [
+  {
+    name: "trust",
+    group: "Settings",
+    description: "Trust this project's .pi/extensions for Pi harness sessions (shared with Pi)",
+    action: async (c, arg) => {
+      const store = new ProjectTrustStore(piAgentDirectory());
+      const value =
+        arg ||
+        (await c.view.choose("Trust project folder?", [
+          {
+            value: "yes",
+            label: "Trust",
+            description: `Execute ${c.session.cwd}/.pi/extensions in harness sessions`,
+          },
+          { value: "no", label: "Do not trust", description: "Only user extensions run" },
+        ]));
+      if (!value) return;
+      if (!["yes", "no"].includes(value)) throw new Error("Choose yes or no.");
+      store.set(c.session.cwd, value === "yes");
+      c.client.reloadExtensions();
+      c.view.notice(
+        "Project trust",
+        `${c.session.cwd}: ${value === "yes" ? "trusted" : "not trusted"}. Recorded in ${join(piAgentDirectory(), "trust.json")}; the next Pi harness turn reloads extensions.`,
+      );
+    },
+  },
+  {
+    name: "extensions",
+    group: "Settings",
+    description: "List the Pi extensions a harness turn in this project would run",
+    action: async (c) => {
+      const summary = await c.client.extensions(c.session.cwd);
+      if (!summary) {
+        c.view.notice("Extensions", "This runtime does not load Pi extensions.");
+        return;
+      }
+      c.view.notice(
+        "Extensions",
+        [
+          `Project .pi/extensions: ${summary.projectTrusted ? "trusted" : "not trusted (/trust)"}`,
+          `Engine: ${c.session.engine === "pi-harness" ? "Pi harness" : "legacy executor (extensions do not run; start with NIMPLEX_ENGINE=pi-harness)"}`,
+          ...summary.extensions.map(
+            (extension) =>
+              `• ${extension.path}${extension.tools.length ? ` · tools: ${extension.tools.join(", ")}` : ""}${extension.events.length ? ` · events: ${extension.events.join(", ")}` : ""}`,
+          ),
+          ...summary.errors.map((error) => `✗ ${error.path}: ${error.error}`),
+          summary.extensions.length || summary.errors.length ? "" : "No extensions loaded.",
+        ].join("\n"),
+      );
+    },
+  },
   {
     name: "session",
     group: "Conversation",
@@ -102,7 +152,7 @@ export const piCommands: Command[] = [
           "• In-process Pi runtime, SQLite sessions and session-scoped workspaces.",
           "• Prompt blocks, tool previews, multiline composer, keyboard profiles and draft stash.",
           "",
-          "Executable extensions and source-code hot replacement are not implemented.",
+          "Pi extensions run in Pi harness sessions: user extensions always, project .pi/extensions after /trust. Source-code hot replacement is not implemented.",
         ].join("\n"),
       ),
   },

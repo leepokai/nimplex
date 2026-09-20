@@ -130,10 +130,10 @@ export class Controller {
         ]
           .filter(Boolean)
           .join("\n\n"),
-        budget: preferences.budget,
         timeout: preferences.timeout,
         contextMode,
         executionMode: preferences.mode,
+        ...(preferences.thinking ? { thinking: preferences.thinking } : {}),
         attachments,
       });
       turn.runId = result.runId;

@@ -22,7 +22,7 @@ entry points share session operations, durable events, tools, and recovery.
 - Keep one active turn per session. Independent sessions may execute concurrently.
 - Retain just-bash-first routing and isolated native execution. Share the native
   environment between turns in a session, with explicit lifecycle cleanup.
-- Preserve conservative model reservations and uncertain outcome accounting.
+- Preserve durable model dispatch intents and uncertain outcome accounting.
   Resume interrupted work explicitly from committed facts; never blindly replay
   native effects after loss of their execution journal.
 - Make both the TUI and one-shot/piped commands work without remote services.
@@ -96,42 +96,59 @@ Commit contract of the harness engine:
 - Pi's session writes and nimplex's projection share one SQLite transaction. The
   `SqlitePiStorage` adapter runs inside `RuntimeStore.transaction`; the turn must
   still be running at both ends of the transaction.
-- Reservation is enforced inside the `Models` port Pi must call, not in a Pi hook:
-  `pi-harness-models.ts` reserves from the final serialized payload, injects the
-  budgeted `max_tokens`, and turns a denied reservation into an error response
-  that Pi settles without any HTTP dispatch. The reservation event records Pi's
-  usage id so a restart can settle it.
+- Dispatch intent is enforced inside the `Models` port Pi must call, not in an
+  observer hook. `pi-harness-models.ts` awaits `model.started` before provider IO;
+  commit failure prevents dispatch. The event records Pi's usage ID for recovery.
+  Pi owns provider output limits and thinking settings; no USD limit is enforced.
 - Pi's usage row, its assistant entry and nimplex's `model.call`/`spend.updated`
-  events commit together. A zero-usage error response without a reservation is a
-  denied or pre-dispatch failure; any other unreserved usage rejects the commit.
+  events commit together. A zero-usage error response without a dispatch intent is a
+  denied or pre-dispatch failure; any other unidentified usage rejects the commit.
 - A tool outcome commits with the workspace snapshot, `tool.result`, `file.changed`
   and `workspace.committed` in the same transaction as Pi's pending result entry.
   Tool intents append `tool.started` in Pi's intent transaction.
 - Turn identity is the Pi operation id. Cancellation and the duration cap request
   a durable Pi abort; runtime shutdown closes the harness without cancelling, so
   the operation stays resumable through `resumeTurn`.
-- After a crash during a model request, recovery settles the reservation as
+- After a crash during a model request, recovery settles the attempt as
   `model.unknown` (retained) and Pi's durable retry issues one new identified
   attempt. Committed responses and tool outcomes are never re-requested or
   re-executed; native bash reattaches to its supervisor journal by tool call id.
 - Summary requests (compaction, branch summaries, overflow recovery) pass through
-  the same reservation boundary via `completeSimple`; Pi settles their usage without
+  the same dispatch boundary via `completeSimple`; Pi settles their usage without
   storing the response, so the engine keeps the delivered response until that
   settlement and records `model.call` with `step: "summary"` plus
   `context.compacted`. Pi never settles an interrupted summary request, so recovery
-  records that reservation as `model.unknown` before resuming. Truncated or
+  records that attempt as `model.unknown` before resuming. Truncated or
   tool-calling summaries are rejected as in legacy Pi through `pi-summary-models.ts`.
 - Context modes map to Pi operations owned by the turn: `reset` navigates the lane
   to its root (`<turn>:reset`) so the earlier history stays in Pi's tree, and
   `compact` runs a manual compaction (`<turn>:compact`) that summarizes everything
   before the latest turn boundary. Both happen before the prompt is accepted and
   survive a crash between them and the prompt.
-- Codex subscription models run through the same engine with zero-dollar
-  reservations and no injected output cap; quota remains provider-managed.
+- All built-in Pi provider/model pairs are selectable on the harness engine through
+  `provider/model`. Bare IDs remain Anthropic aliases. Dispatch delegates to Pi's
+  provider implementation; nimplex does not duplicate the provider/API routing map.
+  Dynamic/custom catalogs and extension-registered providers remain outside this slice.
+- Additional providers resolve credentials through Pi ModelRuntime, including provider
+  headers and ambient cloud configuration. `nimplex login PROVIDER` uses Pi's login
+  flow. Existing Anthropic/OpenAI credential files and isolated Codex login remain
+  compatible. Subscription usage has zero per-request API charges.
+- `thinking` sets Pi's level for the current turn; the lane's model and level are
+  synchronized before prompt acceptance. Provider thinking/output defaults remain
+  intact. The legacy executor still supports Anthropic/Codex and rejects other
+  providers and levels other than `off`; the default engine has not changed.
 - Branching copies the Pi path that ended the selected turn into the branch's own
   Pi scope using Pi's fork policy (`SqlitePiStorage.importForkSync`), in the same
   transaction as the branch record. Entries keep their identity and timestamps;
   operations, pending inbox items and results are not copied.
+- Pi extensions (`RuntimeOptions.extensions`, set by the CLI to Pi's agent directory
+  and trust store) load once per project directory and trust state. User extensions
+  always run; `<cwd>/.pi/extensions` runs only when `projectTrusted(cwd)` is true.
+  Their tools join the harness with `replay: "never"`, their behavior hooks bridge to
+  harness hooks, and extension-sent messages enter the lane inbox as steer or
+  follow-up input. A module load error fails the turn before any provider request;
+  handler errors Pi isolated fail the turn after Pi settles it. The legacy executor
+  never loads extensions. See `pi-extensions/bridge.ts` for the unsupported list.
 - `queueInput(sessionId, { kind: "steer" | "followUp", text })` queues durable
   in-flight input on the active turn's lane; `cancelQueuedInput(sessionId, entryId)`
   removes it while Pi has not consumed it. Pi delivers steering at its next
@@ -143,7 +160,9 @@ Commit contract of the harness engine:
 Verified by `pi-harness-engine.test.ts`, `pi-harness-engine-crash.test.ts`
 (real SIGKILL after a committed response, after a committed tool result, during a
 request, after a committed cancel request and during a summary request),
-`pi-harness-models.test.ts`, `codex.test.ts`, the host-transaction and fork cases
+`pi-harness-models.test.ts`, `codex.test.ts`, `providers.test.ts` (OpenAI dispatch
+and settlement, thinking parameters, per-turn model switch, legacy refusals), the
+host-transaction and fork cases
 in `pi-storage/sqlite-durability.test.ts` and the engine suite, the steering case
 in `apps/cli/src/terminal/controller.test.ts`, and the `NIMPLEX_ENGINE` case in
 `apps/cli/src/cli.test.ts`.
@@ -155,14 +174,14 @@ execution of harness sessions (the PostgreSQL Storage adapter exists in
 and native/browser snapshot recovery. Pi's own history is the context
 authority for these sessions; the nimplex extractive checkpoint is not applied to
 them. Automatic threshold compaction uses Pi's default settings and is exercised
-only through Pi's own tests; the budgeted summary path is verified through manual
+only through Pi's own tests; the durable summary path is verified through manual
 compaction.
 
 Models settle before tools; tool outcomes, file changes, metadata, and workspace
 revisions commit atomically. Interrupted processes leave their committed state
 recoverable. Opening the runtime does not make model calls: `/resume` explicitly
 confirms continuation, and headless `--resume SESSION_ID` explicitly requests it.
-Unknown model reservations remain allocated. An interrupted turn cannot be forked
+Unknown model attempts remain recorded. An interrupted turn cannot be forked
 or superseded before explicit recovery; this preserves branch snapshot immutability
 and avoids overlapping an unknown native command with new work.
 
@@ -199,11 +218,11 @@ snapshot cannot rewrite runtime events or workspace data.
 | Persistent conversation and branch isolation | `packages/runtime/src/runtime.test.ts`; reopen SQLite, continue the same session, preserve source snapshot |
 | Atomic workspace/event commits | `packages/runtime/src/store.test.ts`; injected transaction failure leaves both unchanged |
 | Ownership and explicit crash recovery | Real CLI SIGKILL/restart test, second-owner rejection, interrupted-turn tests |
-| Budget, cancellation, read-only execution | Real Pi plus fake-model tests; zero unaffordable dispatch, retained unknown allowance, rejected write tool |
+| Uncapped accounting, cancellation, read-only execution | Real Pi plus fake-model tests; spending above the former cap, durable unknown outcomes, rejected write tool |
 | Native lifetime and dependency reuse | Docker and E2B integration: first turn cache counter 1, second turn 2 with one environment; independent branch counter 1; close deletes both |
 | No native replay after journal loss | `packages/runtime/src/native-bash.test.ts`, with both missing and cleared provider state |
 | Credential isolation and setup | Endpoint-binding/mode-600 tests; project `.env` CLI test; PTY hidden-entry/login/logout test |
-| Hosted recovery remains compatible | `pnpm e2e` and `pnpm e2e:e2b`: VFS/native crashes, lease takeover, budget/cancel races, provider pause failures and environment loss |
+| Hosted recovery remains compatible | `pnpm e2e` and `pnpm e2e:e2b`: VFS/native crashes, lease takeover, accounting/cancel races, provider pause failures and environment loss |
 | Static and automated checks | `pnpm check` across 12 packages; `pnpm lint`; `pnpm test`: 79 passed / 37 skipped; frozen offline install |
 | Real terminal behavior | Haiku wrote/read HELLO, then changed/read WORLD in the same session; total model cost $0.008427; diff/model/status menus, 120-column and 64-column layouts, clean exit |
 
@@ -211,3 +230,45 @@ The 37 default skips consist of 36 optional provider conformance cases and one
 native session integration case. The latter was separately run against both Docker
 and E2B. Local verification artifacts are under ignored
 `sandbox/local-runtime-terminal-verification/`. No commit or push was performed.
+
+## Budget removal and Pi providers (2026-09-20)
+
+The USD budget feature is removed from local requests, hosted requests/responses,
+SDK settings, CLI flags, and terminal preferences. Earlier dated budget guarantees
+are superseded. Usage/cost records, duration limits, ownership and tool commit
+barriers remain. SQLite schema version 4 prevents older readers from restoring
+budget enforcement; current readers strip obsolete budget JSON without rewriting
+historical events. Legacy `model.reserved` records remain recoverable as dispatch
+intents. Accepted request deduplication normalizes old budget fields on read.
+
+Hosted migration 0012 converts pending `model_calls.status` from `reserved` to
+`started` and drops budget/reservation amount and token-bound columns. New intent
+events are `model.started`; `model.unknown` continues to identify lost responses.
+Run migrations before starting the updated hosted API and workers.
+
+Hosted cancellation remains immediately visible as a terminal run. Its fenced
+worker then commits Pi cancellation and usage settlement without admitting new
+model/tool dispatch or publishing a canceled tool's partial workspace. If the
+worker dies, its successor completes that cleanup before releasing the work item.
+Continuation requests return `409 parent_run_cleanup_pending` while the parent's
+harness work item is still pending or leased; retry after cleanup completes.
+
+The legacy Anthropic executor also validates model IDs against Pi's catalog before
+dispatch. Unknown IDs fail explicitly instead of recording an unpriced request as
+zero-cost usage.
+
+### Usage accounting scope
+
+Kevin confirmed that usage accounting must include both model API-key credit
+consumption and sandbox resource usage. Removing monetary budgets does not remove
+this requirement. Model token counts and catalog-based cost estimates are
+implemented; provider invoices remain authoritative, and subscription quota is
+separate from API-key charges.
+
+Sandbox usage metering and cost accounting are not implemented yet. The existing
+`spent_usd` field is model cost only, not a combined total. The follow-up must
+record sandbox usage with units and provider identity, distinguish measured usage
+from estimated charges and unavailable prices, and preserve durable deduplication
+across retries, cancellation and recovery. Missing sandbox prices must not appear
+as zero-cost usage. Model and sandbox subtotals must remain distinguishable when
+reporting combined usage.
