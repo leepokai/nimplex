@@ -108,11 +108,11 @@ Unavailable providers skip: missing Docker daemon or E2B/DAYTONA/VERCEL credenti
 
 Managed Agents and claude-code × E2B CLI-in-a-box tests were removed on 09-06 (harness decision §6, historical commit 0f32657). Native Tier 2 integration was scheduled for Slice 2 and subsequently implemented in the 09-10 runtime.
 
-## 7. Self-hosted cloud development: VPS, Compose, GitHub Actions
+## 7. Self-hosted cloud development: VPS and Compose
 
-Added 09-03. The historical sandbox could reach a public API without tunnels. One VPS, suggested 2 vCPU/4 GB on DigitalOcean/Linode, runs Postgres/API/worker/Caddy through deploy/docker-compose.yml. The deploy-dev GitHub workflow builds two images, pushes GHCR, then SSH runs pull → migrate → up. Console was excluded, with SDK acceptance instead.
+Added 09-03. The historical sandbox could reach a public API without tunnels. One VPS, suggested 2 vCPU/4 GB on DigitalOcean/Linode, runs Postgres/API/worker/Caddy through deploy/docker-compose.yml. The deploy-dev GitHub workflow that built two images, pushed GHCR and ran pull → migrate → up over SSH was removed on 2026-09-20 together with `.github/`. Nothing publishes new images to GHCR now: build the `Dockerfile` targets and push them to a registry the Compose file can pull from before deploying. Console was excluded, with SDK acceptance instead.
 
-Branch decision: daily work on dev auto-deploys to api-dev.nimplex.dev; main is reserved for production. A future production workflow uses the same Compose with api.nimplex.dev and Neon settings. Promote stable work from dev to main.
+Branch decision, superseded on 2026-09-20: the dev branch and its automatic deployment no longer exist. main is the only branch and has no deployment workflow; deployments are manual.
 
 Recorded deployment: DO droplet nimplex-dev, sgp1, s-2vcpu-4gb, IP 168.144.107.105. On 09-03 commit 0f32657, Caddy TLS and four healthy services passed; cloud claude-code-e2b.ts completed in 19 seconds at $0.049 without a tunnel.
 
@@ -126,11 +126,6 @@ mkdir -p /opt/nimplex && cd /opt/nimplex
 # Development email signup is optional and must be intentionally enabled.
 echo $GHCR_TOKEN | docker login ghcr.io -u leepokai --password-stdin
 docker compose pull && docker compose run --rm migrate && docker compose up -d
-
-# Repository secrets for the dev-branch deployment workflow
-gh secret set DEPLOY_HOST --body <ip>
-gh secret set DEPLOY_USER --body <ssh-user-in-docker-group>
-gh secret set DEPLOY_SSH_KEY < ~/.ssh/nimplex_deploy
 
 # Historical combination test, removed on 09-06
 NIMPLEX_BASE_URL=http://<ip> NIMPLEX_API_KEY=nmx_live_... ANTHROPIC_API_KEY=sk-ant-... \
