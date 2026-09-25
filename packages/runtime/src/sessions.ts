@@ -4,6 +4,7 @@ import type { RunEvent, SessionSnapshot, StartTurnRequest } from "@nimplex/contr
 import { checkWorkspaceLimits, continuationMessages, isTerminal } from "@nimplex/core";
 import { resolveLocalModel } from "./models.ts";
 import { SqlitePiStorage } from "./pi-storage/sqlite.ts";
+import { sandboxUsageSummary } from "./sandbox-usage.ts";
 import {
   PI_LANE,
   PI_TENANT,
@@ -35,6 +36,7 @@ export class Sessions {
   }
   getSession(id: string): SessionSnapshot {
     const session = this.store.session(id);
+    const sandbox = sandboxUsageSummary(session);
     return {
       version: 1,
       id,
@@ -43,6 +45,7 @@ export class Sessions {
       updatedAt: session.updatedAt,
       parentSessionId: session.parentSessionId,
       ...(session.engine ? { engine: session.engine } : {}),
+      ...(sandbox ? { sandbox } : {}),
       headRunId: session.turnIds.at(-1),
       turns: session.turnIds.map((id) => {
         const turn = this.store.turn(id);

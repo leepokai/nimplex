@@ -3,7 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExecutorRunContext, RunExecutor } from "@nimplex/core";
 import { NimplexRuntime } from "@nimplex/runtime";
+import { getSandboxProvider, registerSandboxProvider } from "@nimplex/sandbox";
+import { fakeSandboxProvider, nativeExecutor } from "@nimplex/testkit";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { sandboxEstimate } from "../display.ts";
 import { Controller, type TerminalView } from "./controller.ts";
 import { type Preferences, SessionStore } from "./store.ts";
 
@@ -59,6 +62,44 @@ function fixture(hold = false) {
 }
 
 describe("terminal runtime client", () => {
+  it("shows sandbox cost that settles while the session is open", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "nimplex-controller-"));
+    cleanup.push(() => rmSync(dir, { recursive: true, force: true }));
+    const original = getSandboxProvider("e2b");
+    registerSandboxProvider(
+      fakeSandboxProvider({ root: join(dir, "boxes"), backendId: "e2b", pause: true }).provider,
+    );
+    cleanup.push(() => registerSandboxProvider(original));
+    const client = new NimplexRuntime({
+      directory: join(dir, "state"),
+      credential: () => ({ apiKey: "fake", baseUrl: null }),
+      engine: "pi-executor",
+      executor: nativeExecutor(1),
+    });
+    cleanup.push(() => client.close());
+    const controller = new Controller(
+      client,
+      new SessionStore(client, dir, dir),
+      { ...preferences, sandbox: "e2b" },
+      dir,
+    );
+    controller.view = {
+      refresh: vi.fn(),
+      notice: vi.fn(),
+      choose: async () => undefined,
+      draft: vi.fn(),
+      externalEditor: async (text) => text,
+      exit: vi.fn(),
+      authenticate: async () => {},
+    };
+    expect(controller.session.sandbox).toBeUndefined();
+    await controller.submit("Run a native command");
+    expect(controller.session.turns.at(-1)?.result?.status).toBe("completed");
+    expect(controller.session.sandbox?.seconds).toBeGreaterThan(0);
+    expect(sandboxEstimate(controller.session.sandbox, "short")).toMatch(
+      /^sandbox ~\$[0-9.]+ \(est\.\)$/,
+    );
+  });
   it("reloads resources without replacing running owners; invalid reloads keep the previous snapshot", async () => {
     const f = fixture(true);
     vi.stubEnv("PI_CODING_AGENT_DIR", join(f.dir, "pi"));

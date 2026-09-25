@@ -1,6 +1,6 @@
 import { createInterface } from "node:readline/promises";
 import { HELP, readOptions } from "./config.ts";
-import { eventText, runText } from "./display.ts";
+import { eventText, runText, sandboxEstimate } from "./display.ts";
 import { openRuntime } from "./local-runtime.ts";
 import { attachmentsFromPrompt, projectInstructions } from "./terminal/local-io.ts";
 
@@ -35,7 +35,7 @@ export async function main() {
       console.log(runText(await runtime.stopTurn(options.kill)));
       return;
     }
-    const watch = async (id: string) => {
+    const watch = async (id: string, sessionId?: string) => {
       active = id;
       if (interrupted) await runtime.stopTurn(id);
       for await (const event of runtime.events(id)) {
@@ -43,6 +43,8 @@ export async function main() {
         if (text) console.log(text);
       }
       console.log(runText(runtime.getTurn(id)));
+      const sandbox = sessionId && sandboxEstimate(runtime.sandboxUsage(sessionId));
+      if (sandbox) console.log(`Session ${sandbox}`);
       if (runtime.getTurn(id).status !== "completed") process.exitCode = 1;
       active = undefined;
     };
@@ -68,7 +70,7 @@ export async function main() {
     console.log(`Session: ${session.id}`);
     if (!prompt && options.resume) {
       const result = await runtime.resumeTurn(session.id);
-      await watch(result.runId);
+      await watch(result.runId, session.id);
       return;
     }
     const execute = async (text: string) => {
@@ -91,7 +93,7 @@ export async function main() {
       });
       console.log(`Turn: ${turn.runId}`);
       console.log(`Request: ${turn.requestId}`);
-      await watch(turn.runId);
+      await watch(turn.runId, session.id);
     };
     if (prompt) {
       await execute(prompt);

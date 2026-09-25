@@ -1,5 +1,10 @@
 import { stripVTControlCharacters } from "node:util";
-import type { RunEvent, RunResponse } from "@nimplex/contracts";
+import type {
+  RunEvent,
+  RunResponse,
+  SandboxUsageRecord,
+  SandboxUsageSummary,
+} from "@nimplex/contracts";
 
 export function safeText(value: unknown, limit = 12000): string {
   const text = typeof value === "string" ? value : (JSON.stringify(value) ?? "");
@@ -41,6 +46,35 @@ export function eventText(event: RunEvent, outputLimit = 2000): string | undefin
     default:
       return undefined;
   }
+}
+
+/**
+ * The one wording for estimated sandbox cost. `short` fits the status line; both keep the
+ * estimate label and flag time that was unobserved, unpriced or is still running.
+ */
+export function sandboxEstimate(
+  summary: SandboxUsageSummary | undefined,
+  style: "full" | "short" = "full",
+): string | undefined {
+  // A zero-rate sandbox (local Docker) has nothing to estimate.
+  if (!summary || summary.free) return undefined;
+  const amount = summary.usd.toFixed(summary.usd < 0.01 ? 6 : 4);
+  const unpriced = Math.ceil(summary.unpriced_seconds);
+  const notes: [boolean, string, string][] = [
+    [summary.uncertain, "includes unobserved time", "unobserved"],
+    [unpriced > 0, `${unpriced}s unpriced`, "unpriced"],
+    [Boolean(summary.running_since), `running since ${summary.running_since}`, "running"],
+  ];
+  const flagged = notes
+    .filter(([shown]) => shown)
+    .map(([, full, short]) => (style === "full" ? full : short));
+  return `sandbox ~$${amount} (est.${flagged.length ? `; ${flagged.join("; ")}` : ""})`;
+}
+
+/** One settled sandbox interval for the usage breakdown. */
+export function sandboxIntervalText(record: SandboxUsageRecord): string {
+  const cost = record.cost_usd === null ? "unpriced" : `~$${record.cost_usd.toFixed(6)}`;
+  return `  ${safeText(record.provider)} ${record.reason} ${record.seconds.toFixed(1)}s ${cost}${record.uncertain ? " (unobserved)" : ""}`;
 }
 
 export function runText(run: RunResponse): string {

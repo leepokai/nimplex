@@ -36,8 +36,9 @@ openai supplies the OpenAI one. Native providers need their own setup.
 Follow-ups share a session workspace and sandbox. @path attaches selected local
 text files; the local project is not automatically copied into /workspace.
 Closing nimplex stops execution; /resume can explicitly resume interrupted work.
-Model usage is recorded; sandbox usage accounting is not implemented yet. Codex subscription models use
-provider-managed quota; --timeout still applies.`;
+Model usage is recorded. Sandbox cost is an estimate: running seconds times the
+provider's list rate (E2B by allocated size; Docker is $0), shown as "(est.)". Codex
+subscription models use provider-managed quota; --timeout still applies.`;
 
 export function readOptions(argv: string[]) {
   const { values, positionals } = parseArgs({

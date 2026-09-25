@@ -194,8 +194,11 @@ See [file structure](docs/file-structure.md) and [tech stack](docs/tech-stack.md
 - **Legacy sessions stay on the legacy engine.** Sessions created on
   `pi-executor` before 2026-09-25 are not converted to `pi-harness`; they keep
   Anthropic/Codex only and have no thinking levels or extensions.
-- **Sandbox usage is not metered.** `spent_usd` is model cost only; sandbox,
-  storage and network usage are not recorded.
+- **Sandbox cost is an estimate.** `spent_usd` is model cost. Sandbox running time
+  is recorded per session in SQLite and priced at the provider's list rate (E2B by
+  the sandbox's allocated vCPU and RAM; Docker counts as $0), shown as
+  `sandbox ~$… (est.)`. Time nobody observed is flagged and capped at the E2B
+  lifetime; storage and network are not metered; the provider's bill is authoritative.
 - **Extensions are partially bridged.** Harness sessions load user extensions
   and, after `/trust`, project extensions: registered tools, system-prompt and
   provider-request hooks, tool call/result hooks and steer/follow-up messages

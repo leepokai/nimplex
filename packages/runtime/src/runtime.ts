@@ -8,6 +8,8 @@ import {
   queueInputRequest,
   type RunEvent,
   type RunFileEntry,
+  type SandboxUsageRecord,
+  type SandboxUsageSummary,
   type SessionSnapshot,
   type StartTurnRequest,
   type StartTurnResponse,
@@ -32,6 +34,14 @@ import {
 } from "./pi-extensions/bridge.ts";
 import { type HarnessTurnControls, runHarnessTurn } from "./pi-harness-engine.ts";
 import { localHarnessHost } from "./pi-harness-local-host.ts";
+import {
+  inheritSandboxUsage,
+  recordDiscardedSandbox,
+  recordSandboxTransition,
+  sandboxUsageSummary,
+  settleSandboxUsage,
+  startSandboxUsage,
+} from "./sandbox-usage.ts";
 import { publicEvents, Sessions } from "./sessions.ts";
 import { RuntimeStore, type SessionEngine, type StoredSession, type StoredTurn } from "./store.ts";
 
@@ -85,6 +95,9 @@ export class NimplexRuntime {
           { type: "run.interrupted", payload: { reason: "runtime_interrupted", resumable: true } },
         ]);
       }
+      // No runtime watched a sandbox that was left running while it was down.
+      for (const session of this.store.sessionsWithOpenSandboxInterval())
+        inheritSandboxUsage(this.store, session);
     });
   }
   private assertOpen() {
@@ -97,6 +110,14 @@ export class NimplexRuntime {
   createSession(cwd: string, title?: string): SessionSnapshot {
     this.assertOpen();
     return this.sessions.createSession(cwd, title, this.options.engine ?? "pi-harness");
+  }
+  /** Settled estimated sandbox cost and any running interval; a single-record read. */
+  sandboxUsage(sessionId: string): SandboxUsageSummary | undefined {
+    return sandboxUsageSummary(this.store.session(sessionId));
+  }
+  /** The session's settled sandbox intervals, oldest first. */
+  sandboxUsageRecords(sessionId: string): SandboxUsageRecord[] {
+    return this.store.sandboxUsage(sessionId);
   }
   getSession(id: string): SessionSnapshot {
     return this.sessions.getSession(id);
@@ -192,11 +213,12 @@ export class NimplexRuntime {
       if (this.store.turn(id).result.status !== "running")
         throw new Error("Turn is no longer running.");
     };
+    const sandboxProvider = getSandboxProvider(turn.request.sandbox);
     const nativeBash = createNativeBash({
       id,
       sandbox: turn.result.sandbox,
       sandboxState: session.sandboxState,
-      provider: getSandboxProvider(turn.request.sandbox),
+      provider: sandboxProvider,
       assertActive,
       readEvents: async () => this.store.events(id),
       generation: async () => this.store.session(turn.sessionId).sandboxGeneration,
@@ -205,7 +227,30 @@ export class NimplexRuntime {
         this.store.transaction(() => this.store.append(id, events));
         this.notify();
       },
-      recordState: async (state, reset) => {
+      sandboxDiscarded: async (state, startedAt, stopped) => {
+        this.store.transaction(() =>
+          recordDiscardedSandbox(this.store, turn.sessionId, {
+            provider: turn.request.sandbox,
+            state,
+            startedAt,
+            stopped,
+            turnId: id,
+            maxRunMs: sandboxProvider.maxRunMs,
+          }),
+        );
+        this.notify();
+      },
+      sandboxTransition: async (transition, at) => {
+        this.store.transaction(() =>
+          recordSandboxTransition(this.store, turn.sessionId, transition, {
+            turnId: id,
+            at,
+            maxRunMs: sandboxProvider.maxRunMs,
+          }),
+        );
+        this.notify();
+      },
+      recordState: async (state, reset, startedAt) => {
         await assertActive();
         this.store.transaction(() => {
           const current = this.store.session(turn.sessionId);
@@ -213,6 +258,7 @@ export class NimplexRuntime {
           current.sandboxProvider = turn.request.sandbox;
           current.sandboxGeneration++;
           this.store.saveSession(current);
+          startSandboxUsage(this.store, turn.sessionId, startedAt, sandboxProvider.maxRunMs);
           const live = this.store.turn(id);
           live.result.sandbox_generation = current.sandboxGeneration;
           live.result.sandbox_ref = String(
@@ -348,6 +394,7 @@ export class NimplexRuntime {
     try {
       await getSandboxProvider(session.sandboxProvider).delete(session.sandboxState);
       this.store.transaction(() => {
+        settleSandboxUsage(this.store, sessionId, "deleted");
         const s = this.store.session(sessionId);
         delete s.sandboxState;
         this.store.saveSession(s);

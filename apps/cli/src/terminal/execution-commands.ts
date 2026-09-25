@@ -1,3 +1,4 @@
+import { sandboxEstimate, sandboxIntervalText } from "../display.ts";
 import type { Command } from "./commands.ts";
 
 export const executionCommands: Command[] = [
@@ -151,16 +152,18 @@ export const executionCommands: Command[] = [
     name: "cost",
     aliases: ["usage"],
     group: "Run",
-    description: "Show actual model usage for this conversation",
+    description: "Show model usage and estimated sandbox cost for this conversation",
     action: (c) => {
       const turns = c.session.turns;
       const spent = turns.reduce((sum, t) => sum + (t.result?.spent_usd ?? 0), 0);
       const subscriptionTurns = turns.filter(
         (t) => t.result?.billing_mode === "subscription",
       ).length;
+      const sandbox = sandboxEstimate(c.client.sandboxUsage(c.session.id));
+      const intervals = c.client.sandboxUsageRecords(c.session.id).map(sandboxIntervalText);
       c.view.notice(
-        "Model usage",
-        `${turns.length} turns · $${spent.toFixed(6)} recorded API model cost\n${turns.map((t, i) => `${i + 1}. ${t.result?.status ?? "pending"}  ${t.result?.billing_mode === "subscription" ? "subscription" : `$${(t.result?.spent_usd ?? 0).toFixed(6)}`}`).join("\n")}\n${subscriptionTurns} subscription turns: token usage is recorded in events; remaining plan quota is not available here.\nSandbox/storage/network charges are separate. In-flight or unknown reservations are not final charges.`,
+        "Usage",
+        `${turns.length} turns · $${spent.toFixed(6)} recorded API model cost${sandbox ? ` · ${sandbox}` : ""}\n${turns.map((t, i) => `${i + 1}. ${t.result?.status ?? "pending"}  ${t.result?.billing_mode === "subscription" ? "subscription" : `$${(t.result?.spent_usd ?? 0).toFixed(6)}`}`).join("\n")}${intervals.length ? `\nSandbox intervals:\n${intervals.join("\n")}` : ""}\n${subscriptionTurns} subscription turns: token usage is recorded in events; remaining plan quota is not available here.\nSandbox cost is an estimate: running seconds times the provider's list rate, settled when the sandbox pauses or is deleted. Storage and network are not metered. In-flight or unknown model attempts are not final charges.`,
       );
     },
   },

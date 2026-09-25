@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { ProjectTrustStore } from "@earendil-works/pi-coding-agent";
+import { sandboxEstimate } from "../display.ts";
 import { piAgentDirectory } from "../local-runtime.ts";
 import type { Command } from "./commands.ts";
 
@@ -81,6 +82,7 @@ export const piCommands: Command[] = [
           `Turns: ${c.session.turns.length}`,
           `Events: ${c.session.turns.reduce((sum, turn) => sum + turn.events.length, 0)}`,
           `Recorded API cost: $${c.session.turns.reduce((sum, turn) => sum + (turn.result?.spent_usd ?? 0), 0).toFixed(6)} (subscription quota excluded)`,
+          `Sandbox: ${sandboxEstimate(c.client.sandboxUsage(c.session.id)) ?? "none metered"}`,
           `State: ${c.active ? "working" : "idle"}`,
           "Storage: local SQLite",
           `Resource snapshot: ${c.resources.loadedAt ?? "not loaded"}`,

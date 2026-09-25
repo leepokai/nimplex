@@ -5,6 +5,8 @@ import type {
   AcceptedTurnInput,
   RunEvent,
   RunResponse,
+  SandboxUsageRecord,
+  SandboxUsageSummary,
   StartTurnRequest,
   WorkspaceMetadata,
 } from "@nimplex/contracts";
@@ -32,6 +34,14 @@ export interface StoredSession {
   sandboxState?: SandboxSessionState;
   sandboxProvider?: "docker" | "e2b";
   sandboxGeneration: number;
+  /** When the current sandbox last started running; cleared when it pauses or is deleted. */
+  sandboxRunningSince?: string;
+  /** The open interval includes time nobody observed, e.g. across a restart or failed pause. */
+  sandboxRunningUncertain?: boolean;
+  /** When the provider will stop the running sandbox; set at each create or resume. */
+  sandboxRunDeadline?: string;
+  /** Running total of the `sandbox_usage` ledger, so snapshots never rescan it. */
+  sandboxUsage?: SandboxUsageSummary;
   engine?: SessionEngine;
 }
 export interface StoredTurn {
@@ -93,6 +103,10 @@ export class RuntimeStore {
         CREATE TABLE IF NOT EXISTS turns (id TEXT PRIMARY KEY, data TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS events (turn_id TEXT NOT NULL, seq INTEGER NOT NULL, data TEXT NOT NULL, PRIMARY KEY(turn_id,seq));
         CREATE TABLE IF NOT EXISTS workspaces (turn_id TEXT PRIMARY KEY, files TEXT NOT NULL, metadata TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS sandbox_usage (
+          session_id TEXT NOT NULL, seq INTEGER NOT NULL, data TEXT NOT NULL,
+          PRIMARY KEY(session_id, seq)
+        );
         CREATE TABLE IF NOT EXISTS accepted_inputs (
           session_id TEXT NOT NULL,
           request_id TEXT NOT NULL,
@@ -175,6 +189,30 @@ export class RuntimeStore {
       .prepare("SELECT data FROM events WHERE turn_id=? AND seq>? ORDER BY seq")
       .all(id, after)
       .map((row) => JSON.parse(String(row.data)) as RunEvent);
+  }
+  /** Sessions whose sandbox was left running, without parsing every session. */
+  sessionsWithOpenSandboxInterval(): StoredSession[] {
+    return this.db
+      .prepare(
+        "SELECT data FROM sessions WHERE json_extract(data,'$.sandboxRunningSince') IS NOT NULL",
+      )
+      .all()
+      .map((row) => JSON.parse(String(row.data)) as StoredSession);
+  }
+  /** Append-only per-session ledger of settled sandbox running intervals. */
+  appendSandboxUsage(sessionId: string, record: SandboxUsageRecord) {
+    const row = this.db
+      .prepare("SELECT COALESCE(MAX(seq),-1) AS seq FROM sandbox_usage WHERE session_id=?")
+      .get(sessionId);
+    this.db
+      .prepare("INSERT INTO sandbox_usage VALUES (?,?,?)")
+      .run(sessionId, Number(row?.seq ?? -1) + 1, JSON.stringify(record));
+  }
+  sandboxUsage(sessionId: string): SandboxUsageRecord[] {
+    return this.db
+      .prepare("SELECT data FROM sandbox_usage WHERE session_id=? ORDER BY seq")
+      .all(sessionId)
+      .map((row) => JSON.parse(String(row.data)) as SandboxUsageRecord);
   }
   append(id: string, events: ExecutorEvent[]) {
     const row = this.db

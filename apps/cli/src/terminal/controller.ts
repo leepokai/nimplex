@@ -164,10 +164,13 @@ export class Controller {
     })) {
       if (event.type === "run.snapshot") continue;
       turn.events.push(event);
+      if (event.type.startsWith("sandbox."))
+        task.session.sandbox = this.client.sandboxUsage(task.session.id);
       this.store.save(task.session);
       this.changed();
     }
     turn.result = await this.client.getTurn(turn.runId);
+    task.session.sandbox = this.client.sandboxUsage(task.session.id);
     this.store.save(task.session);
     this.changed();
   }

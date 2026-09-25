@@ -114,7 +114,45 @@ export function listPricedModels(): { provider: ModelProvider; model: string; ra
   return out;
 }
 
-function roundUsdPrecise(value: number): number {
+/** Estimated sandbox compute price while a sandbox is running (not paused or deleted). */
+export interface SandboxRate {
+  usdPerSecond: number;
+  /** What the rate assumes, shown with every estimate. */
+  basis: string;
+}
+
+// E2B bills per second while a sandbox runs, by allocated vCPU and RAM; paused and killed
+// sandboxes are not billed (docs.e2b.dev/faq/calculate-sandbox-price, read 2026-09-25).
+// The default sandbox is 2 vCPU / 512 MiB. The provider bills from its own records, so
+// every sandbox cost here is an estimate.
+const E2B_VCPU_SECOND = 0.000014;
+const E2B_GIB_SECOND = 0.0000045;
+const E2B_DEFAULT_SIZE = { cpuCount: 2, memoryMB: 512 };
+
+export interface SandboxSize {
+  cpuCount?: number;
+  memoryMB?: number;
+  /** A custom template whose size was not reported cannot be priced. */
+  customTemplate?: boolean;
+}
+
+/** The running rate for a provider's sandbox, or null when its size or rate is unknown. */
+export function lookupSandboxRate(provider: string, size: SandboxSize = {}): SandboxRate | null {
+  if (provider === "docker") return { usdPerSecond: 0, basis: "local Docker" };
+  if (provider !== "e2b") return null;
+  const reported = size.cpuCount !== undefined && size.memoryMB !== undefined;
+  if (!reported && size.customTemplate) return null;
+  const { cpuCount, memoryMB } = reported
+    ? { cpuCount: size.cpuCount ?? 0, memoryMB: size.memoryMB ?? 0 }
+    : E2B_DEFAULT_SIZE;
+  return {
+    usdPerSecond: cpuCount * E2B_VCPU_SECOND + (memoryMB / 1024) * E2B_GIB_SECOND,
+    basis: `E2B list price for ${cpuCount} vCPU / ${memoryMB} MiB${reported ? "" : " (default size)"}`,
+  };
+}
+
+/** Round to the nano-dollar: small sandbox and cache amounts vanish at the micro unit. */
+export function roundUsdPrecise(value: number): number {
   return Math.round(value * 1e9) / 1e9;
 }
 

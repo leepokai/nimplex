@@ -16,7 +16,7 @@ import {
   visibleWidth,
   wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
-import { safeText } from "../display.ts";
+import { safeText, sandboxEstimate } from "../display.ts";
 import { CommandRegistry } from "./commands.ts";
 import { Composer } from "./composer.ts";
 import { type Choice, type Controller, errorMessage, type TerminalView } from "./controller.ts";
@@ -215,7 +215,9 @@ export class View implements TerminalView {
         .replace(/^claude-/, "")
         .replace(/-([0-9])([0-9])$/, " $1.$2");
       const subscription = c.preferences.model.startsWith("openai-codex/");
-      const right = `${subscription ? "subscription" : `$${spent.toFixed(4)}`}${c.tasks.size ? ` · ${c.tasks.size} active` : ""}`;
+      const estimate = sandboxEstimate(c.session.sandbox, "short");
+      const sandbox = estimate ? ` + ${estimate}` : "";
+      const right = `${subscription ? "subscription" : `$${spent.toFixed(4)}`}${sandbox}${c.tasks.size ? ` · ${c.tasks.size} active` : ""}`;
       const native = c.session.turns.some((turn) =>
         turn.events.some((e) => e.type === "tier.escalated"),
       );

@@ -75,6 +75,11 @@ export interface SandboxCreateArgs {
 export interface SandboxProvider {
   readonly backendId: string;
   /**
+   * Longest a sandbox can keep running after create() or resume() before the provider
+   * stops it (E2B's lifetime, which both calls set). Bounds estimates of unobserved time.
+   */
+  readonly maxRunMs?: number;
+  /**
    * Return a reason for missing configuration, credentials, or infrastructure.
    * The API checks availability during creation to fail before execution.
    */

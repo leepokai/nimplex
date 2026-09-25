@@ -13,6 +13,7 @@ import {
   shellQuote,
 } from "@nimplex/core";
 import { z } from "zod";
+import type { SandboxTransition } from "./sandbox-usage.ts";
 
 // The supervisor survives the worker connection. Its journal lets another worker collect a
 // finished command without executing it twice. All journals and outputs are untrusted data.
@@ -121,7 +122,20 @@ export interface NativeHost {
   sandboxState: unknown;
   provider: SandboxProvider;
   assertActive(): Promise<void>;
-  recordState(state: SandboxSessionState, reset: boolean): Promise<void>;
+  /** Records a newly created sandbox; `startedAt` is when creation began. */
+  recordState(state: SandboxSessionState, reset: boolean, startedAt: Date): Promise<void>;
+  /**
+   * Usage metering follows provider transitions and must be recorded even when the turn
+   * is no longer active: a sandbox that paused stops costing whether or not the turn
+   * survives. Never gate it on assertActive(). `at` is when the provider call began, so
+   * resume latency is metered like creation.
+   */
+  sandboxTransition(transition: SandboxTransition, at?: Date): Promise<void>;
+  /**
+   * Meters a created sandbox that the turn could not record because it ended meanwhile.
+   * `stopped` is false when stopping it failed, so it may still be running.
+   */
+  sandboxDiscarded(state: SandboxSessionState, startedAt: Date, stopped: boolean): Promise<void>;
   readEvents(): Promise<ExecutorEvent[]>;
   appendEvents(events: ExecutorEvent[]): Promise<void>;
   generation(): Promise<number>;
@@ -134,9 +148,27 @@ export function createNativeBash(host: NativeHost): NonNullable<ExecutorRunConte
   let state = isSandboxSessionState(host.sandboxState) ? host.sandboxState : null;
   let session: SandboxSession | null = null;
   const provider = host.provider;
-  async function recordState(next: SandboxSessionState, reset: boolean) {
-    await host.recordState(next, reset);
+  async function recordState(next: SandboxSessionState, reset: boolean, startedAt: Date) {
+    await host.recordState(next, reset, startedAt);
     state = next;
+  }
+  // An idle sandbox is paused so it stops billing, after every command that reached a
+  // running sandbox, including failed ones.
+  async function pauseIdle() {
+    if (!provider.pause || session === null) return undefined;
+    const target = session;
+    // A failed response may still have paused the box. Reconnect before the next tool,
+    // and keep metering it as running but uncertain until an observed transition.
+    session = null;
+    let paused = true;
+    try {
+      await provider.pause(target.state);
+    } catch (error) {
+      paused = false;
+      console.warn(`[worker] sandbox pause failed for run ${run.id}`, error);
+    }
+    await host.sandboxTransition(paused ? "paused" : "unobserved");
+    return paused;
   }
 
   return async (id, command, files, metadata, signal, timeoutMs) => {
@@ -146,43 +178,52 @@ export function createNativeBash(host: NativeHost): NonNullable<ExecutorRunConte
     const unavailable = await provider.unavailableReason();
     if (unavailable) throw new Error(unavailable);
     const hadState = state !== null;
-    if (!session && state) {
-      try {
-        session = await provider.resume(state);
-      } catch (error) {
-        if (!(error instanceof SandboxMissingError)) throw error;
-        session = null;
+    let active: SandboxSession | null = null;
+    try {
+      if (!session && state) {
+        const resumedAt = new Date();
+        try {
+          session = await provider.resume(state);
+        } catch (error) {
+          if (!(error instanceof SandboxMissingError)) throw error;
+          session = null;
+          await host.sandboxTransition("missing");
+        }
+        if (session) {
+          await host.sandboxTransition("running", resumedAt);
+          await host.appendEvents([
+            { type: "sandbox.resumed", payload: { provider: provider.backendId } },
+          ]);
+        }
       }
-      if (session)
-        await host.appendEvents([
-          { type: "sandbox.resumed", payload: { provider: provider.backendId } },
-        ]);
-    }
-    if (!session) {
-      const created = await provider.create({
-        label: `nimplex-${run.id}`,
-        image: run.sandbox.image,
-        cpu: run.sandbox.cpu,
-        memoryMb: run.sandbox.memory_mb,
-        workdir: "/workspace",
-        environment: {},
-      });
-      try {
-        await recordState(created.state, hadState);
-      } catch (error) {
-        await created
-          .stop()
-          .catch((cleanupError) =>
-            console.error(
-              `[worker] unrecorded sandbox cleanup failed for run ${run.id}`,
-              created.state.providerState,
-              cleanupError,
-            ),
+      if (!session) {
+        const startedAt = new Date();
+        const created = await provider.create({
+          label: `nimplex-${run.id}`,
+          image: run.sandbox.image,
+          cpu: run.sandbox.cpu,
+          memoryMb: run.sandbox.memory_mb,
+          workdir: "/workspace",
+          environment: {},
+        });
+        try {
+          await recordState(created.state, hadState, startedAt);
+        } catch (error) {
+          const stopped = await created.stop().then(
+            () => true,
+            (cleanupError) => {
+              console.error(
+                `[worker] unrecorded sandbox cleanup failed for run ${run.id}`,
+                created.state.providerState,
+                cleanupError,
+              );
+              return false;
+            },
           );
-        throw error;
-      }
-      session = created;
-      {
+          await host.sandboxDiscarded(created.state, startedAt, stopped);
+          throw error;
+        }
+        session = created;
         const history = await host.readEvents();
         const dispatched = history.some(
           (event) =>
@@ -194,68 +235,81 @@ export function createNativeBash(host: NativeHost): NonNullable<ExecutorRunConte
             "environment.reset: previous command outcome is unknown because its sandbox was lost; do not blindly repeat external side effects",
           );
       }
-    }
-    let active = session;
-    const reconnect = async () => {
-      await host.assertActive();
-      signal.throwIfAborted();
-      active = await provider.resume(active.state);
-      session = active;
-    };
-    const runtimeDirectory = `/tmp/nimplex-runtime-${run.id}`;
-    const directory = await active.exec({
-      cmd: `mkdir -p ${shellQuote(runtimeDirectory)}`,
-      timeoutMs: 10000,
-      signal,
-    });
-    if (directory.exitCode !== 0) throw new Error("cannot create sandbox runtime directory");
-    const job = `${runtimeDirectory}/${createHash("sha256").update(`${run.id}:${id}`).digest("hex")}`;
-    await host.appendEvents([
-      {
-        type: "tier.escalated",
-        payload: {
-          tool_call_id: id,
-          provider: provider.backendId,
-          generation: await host.generation(),
+      let current: SandboxSession = session;
+      active = current;
+      const reconnect = async () => {
+        await host.assertActive();
+        signal.throwIfAborted();
+        const resumedAt = new Date();
+        try {
+          current = await provider.resume(current.state);
+        } catch (error) {
+          // The sandbox vanished mid-command: stop its meter before reporting the loss.
+          if (error instanceof SandboxMissingError) {
+            session = null;
+            await host.sandboxTransition("missing");
+          }
+          throw error;
+        }
+        session = active = current;
+        await host.sandboxTransition("running", resumedAt);
+      };
+      const runtimeDirectory = `/tmp/nimplex-runtime-${run.id}`;
+      const directory = await current.exec({
+        cmd: `mkdir -p ${shellQuote(runtimeDirectory)}`,
+        timeoutMs: 10000,
+        signal,
+      });
+      if (directory.exitCode !== 0) throw new Error("cannot create sandbox runtime directory");
+      const job = `${runtimeDirectory}/${createHash("sha256").update(`${run.id}:${id}`).digest("hex")}`;
+      await host.appendEvents([
+        {
+          type: "tier.escalated",
+          payload: {
+            tool_call_id: id,
+            provider: provider.backendId,
+            generation: await host.generation(),
+          },
         },
-      },
-    ]);
-    const inputPath = `${job}.input.json`;
-    const serialized = JSON.stringify({
-      command,
-      timeoutMs,
-      metadata,
-      files: Object.fromEntries(
-        Object.entries(files).map(([path, bytes]) => [path, Buffer.from(bytes).toString("base64")]),
-      ),
-    });
-    await active.writeFile(inputPath, serialized);
-    // The supervisor acquires its own once-only marker. Repeated launches exit without replay.
-    const launchArgs = {
-      cmd: `nohup node -e ${shellQuote(supervisor)} ${shellQuote(inputPath)} ${shellQuote(job)} > ${shellQuote(`${job}.log`)} 2>&1 < /dev/null &`,
-      timeoutMs: 10000,
-      signal,
-    };
-    let launch: ExecResult;
-    try {
-      launch = await active.exec(launchArgs);
-    } catch (error) {
-      if (!provider.pause) throw error;
-      await reconnect();
-      launch = await active.exec(launchArgs);
-    }
-    if (launch.timedOut && provider.pause) {
-      await reconnect();
-      launch = await active.exec(launchArgs);
-    }
-    if (launch.exitCode !== 0) throw new Error(`sandbox dispatch failed: ${launch.stderr}`);
-    const deadline = Date.now() + timeoutMs + 15000;
-    try {
+      ]);
+      const inputPath = `${job}.input.json`;
+      const serialized = JSON.stringify({
+        command,
+        timeoutMs,
+        metadata,
+        files: Object.fromEntries(
+          Object.entries(files).map(([path, bytes]) => [
+            path,
+            Buffer.from(bytes).toString("base64"),
+          ]),
+        ),
+      });
+      await current.writeFile(inputPath, serialized);
+      // The supervisor acquires its own once-only marker. Repeated launches exit without replay.
+      const launchArgs = {
+        cmd: `nohup node -e ${shellQuote(supervisor)} ${shellQuote(inputPath)} ${shellQuote(job)} > ${shellQuote(`${job}.log`)} 2>&1 < /dev/null &`,
+        timeoutMs: 10000,
+        signal,
+      };
+      let launch: ExecResult;
+      try {
+        launch = await current.exec(launchArgs);
+      } catch (error) {
+        if (!provider.pause) throw error;
+        await reconnect();
+        launch = await current.exec(launchArgs);
+      }
+      if (launch.timedOut && provider.pause) {
+        await reconnect();
+        launch = await current.exec(launchArgs);
+      }
+      if (launch.exitCode !== 0) throw new Error(`sandbox dispatch failed: ${launch.stderr}`);
+      const deadline = Date.now() + timeoutMs + 15000;
       while (Date.now() < deadline) {
         signal.throwIfAborted();
         let journal: ExecResult;
         try {
-          journal = await active.exec({
+          journal = await current.exec({
             cmd: `node -e ${shellQuote(readJournal)} ${shellQuote(`${job}/result.json`)}`,
             timeoutMs: 10000,
             signal,
@@ -294,18 +348,7 @@ export function createNativeBash(host: NativeHost): NonNullable<ExecutorRunConte
           if (provider.pause) {
             await host.assertActive();
             // Provider IO must never hold run locks: kill/cancel stay responsive during outages.
-            let paused = true;
-            try {
-              await provider.pause(active.state);
-            } catch (error) {
-              paused = false;
-              console.warn(
-                `[worker] sandbox pause failed for run ${run.id}; preserving the completed result`,
-                error,
-              );
-            }
-            // A failed response may still have paused the box. Reconnect before the next tool.
-            session = null;
+            const paused = await pauseIdle();
             await host.appendEvents([
               {
                 type: paused ? "sandbox.paused" : "sandbox.pause_failed",
@@ -318,13 +361,24 @@ export function createNativeBash(host: NativeHost): NonNullable<ExecutorRunConte
         await new Promise((done) => setTimeout(done, 200));
       }
       throw new Error("sandbox command outcome unknown; journal did not complete");
+    } catch (error) {
+      // A failed command must not leave a pausable sandbox running and billing.
+      if (!signal.aborted)
+        await pauseIdle().catch((pauseError) =>
+          console.error(
+            `[worker] sandbox pause after failure failed for run ${run.id}`,
+            pauseError,
+          ),
+        );
+      throw error;
     } finally {
-      if (signal.aborted) {
+      if (signal.aborted && active) {
         try {
           // The owner decides whether cancellation authorizes environment deletion.
           if (await host.shouldDestroyOnAbort()) {
             await provider.delete(active.state);
             session = null;
+            await host.sandboxTransition("deleted");
           }
         } catch (error) {
           // The terminal reaper retries cleanup without replacing the original abort reason.

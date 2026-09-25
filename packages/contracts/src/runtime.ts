@@ -79,4 +79,49 @@ export interface SessionSnapshot {
   parentSessionId?: string;
   /** Execution engine owning this session's history; absent on records written before 2026-09-25 means the legacy executor. */
   engine?: "pi-executor" | "pi-harness";
+  /** Estimated sandbox compute settled so far; absent until a sandbox interval settles. */
+  sandbox?: SandboxUsageSummary;
+}
+
+/**
+ * One settled sandbox running interval, stored in the session ledger and, while its turn
+ * is running, as the payload of a `sandbox.usage` event. `cost_usd` is an estimate and is
+ * null when the sandbox's rate or size is unknown.
+ */
+export interface SandboxUsageRecord {
+  provider: string;
+  /**
+   * `reconnected`: an unobserved interval ended when a runtime reattached to the still
+   * running sandbox; `expired`: an abandoned interval passed the provider lifetime;
+   * `discarded`: a sandbox created for a turn that was cancelled before it could be used.
+   */
+  reason: "paused" | "deleted" | "missing" | "reconnected" | "expired" | "discarded";
+  started_at: string;
+  ended_at: string;
+  seconds: number;
+  cost_usd: number | null;
+  /**
+   * Part of the interval was not observed (a runtime restart, a failed pause, a sandbox
+   * found missing), so the time is an upper bound capped at the provider's lifetime.
+   */
+  uncertain: boolean;
+  basis: string;
+  /** The turn that was running when the interval settled; null for session cleanup. */
+  turn_id: string | null;
+}
+
+/**
+ * A session's settled sandbox running time. `usd` is an estimate: seconds times the
+ * provider's list rate. Intervals without a rate count only toward `unpriced_seconds`.
+ */
+export interface SandboxUsageSummary {
+  usd: number;
+  seconds: number;
+  unpriced_seconds: number;
+  /** True when any interval's end was not observed, such as a failed pause. */
+  uncertain: boolean;
+  /** Start of the interval that is still running and not yet included above. */
+  running_since?: string;
+  /** Every sandbox so far has a zero rate (local Docker), so there is nothing to estimate. */
+  free: boolean;
 }

@@ -299,3 +299,68 @@ that ran it. Branching now resolves the selected turn through the parent chain a
 forks from the owning scope; fork-copied entries keep their identity, so the path is
 the same. Covered by "branches a branch from a turn it inherited from its source" in
 `pi-harness-engine.test.ts`.
+
+## Estimated sandbox cost (2026-09-25)
+
+Sandbox running time is metered per session, because a sandbox belongs to its session
+and outlives turns. An interval opens when creation begins or a sandbox is resumed
+(`sandboxRunningSince` on the session record) and settles into the session's
+append-only `sandbox_usage` table at the next observed transition. Each
+`SandboxUsageRecord` (in `@nimplex/contracts`) carries the provider, reason (`paused`,
+`deleted`, `missing`, `reconnected`, `expired`, `discarded`), start and end, seconds,
+`cost_usd`, the rate basis, `uncertain` and the turn that was running, if any. The
+session record keeps the running total; `SessionSnapshot.sandbox` and
+`NimplexRuntime.sandboxUsage(sessionId)` expose it with `running_since` for an open
+interval and `free` when every sandbox so far had a zero rate. `/cost` lists the
+ledger through `NimplexRuntime.sandboxUsageRecords`.
+
+- Metering follows provider transitions through `NativeHost.sandboxTransition`
+  (`running`, `paused`, `unobserved`, `deleted`, `missing`), `recordState` for a
+  created sandbox and `sandboxDiscarded` for one its turn could not record because it
+  ended meanwhile (charged to its stop, or uncertain up to its lifetime when stopping
+  failed). None of these is gated on the turn still being active, and a transition that
+  arrives after cleanup removed the sandbox is ignored. Create and resume are timed
+  from before the provider call.
+- No interval runs past the deadline the provider's `maxRunMs` set at the last create
+  or resume (E2B's lifetime, default one hour). The runtime passes the provider's
+  lifetime in with each transition; a capped interval is uncertain.
+- `unobserved` marks the open interval uncertain without ending it: a failed pause
+  leaves the sandbox's real state unknown. A reconnect inside one process does not,
+  since the runtime kept watching the sandbox.
+  A runtime that opens a state root does the same for intervals left by a previous
+  process and settles those past their deadline as `expired`. Reattaching to an
+  uncertain interval settles the unobserved stretch as `reconnected` and starts an
+  observed one. A sandbox found missing settles when it is detected, at the start of a
+  turn or mid-command.
+- A pausable sandbox is paused after every native command that reached it, including
+  one that fails (supervisor error, workspace limits, unknown outcome, or a replacement
+  sandbox that cannot repeat a lost command), so an error no longer leaves it running
+  and billing.
+- A turn that is still running also receives a `sandbox.usage` audit event. Finished
+  turns are never modified: a Docker container deleted at close settles only into the
+  session ledger.
+- Rates live in `@nimplex/core` (`lookupSandboxRate`). E2B bills per second while
+  running, by allocated vCPU ($0.000014/s) and RAM ($0.0000045 per GiB-second), and
+  does not bill paused or killed sandboxes (docs.e2b.dev/faq/calculate-sandbox-price,
+  read 2026-09-25). The E2B provider stores the size from `getInfo()`, looked up during
+  workspace setup and waited for at most 250 ms after it; without it, the default template is
+  priced as 2 vCPU / 512 MiB and a custom template counts as unpriced time. E2B resume
+  passes the lifetime to `connect`, which otherwise shortened a resumed sandbox to the
+  SDK's five-minute default; an invalid `NIMPLEX_E2B_LIFETIME_MS` makes E2B
+  unavailable. Docker is $0 and shows no estimate; other providers are unpriced.
+- Storage and network are not priced. The provider's bill is authoritative. Every CLI
+  surface uses `sandboxEstimate` (full or short style), which labels the amount as an
+  estimate and flags unobserved, unpriced and still-running time.
+
+Covered by `sandbox-usage.test.ts` (rates by size; settlement, deadlines, unobserved
+time, inherited and expired intervals, rollback and finished turns at the ledger level;
+and runtime integration through the `@nimplex/testkit` fake provider for pausing,
+cancelled-during-pause, cancelled-during-create, failed-pause, non-pausing and missing
+sandboxes, plus a real SIGKILL of a child runtime during a native command),
+`native-bash.test.ts` (missing sandboxes at turn start and mid-command, pausing after a
+failed command), `e2b.test.ts` (lifetime setting, resume lifetime, size lookup),
+`controller.test.ts` (the terminal shows cost that settles while a session is open) and
+`apps/cli/src/display.test.ts` (wording). Real E2B runs on 2026-09-25 settled
+two-command turns at about $0.0002 to $0.0003, and a SIGKILL during an E2B command
+produced a `reconnected` interval marked unobserved followed by an observed `paused`
+one.

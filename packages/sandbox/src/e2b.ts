@@ -29,12 +29,20 @@ export const E2B_BACKEND_ID = "e2b";
 // Read env lazily: this module is imported before the worker loads .env, so a module-level read
 // would see nothing.
 function defaultLifetimeMs(): number {
-  return Number(process.env.NIMPLEX_E2B_LIFETIME_MS ?? 60 * 60 * 1000);
+  const raw = process.env.NIMPLEX_E2B_LIFETIME_MS;
+  if (raw === undefined || raw === "") return 60 * 60 * 1000;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0)
+    throw new Error("NIMPLEX_E2B_LIFETIME_MS must be a positive number of milliseconds.");
+  return value;
 }
 
 interface E2bProviderState extends Record<string, unknown> {
   sandboxId: string;
   template: string | null;
+  /** Allocated size, for usage estimates; absent when E2B did not report it. */
+  cpuCount?: number;
+  memoryMB?: number;
 }
 
 function apiKey(): string | undefined {
@@ -126,8 +134,23 @@ export class E2bSandboxSession implements SandboxSession {
 export class E2bSandboxProvider implements SandboxProvider {
   readonly backendId = E2B_BACKEND_ID;
 
+  get maxRunMs(): number | undefined {
+    // An invalid setting is reported by unavailableReason(); estimates then stay uncapped.
+    try {
+      return defaultLifetimeMs();
+    } catch {
+      return undefined;
+    }
+  }
+
   unavailableReason(): string | null {
-    return apiKey() ? null : "缺 E2B_API_KEY（e2b.dev 取得後設進環境變數）";
+    if (!apiKey()) return "缺 E2B_API_KEY（e2b.dev 取得後設進環境變數）";
+    try {
+      defaultLifetimeMs();
+    } catch (error) {
+      return (error as Error).message;
+    }
+    return null;
   }
 
   async create(args: SandboxCreateArgs): Promise<SandboxSession> {
@@ -144,6 +167,15 @@ export class E2bSandboxProvider implements SandboxProvider {
     // CPU/memory are defined by the E2B template rather than per-create port options.
     const sandbox = template ? await Sandbox.create(template, opts) : await Sandbox.create(opts);
     // Clean up any setup failure after creation so no paid sandbox loses its owner.
+    // The size only informs cost estimates: it is looked up during setup and never waited
+    // for beyond it, so a slow info endpoint cannot delay the first tool.
+    let size: { cpuCount?: number; memoryMB?: number } = {};
+    const info = sandbox
+      .getInfo({ requestTimeoutMs: 3000 })
+      .then((details) => {
+        size = { cpuCount: details.cpuCount, memoryMB: details.memoryMB };
+      })
+      .catch(() => {});
     try {
       // Create /workspace as root, then chown it to the default non-root user.
       const q = shellQuote(workdir);
@@ -155,12 +187,17 @@ export class E2bSandboxProvider implements SandboxProvider {
       await sandbox.kill().catch(() => {});
       throw err;
     }
+    await Promise.race([info, new Promise((done) => setTimeout(done, 250))]);
 
     return new E2bSandboxSession(
       {
         version: SANDBOX_SESSION_STATE_VERSION,
         backendId: this.backendId,
-        providerState: { sandboxId: sandbox.sandboxId, template } satisfies E2bProviderState,
+        providerState: {
+          sandboxId: sandbox.sandboxId,
+          template,
+          ...size,
+        } satisfies E2bProviderState,
         workdir,
         environment,
       },
@@ -170,7 +207,11 @@ export class E2bSandboxProvider implements SandboxProvider {
 
   async resume(state: SandboxSessionState): Promise<SandboxSession> {
     try {
-      const sandbox = await Sandbox.connect(sandboxIdOf(state), { apiKey: apiKey() });
+      // Without timeoutMs, connect shortens the lifetime to the SDK's five-minute default.
+      const sandbox = await Sandbox.connect(sandboxIdOf(state), {
+        apiKey: apiKey(),
+        timeoutMs: defaultLifetimeMs(),
+      });
       return new E2bSandboxSession(state, sandbox);
     } catch (error) {
       if (error instanceof NotFoundError)

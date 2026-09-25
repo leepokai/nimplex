@@ -51,6 +51,9 @@ importers:
       '@nimplex/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@nimplex/sandbox':
+        specifier: workspace:*
+        version: link:../../packages/sandbox
       '@nimplex/testkit':
         specifier: workspace:*
         version: link:../../packages/testkit
