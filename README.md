@@ -1,3 +1,5 @@
+<img src="apps/site/public/icon-1024.png" alt="nimplex icon" width="96" height="96">
+
 # nimplex
 
 **A durable coding-agent harness built on top of [Pi](https://github.com/earendil-works/pi).**

@@ -1,12 +1,4 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img">
-  <title>Nimplex</title>
-  <defs>
-    <linearGradient id="g" gradientUnits="userSpaceOnUse" x1="168" y1="0" x2="856" y2="0">
-      <stop offset="0" stop-color="#ffffff" stop-opacity=".38"/>
-      <stop offset=".6" stop-color="#ffffff" stop-opacity=".82"/>
-      <stop offset="1" stop-color="#ffffff" stop-opacity="1"/>
-    </linearGradient>
-  </defs>
-  <path d="M168 232C380 232 400 470 556 512M168 512H856M168 792C380 792 400 554 556 512" fill="none" stroke="url(#g)" stroke-width="76"
-        stroke-linecap="round" stroke-linejoin="round"/>
+  <title>nimplex</title>
+  <g fill="#ffffff"><rect x="208" y="192" width="608" height="112" rx="56"/><rect x="208" y="368" width="400" height="112" rx="56"/><rect x="208" y="544" width="512" height="112" rx="56"/><rect x="208" y="720" width="128" height="112" rx="20"/></g><rect x="384" y="720" width="304" height="112" rx="56" fill="#ffffff" fill-opacity=".4"/>
 </svg>

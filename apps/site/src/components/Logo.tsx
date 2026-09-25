@@ -1,34 +1,29 @@
-import { useId } from "react";
-
 /**
- * nimplex mark: three input paths merge into one output.
+ * nimplex mark: an append-only log. Three committed entries, then a cursor and the next
+ * entry, still pending: a session resumes from the last committed step.
  *
- * Constant stroke width (76 in a 1024-unit viewBox) preserves small-size legibility.
- * The earlier thin-to-thick design lost its narrow ends when reduced;
- *
- * Square geometry supports app icons/avatars. The site lockup tightly crops
- * the same paths so both uses share one maintained shape.
- *
- * Inputs are darkest and the merged output brightest; currentColor adapts to backgrounds.
+ * Geometry lives in a 512-unit square shared with public/favicon.svg, logo-1024.svg and
+ * the rendered PNGs. Solid rounded bars stay legible at favicon size. currentColor adapts
+ * to the background; the pending entry is the same colour at reduced opacity.
  */
-/**
- * Curved upper/lower inputs, straight middle input, and output share one path.
- * Separate translucent paths would composite at intersections into bright spots;
- * self-overlap within a single element paints only once.
- */
-export const LOGO_PATH =
-  "M168 232C380 232 400 470 556 512M168 512H856M168 792C380 792 400 554 556 512";
+const COMMITTED = [
+  { x: 104, y: 96, width: 304, rx: 28 },
+  { x: 104, y: 184, width: 200, rx: 28 },
+  { x: 104, y: 272, width: 256, rx: 28 },
+  { x: 104, y: 360, width: 64, rx: 10 },
+];
+const PENDING = { x: 192, y: 360, width: 152, rx: 28 };
+const BAR_HEIGHT = 56;
+const PENDING_OPACITY = 0.4;
 
-export const LOGO_STROKE = 76;
-/** Square canvas with symmetric margins including round caps. */
-export const LOGO_SQUARE = "0 0 1024 1024";
-/** Tight bounds including round caps. */
-export const LOGO_TIGHT = "130 194 764 636";
+/** Square canvas with the icon's margins. */
+export const LOGO_SQUARE = "0 0 512 512";
+/** Tight bounds of the bars, for the inline lockup. */
+export const LOGO_TIGHT = "104 96 304 320";
 
 const HEIGHT = 20;
 
 export function Logo({ square = false }: { square?: boolean }) {
-  const id = useId().replace(/:/g, "");
   return (
     <svg
       viewBox={square ? LOGO_SQUARE : LOGO_TIGHT}
@@ -40,21 +35,11 @@ export function Logo({ square = false }: { square?: boolean }) {
       aria-hidden="true"
       focusable="false"
     >
-      <defs>
-        <linearGradient id={id} gradientUnits="userSpaceOnUse" x1="168" y1="0" x2="856" y2="0">
-          <stop offset="0" stopColor="currentColor" stopOpacity=".38" />
-          <stop offset=".6" stopColor="currentColor" stopOpacity=".82" />
-          <stop offset="1" stopColor="currentColor" stopOpacity="1" />
-        </linearGradient>
-      </defs>
-      <g
-        fill="none"
-        stroke={`url(#${id})`}
-        strokeWidth={LOGO_STROKE}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d={LOGO_PATH} />
+      <g fill="currentColor">
+        {COMMITTED.map((bar) => (
+          <rect key={bar.y + bar.x} height={BAR_HEIGHT} {...bar} />
+        ))}
+        <rect height={BAR_HEIGHT} fillOpacity={PENDING_OPACITY} {...PENDING} />
       </g>
     </svg>
   );
