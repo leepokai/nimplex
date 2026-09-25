@@ -4,30 +4,30 @@ import { gsap, MM, useGSAP } from "../lib/gsap.ts";
 const CELLS = [
   {
     n: "01",
-    title: "Any harness — including yours",
-    body: "A harness is a manifest: install steps, run command, env mapping. Built-in and uploaded ones take the exact same path, so you can override ours or ship one we've never seen.",
-    chips: ["claude-code", "codex", "opencode"],
-    off: ["your own"],
+    title: "Survives process death",
+    body: "A model response is durable before its tools run; a tool result and workspace revision are durable before the next model call. After a crash, the runtime reopens the log and resumes the interrupted turn.",
+    chips: ["kill -9", "dead sandbox", "lost network"],
+    off: [],
   },
   {
     n: "02",
-    title: "Any model provider",
-    body: "Your keys, your contracts, your rates. They live in the gateway, and the sandbox only ever sees a short-lived Nimplex token — never the real one.",
-    chips: ["anthropic", "openai", "openrouter"],
-    off: ["bedrock", "vertex"],
+    title: "Nothing runs twice",
+    body: "Committed responses are reused and only missing tool calls execute. A native command reattaches to its journal by call ID. A lost outcome is reported as unknown, never silently replayed.",
+    chips: ["call identity", "command journals", "unknown outcomes"],
+    off: [],
   },
   {
     n: "03",
-    title: "Any sandbox",
-    body: "Session state is serializable, so any worker can reattach to a running box and tear it down. Adding a provider is one interface, not a fork.",
-    chips: ["docker", "local"],
-    off: ["e2b", "vercel", "daytona"],
+    title: "All of Pi, not a subset",
+    body: "Pi's loop, provider catalog, sessions, branching, compaction, steering, thinking levels and trust-gated extensions, through Pi's public APIs. No fork, no patched internals.",
+    chips: ["every Pi provider", "Codex subscription", "branch · rewind", "extensions"],
+    off: [],
   },
   {
     n: "04",
-    title: "The plumbing you'd rather not write",
-    body: "Provisioning, harness install, credential injection, a resumable event stream, lifecycle and a hard kill. This is the part that takes a month and never becomes your product.",
-    chips: ["event stream", "SSE resume", "hard kill", "usage tracking", "audit log"],
+    title: "Every step on record",
+    body: "Inputs, model calls with their cost, tool calls, file changes and sandbox time are events in one SQLite file. Replay any turn, and see model spend next to an estimated sandbox cost.",
+    chips: ["SQLite log", "--watch replay", "model cost", "sandbox estimate"],
     off: [],
   },
 ];
@@ -55,11 +55,10 @@ export function Cells() {
   return (
     <section ref={root} id="what" data-section="what" className="wrap sec">
       <div className="head-c">
-        <h2>Everything a cloud agent needs, none of it locked down.</h2>
+        <h2>The log is the runtime.</h2>
         <p className="lede">
-          Running an agent on someone else's machine means provisioning a box, installing a harness,
-          getting a key in without leaking it, and streaming what happens back out. You get all of
-          that — and you stay free to change your mind about any of the pieces.
+          Pi drives the model and the tools. nimplex puts a commit barrier around every step, so the
+          SQLite log, not the process, is what a session is made of.
         </p>
       </div>
 

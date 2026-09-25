@@ -4,24 +4,24 @@ import { gsap, MM, useGSAP } from "../lib/gsap.ts";
 const SLOTS = [
   {
     n: "1",
-    title: "Harness",
-    body: "Whatever loop actually writes the code — ours, theirs, or one you upload. A harness is a manifest, not a plugin we have to ship.",
-    on: ["claude-code", "codex", "opencode"],
-    off: ["your own"],
+    title: "Durable workspace",
+    body: "The files are committed to SQLite with every tool result, including binaries, empty directories, symlinks and permissions. The workspace outlives any process or sandbox.",
+    on: ["SQLite", "per-tool revisions"],
+    off: [],
   },
   {
     n: "2",
-    title: "Model",
-    body: "Your keys, your contracts, your rates. They live in the gateway and are never written into a sandbox.",
-    on: ["anthropic", "openai", "openrouter"],
-    off: ["bedrock", "vertex"],
+    title: "In-process shell",
+    body: "Pure shell work runs in just-bash, an in-memory virtual filesystem with 60+ commands. It starts in milliseconds and creates no sandbox at all.",
+    on: ["just-bash"],
+    off: [],
   },
   {
     n: "3",
-    title: "Sandbox",
-    body: "Where the agent's computer lives. Swapping it is one field on the request — nothing else moves.",
-    on: ["docker", "local"],
-    off: ["e2b", "vercel", "daytona"],
+    title: "Native sandbox",
+    body: "Only commands that need a real machine (node, git, package installs) go to a disposable sandbox, through a journal the runtime can reattach to. E2B pauses between commands.",
+    on: ["docker", "e2b"],
+    off: ["daytona", "vercel"],
   },
 ];
 
@@ -65,13 +65,13 @@ export function Slots() {
       <div ref={track} className="slots-track">
         <div className="slot-intro">
           <h2>
-            What actually sits
+            Three tiers,
             <br />
-            in each slot.
+            one workspace.
           </h2>
           <p className="lede">
-            None of these is a wrapper we maintain on your behalf. Each one is an interface with a
-            registry behind it, so the list grows without us shipping a release.
+            The runtime reads each shell script before it runs and sends it to the cheapest tier
+            that can execute it. Whatever runs, the files end up in the same durable workspace.
           </p>
         </div>
 

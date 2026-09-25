@@ -130,7 +130,7 @@ Requirements: Node 22.13+ (for `node:sqlite`) and pnpm 10.
 
 ```bash
 pnpm install
-pnpm --dir apps/cli link --global         # puts `nimplex` on PATH (or: pnpm dev)
+(cd apps/cli && pnpm link --global)       # puts `nimplex` on PATH; `pnpm setup` first if asked
 
 nimplex                                   # interactive
 nimplex "Create /workspace/hello.js and run node hello.js to verify it"

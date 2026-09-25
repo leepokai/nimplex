@@ -1,10 +1,10 @@
 import { useRef } from "react";
 import { gsap, SplitText, useGSAP } from "../lib/gsap.ts";
-import { Waitlist } from "../Waitlist.tsx";
+import { GetStarted } from "./GetStarted.tsx";
 import { BOOT_EVENT } from "./Preloader.tsx";
 import { SignalField } from "./SignalField.tsx";
 
-const WORKS_WITH = ["claude-code", "codex", "opencode", "your own manifest"];
+const BUILT_ON = ["Pi agent harness", "SQLite", "just-bash", "Docker · E2B"];
 
 /**
  * Centered title assembled character by character.
@@ -69,30 +69,31 @@ export function Hero() {
         <SignalField />
         <div className="wrap">
           <span data-hero-item data-hero-eyebrow className="pill">
-            Private beta
+            Open source · MIT · early
           </span>
           <h1 data-hero-item data-hero-h1>
-            <span className="soft">OpenRouter</span> for cloud agents
+            <span className="soft">A coding agent that</span> survives kill -9
           </h1>
           <p data-hero-item data-hero-sub className="hero-sub">
-            Run any coding agent, on any sandbox, against any model — through one API. Swap any
-            piece later without touching the rest of your code.
+            nimplex runs Pi's coding agent and commits every model response, tool result and file
+            change to SQLite before the next step. Kill the process, lose the sandbox or drop the
+            network, then resume exactly where it stopped, with nothing run twice.
           </p>
           <div data-hero-item data-hero-form className="hero-form">
-            <Waitlist id="join" />
+            <GetStarted id="start" />
           </div>
           <p data-hero-item data-hero-note className="join-note">
-            Bring your own provider keys. We're the routing layer, not the reseller — so we have no
-            reason to make one vendor easier than another.
+            Runs on your laptop as the <code>nimplex</code> terminal. No server, no database
+            service. Bring your own model keys or a Codex subscription.
           </p>
         </div>
       </section>
 
       <div className="strip">
         <div className="wrap">
-          <span className="label">Runs whatever writes the code</span>
+          <span className="label">Built on</span>
           <div className="items">
-            {WORKS_WITH.map((w) => (
+            {BUILT_ON.map((w) => (
               <span key={w}>{w}</span>
             ))}
           </div>

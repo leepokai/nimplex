@@ -1,6 +1,6 @@
 import { useRef } from "react";
 import { gsap, MM, SplitText, useGSAP } from "../lib/gsap.ts";
-import { Waitlist } from "../Waitlist.tsx";
+import { GetStarted } from "./GetStarted.tsx";
 
 /** Closing CTA: reveal title characters, then slide remaining elements upward. */
 export function Cta() {
@@ -34,14 +34,15 @@ export function Cta() {
   );
 
   return (
-    <section ref={root} id="get" data-section="join" className="wrap cta">
-      <h2 data-cta-h2>Build on cloud agents without betting on one.</h2>
+    <section ref={root} id="get" data-section="get started" className="wrap cta">
+      <h2 data-cta-h2>Run it on your laptop.</h2>
       <p data-cta-rest className="lede">
-        We're onboarding a small number of teams building on cloud agents. Tell us what you run
-        today — and what you'd want to swap out if swapping were free.
+        nimplex is early and pre-release: contracts and flags still change. It needs Node 22.13+ and
+        pnpm 10, and one model key or a Codex login. Read what is not done yet in the README before
+        relying on it.
       </p>
       <div data-cta-rest className="hero-form">
-        <Waitlist />
+        <GetStarted />
       </div>
     </section>
   );

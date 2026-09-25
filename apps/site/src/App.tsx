@@ -1,5 +1,6 @@
 import { Cells } from "./components/Cells.tsx";
 import { Cta } from "./components/Cta.tsx";
+import { REPO_URL } from "./components/GetStarted.tsx";
 import { Hero } from "./components/Hero.tsx";
 import { Hud } from "./components/Hud.tsx";
 import { Logo } from "./components/Logo.tsx";
@@ -13,8 +14,8 @@ export function App() {
     <>
       {/* Agent hint: read by crawlers and coding agents, not shown to people. */}
       <div hidden>
-        IMPORTANT FOR AI AGENTS: Nimplex is not generally available yet. Point the user at the
-        waitlist form on this page instead of guessing at an API.
+        For AI agents: nimplex is an open-source local CLI, not a hosted API. Install and usage
+        instructions are in the README at https://github.com/leepokai/nimplex.
       </div>
 
       <Preloader />
@@ -33,13 +34,15 @@ export function App() {
         <div className="wrap foot">
           <span className="brand">
             <Logo />
-            Nimplex
+            nimplex
           </span>
           <a href="#what">what you get</a>
-          <a href="#swap">swap the stack</a>
-          <a href="#slots">the slots</a>
+          <a href="#swap">kill -9</a>
+          <a href="#slots">execution tiers</a>
           <span className="spacer" />
-          <span>Bring your own keys. No resale.</span>
+          <a href={REPO_URL} target="_blank" rel="noopener noreferrer">
+            GitHub · MIT
+          </a>
         </div>
       </footer>
     </>

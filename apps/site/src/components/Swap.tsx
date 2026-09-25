@@ -1,38 +1,38 @@
 import { useRef, useState } from "react";
 import { gsap, MM, ScrollTrigger, useGSAP } from "../lib/gsap.ts";
 
-/** The same integration changes stacks by replacing only three values. */
+/** One turn through a crash: only the three state lines change between frames. */
 const STACKS = [
   {
-    label: "Anthropic on your own Docker",
-    harness: '"claude-code"',
-    model: '{ provider: "anthropic", id: "claude-sonnet-5" }',
-    sandbox: '{ provider: "docker" }',
+    label: "Steps 1 and 2 committed",
+    process: '"running"',
+    log: '"1\\n2\\n"',
+    calls: "2 settled",
   },
   {
-    label: "OpenAI on E2B",
-    harness: '"codex"',
-    model: '{ provider: "openai", id: "gpt-5" }',
-    sandbox: '{ provider: "e2b" }',
+    label: "kill -9 during step 3",
+    process: '"killed"',
+    log: '"1\\n2\\n"',
+    calls: "2 settled, 1 in flight",
   },
   {
-    label: "OpenRouter on Vercel Sandbox",
-    harness: '"opencode"',
-    model: '{ provider: "openrouter", id: "anthropic/claude-sonnet-4.5" }',
-    sandbox: '{ provider: "vercel" }',
+    label: "nimplex --resume",
+    process: '"resumed"',
+    log: '"1\\n2\\n3\\n"',
+    calls: "3 settled, 1 unknown",
   },
   {
-    label: "Your harness, your cloud",
-    harness: '"my-agent"',
-    model: '{ provider: "anthropic", id: "claude-opus-5" }',
-    sandbox: '{ provider: "my-cloud" }',
+    label: "Done, each step once",
+    process: '"completed"',
+    log: '"1\\n2\\n3\\n4\\n"',
+    calls: "5 settled, 1 unknown",
   },
 ];
 
 /**
  * Pin and scrub while only three lines change; every other character stays fixed.
  *
- * Demonstrate provider neutrality through the unchanged integration.
+ * Show a turn surviving a crash: the task never changes, and the log never repeats a step.
  * State swaps avoid meaningless intermediate text from character tweening.
  * GSAP handles pinning, progress, and a brief flash at each switch.
  */
@@ -91,43 +91,42 @@ export function Swap() {
     <section ref={root} id="swap" data-section="swap" className="swap-sec">
       <div className="wrap sec">
         <div data-swap-head className="head-c">
-          <h2>Same integration. Any stack underneath.</h2>
+          <h2>Kill it. It keeps going.</h2>
           <p className="lede">
-            Harness, model provider and sandbox are three fields on one request. Swap any of them
-            and nothing else in your code moves — no rewrite, no second SDK, no migration.
+            A task appends one line per step. The process dies in the middle of step 3. Resume
+            reuses what was committed, reattaches to the command that was running, and finishes with
+            every line written exactly once.
           </p>
         </div>
 
         <div className="swap">
           <div className="swap-code">
-            <div className="ln dim">const run = await nimplex.agent({`{`}</div>
-            <div className="ln swap-line">
-              <span className="key">harness:</span>{" "}
-              <span data-swap-value className="val">
-                {stack.harness}
-              </span>
-              ,
+            <div className="ln dim">
+              $ nimplex "For N in 1..4, append N to log.txt, one step each"
             </div>
             <div className="ln swap-line">
-              <span className="key">model:</span>{" "}
+              <span className="key">process:</span>{" "}
               <span data-swap-value className="val">
-                {stack.model}
+                {stack.process}
               </span>
-              ,
             </div>
             <div className="ln swap-line">
-              <span className="key">sandbox:</span>{" "}
+              <span className="key">log.txt:</span>{" "}
               <span data-swap-value className="val">
-                {stack.sandbox}
+                {stack.log}
               </span>
-              ,
             </div>
-            <div className="ln dim">{`}).stream({ prompt: "fix the failing test" })`}</div>
+            <div className="ln swap-line">
+              <span className="key">model calls:</span>{" "}
+              <span data-swap-value className="val">
+                {stack.calls}
+              </span>
+            </div>
             <div className="ln dim">&nbsp;</div>
-            <div className="ln dim">for await (const event of run.events) render(event)</div>
+            <div className="ln dim">$ nimplex --watch TURN_ID # replay every committed step</div>
           </div>
 
-          <ol className="swap-steps" aria-label="Stacks">
+          <ol className="swap-steps" aria-label="Crash and resume">
             {STACKS.map((s, i) => (
               <li key={s.label} className={i === index ? "on" : ""}>
                 <span className="n">0{i + 1}</span>
@@ -138,8 +137,8 @@ export function Swap() {
         </div>
 
         <p className="swap-cap">
-          Three lines change. The other four never do — and neither does anything downstream of
-          them.
+          This is the recovery test the project runs against real models, Docker and E2B: the
+          request that was in flight is recorded as unknown, never double-counted.
         </p>
       </div>
     </section>

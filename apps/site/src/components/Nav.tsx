@@ -1,11 +1,12 @@
 import { useRef, useState } from "react";
 import { gsap, useGSAP } from "../lib/gsap.ts";
+import { REPO_URL } from "./GetStarted.tsx";
 import { Logo } from "./Logo.tsx";
 
 const LINKS = [
   { id: "what", label: "what you get" },
-  { id: "swap", label: "swap the stack" },
-  { id: "slots", label: "the slots" },
+  { id: "swap", label: "kill -9" },
+  { id: "slots", label: "execution tiers" },
 ];
 
 export function Nav() {
@@ -35,7 +36,7 @@ export function Nav() {
         <div className="wrap">
           <a className="brand" href="#top">
             <Logo />
-            Nimplex
+            nimplex
           </a>
           <nav className="nav-links" aria-label="Sections">
             {LINKS.map((l) => (
@@ -45,8 +46,13 @@ export function Nav() {
             ))}
           </nav>
           <span className="spacer" />
-          <a className="btn btn-primary btn-sm" href="#join">
-            Join the waitlist
+          <a
+            className="btn btn-primary btn-sm"
+            href={REPO_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            GitHub
           </a>
           <button
             type="button"
@@ -69,9 +75,15 @@ export function Nav() {
                 {l.label}
               </a>
             ))}
-            {/* biome-ignore lint/a11y/useValidAnchor: Navigates to #join; onClick only closes the overlay. */}
-            <a data-menu-link className="btn btn-primary" href="#join" onClick={close}>
-              Join the waitlist
+            <a
+              data-menu-link
+              className="btn btn-primary"
+              href={REPO_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={close}
+            >
+              GitHub
             </a>
           </nav>
         </div>

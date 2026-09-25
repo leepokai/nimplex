@@ -4,15 +4,15 @@ import { gsap, useGSAP } from "../lib/gsap.ts";
 export const BOOT_EVENT = "nmx:boot-done";
 
 const LINES = [
-  "nimplex@gateway:~$ ./boot",
-  "harness registry ... claude-code · codex · opencode · +yours",
-  "byok vault ....... sealed",
-  "sandbox port ..... docker · local",
+  "nimplex:~$ nimplex --resume 7360a8aa",
+  "state root ....... runtime.sqlite · owner lock held",
+  "interrupted turn . 2 committed · 1 in flight",
+  "recovery ......... reuse 2 · reattach 1 · replay 0",
 ];
 
 /**
  * Short, skippable boot sequence (about 1.1 seconds).
- * Keep the waitlist form accessible; animation must not delay the primary action.
+ * Keep the primary action accessible; animation must not delay it.
  * Skip for reduced motion and background tabs.
  */
 export function Preloader() {
