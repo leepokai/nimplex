@@ -372,3 +372,14 @@ model/auth foundation. Preserve call identity, usage accounting and all durable
 commit/ownership/recovery requirements. Historical reservation/budget milestones
 above describe the earlier implementation, not current admission policy. See the
 [updated runtime contract](2026-09-13-local-runtime.md#budget-removal-and-pi-providers-2026-09-20).
+
+## Default-engine cutover on 2026-09-25
+
+Kevin confirmed the harness as the bridge and made it the default for new sessions;
+see the [runtime contract](2026-09-13-local-runtime.md#harness-engine-becomes-the-default-2026-09-25).
+Existing sessions are not migrated. The local Phase 6 release-qualification items
+(real-model smoke, backup/restore, schema/engine upgrades, version mismatch,
+interrupted migration) were run end to end before the switch; results, the defect
+they found and the remaining gaps are in
+[release qualification 2026-09-25](2026-09-25-release-qualification.md). Hosted
+suites and per-tenant fairness no longer apply to the local-only scope.

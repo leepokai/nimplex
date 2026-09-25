@@ -168,9 +168,9 @@ describe("local CLI integration", () => {
     );
     expect(writes.length).toBeGreaterThan(0);
   }, 20000);
-  it("runs new sessions on the Pi harness engine when NIMPLEX_ENGINE selects it", async () => {
+  it("runs new sessions on the Pi harness engine by default and keeps each session's engine", async () => {
     const f = await fixture();
-    const a = f.launch(["Write a file"], { NIMPLEX_ENGINE: "pi-harness" });
+    const a = f.launch(["Write a file"]);
     expect(await a.done).toBe(0);
     expect(a.output()).toContain("completed");
     const session = /Session: ([\w-]+)/.exec(a.output())?.[1];
@@ -185,25 +185,43 @@ describe("local CLI integration", () => {
     expect(JSON.stringify(f.upstream.state.messagesCalls.at(-1)?.body.messages)).toContain(
       "Write a file",
     );
+    const thinking = f.launch(["--resume", session, "--thinking", "low", "Think"], {
+      NIMPLEX_ENGINE: "pi-executor",
+    });
+    expect(await thinking.done).toBe(0);
+    // Only the harness forwards a thinking level; the legacy engine would have refused it.
+    expect(f.upstream.state.messagesCalls.at(-1)?.body.thinking).toMatchObject({
+      type: "enabled",
+      budget_tokens: 2048,
+    });
+    // NIMPLEX_ENGINE=pi-executor still opts new sessions into the legacy engine, which then
+    // keeps that engine when resumed under the default.
+    const legacy = f.launch(["Legacy task"], { NIMPLEX_ENGINE: "pi-executor" });
+    expect(await legacy.done).toBe(0);
+    const legacySession = /Session: ([\w-]+)/.exec(legacy.output())?.[1];
+    if (!legacySession) throw new Error("Missing legacy session ID");
+    const calls = f.upstream.state.messagesCalls.length;
+    const refused = f.launch(["--resume", legacySession, "--thinking", "low", "Think"]);
+    expect(await refused.done).toBe(1);
+    expect(refused.output()).toContain("legacy executor");
+    expect(f.upstream.state.messagesCalls).toHaveLength(calls);
     const invalid = f.launch(["Task"], { NIMPLEX_ENGINE: "unknown" });
     invalid.child.stdin.end();
     expect(await invalid.done).toBe(1);
     expect(invalid.output()).toContain("NIMPLEX_ENGINE");
-  }, 30000);
+  }, 40000);
   it("applies --thinking on harness sessions and rejects it on the legacy engine", async () => {
     const f = await fixture();
     const invalid = f.launch(["--thinking", "deep", "Task"]);
     invalid.child.stdin.end();
     expect(await invalid.done).toBe(1);
     expect(invalid.output()).toContain("--thinking must be one of");
-    const legacy = f.launch(["--thinking", "low", "Task"]);
+    const legacy = f.launch(["--thinking", "low", "Task"], { NIMPLEX_ENGINE: "pi-executor" });
     legacy.child.stdin.end();
     expect(await legacy.done).toBe(1);
-    expect(legacy.output()).toContain("Pi harness engine");
+    expect(legacy.output()).toContain("legacy executor");
     expect(f.upstream.state.messagesCalls).toHaveLength(0);
-    const harness = f.launch(["--thinking", "low", "Write a file"], {
-      NIMPLEX_ENGINE: "pi-harness",
-    });
+    const harness = f.launch(["--thinking", "low", "Write a file"]);
     expect(await harness.done).toBe(0);
     expect(harness.output()).toContain("completed");
     expect(f.upstream.state.messagesCalls.length).toBeGreaterThan(0);

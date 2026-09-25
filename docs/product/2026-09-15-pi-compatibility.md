@@ -15,7 +15,7 @@ additional version-specific behavior is discovered.
 | --- | --- | --- |
 | Model/tool loop | Pi Agent, durable nimplex executor steps | Preserve when changing session composition |
 | Codex subscription auth | Pi ModelRuntime OAuth, browser/device login, locked refresh | Additional provider login delegates to Pi OAuth/API-key flows; live account verification remains provider-dependent |
-| Model catalogs | All installed Pi built-in providers/models on the opt-in harness engine; catalog, provider adapters and credential resolution come from Pi | Live credential verification for every provider, dynamic catalogs, custom models and provider extensions |
+| Model catalogs | All installed Pi built-in providers/models on the harness engine (default since 2026-09-25); catalog, provider adapters and credential resolution come from Pi | Live credential verification for every provider, dynamic catalogs, custom models and provider extensions |
 | Thinking and model cycling | `/thinking` and `--thinking` set Pi levels on the harness; model and level sync into the lane each turn. Pi retains its native thinking/output limits without a monetary cap. The legacy executor rejects non-off levels | Scoped-model cycling shortcuts |
 | Text input and terminal editing | Pi TUI editor with nimplex presentation and keymap profiles | Audit exact Pi bindings and customization-file compatibility |
 | Interactive and headless modes | nimplex TUI and one-shot/piped commands | Pi JSON/RPC protocol and SDK client compatibility |

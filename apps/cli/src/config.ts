@@ -15,9 +15,9 @@ export const HELP = `nimplex — local coding-agent harness
   nimplex --files TURN_ID        List a turn's workspace files
 
   --model MODEL                 Default: claude-haiku-4-5
-                                Pi providers: provider/model (Pi harness engine)
+                                Pi providers: provider/model
                                 Subscription: openai-codex/gpt-5.6-sol
-  --thinking LEVEL              off|minimal|low|medium|high|xhigh; Pi harness engine only
+  --thinking LEVEL              off|minimal|low|medium|high|xhigh
   --sandbox e2b|docker           Native execution provider; default: e2b
   --timeout SECONDS             Active turn time limit; default: 180
   --state-dir PATH              Select an isolated local state root
@@ -26,8 +26,9 @@ export const HELP = `nimplex — local coding-agent harness
   --help                        Show this help
 
 No API server, Postgres, or worker is required. Local SQLite stores sessions,
-events and workspace snapshots. NIMPLEX_ENGINE=pi-harness opts new sessions into
-the experimental Pi harness engine; existing sessions keep their recorded engine. The current directory's .env is loaded when
+events and workspace snapshots. New sessions run on the Pi harness engine;
+NIMPLEX_ENGINE=pi-executor selects the legacy executor, and existing sessions keep
+their recorded engine. The current directory's .env is loaded when
 present; existing environment variables take precedence. ANTHROPIC_API_KEY or
 nimplex login supplies the Anthropic credential; OPENAI_API_KEY or nimplex login
 openai supplies the OpenAI one. Native providers need their own setup.

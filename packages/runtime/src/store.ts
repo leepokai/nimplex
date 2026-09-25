@@ -13,7 +13,8 @@ import type { ExecutorEvent, SandboxSessionState } from "@nimplex/core";
 
 /**
  * Execution engine that owns a session's authoritative history. Absent on records
- * written before schema version 3, which always used the default executor.
+ * written before schema version 3 and on legacy-executor sessions created before
+ * 2026-09-25; absent always means `pi-executor`.
  */
 export type SessionEngine = "pi-executor" | "pi-harness";
 

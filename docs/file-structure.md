@@ -49,8 +49,8 @@ packages/
     store.ts                    SQLite persistence and state-root OS ownership lock
     models.ts                   Local selection over the complete installed Pi provider/model catalog
     checkpoints.ts              Atomic model/tool/workspace commits
-    pi-executor.ts              Default engine: host-owned Pi Agent loop, tool composition and model projection
-    pi-harness-engine.ts        Opt-in AgentHarness engine: atomic commits, context operations, inbox, recovery
+    pi-executor.ts              Legacy engine: host-owned Pi Agent loop; shared tool composition and system prompt
+    pi-harness-engine.ts        Default AgentHarness engine: atomic commits, context operations, inbox, recovery
     pi-harness-local-host.ts    SQLite host port for the harness engine
     pi-harness-models.ts        Awaited dispatch intent inside Pi Models for assistant and summary requests
     pi-storage/                 SQLite Pi Storage with host transactions, journal, summary responses and conformance

@@ -53,12 +53,12 @@ There is no fork and no patched internals.
 | Extensions, skills, prompt templates, context files, the terminal editor | Tiered tool execution: pure shell in an in-process VFS, native commands in a disposable sandbox, files in a durable workspace that outlives both |
 | Session persistence through the public `AgentHarness` and its async `Storage` port | A SQLite implementation of that port sharing one transaction with nimplex's own events, accounting and workspace commits |
 
-Two engines exist while the migration completes. `pi-executor` is the current
-default: a host-owned Pi `Agent`, one turn at a time, nimplex-owned persistence.
-`pi-harness` (`NIMPLEX_ENGINE=pi-harness`) runs Pi's public `AgentHarness` on the
-same transaction; it is where Pi-native sessions, compaction, branching, steering,
-thinking levels, the full provider catalog and trust-gated extensions live.
-Existing sessions keep the engine they were created with. The row-by-row state of
+New sessions run on `pi-harness`: Pi's public `AgentHarness` on nimplex's SQLite
+transaction, with Pi-native sessions, compaction, branching, steering, thinking
+levels, the full provider catalog and trust-gated extensions. The earlier
+`pi-executor` (a host-owned Pi `Agent` that supports only Anthropic and Codex) stays
+as a legacy engine: sessions created on it keep it, and `NIMPLEX_ENGINE=pi-executor`
+still selects it for new sessions. Every session keeps the engine it was created with. The row-by-row state of
 Pi compatibility is tracked in the
 [Pi compatibility inventory](docs/product/2026-09-15-pi-compatibility.md); a
 command name alone is never counted as compatibility.
@@ -143,12 +143,11 @@ commands (`E2B_API_KEY`) or `--sandbox docker`; just-bash-only tasks create no
 sandbox at all. Local state lives in `~/.local/state/nimplex/<project-hash>`
 (`NIMPLEX_STATE_DIR` overrides it); one runtime owns a state root at a time.
 
-For the full installed Pi provider catalog, Pi-native sessions and extensions,
-create a harness session:
+Any installed Pi provider works; sign in and pass `provider/model`:
 
 ```bash
 nimplex login groq                         # delegates to Pi's OAuth or API-key flow
-NIMPLEX_ENGINE=pi-harness nimplex --model groq/llama-3.3-70b-versatile "Your task"
+nimplex --model groq/llama-3.3-70b-versatile "Your task"
 nimplex login codex                        # personal Codex subscription
 nimplex --model openai-codex/gpt-5.6-sol "Your task"
 ```
@@ -192,8 +191,9 @@ See [file structure](docs/file-structure.md) and [tech stack](docs/tech-stack.md
 
 ## What is not done yet
 
-- **Default engine.** `pi-executor` is still the default; the durable
-  `pi-harness` engine is opt-in per new session. Cutover is pending.
+- **Legacy sessions stay on the legacy engine.** Sessions created on
+  `pi-executor` before 2026-09-25 are not converted to `pi-harness`; they keep
+  Anthropic/Codex only and have no thinking levels or extensions.
 - **Sandbox usage is not metered.** `spent_usd` is model cost only; sandbox,
   storage and network usage are not recorded.
 - **Extensions are partially bridged.** Harness sessions load user extensions

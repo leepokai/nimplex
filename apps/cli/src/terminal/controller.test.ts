@@ -39,6 +39,7 @@ function fixture(hold = false) {
   const client = new NimplexRuntime({
     directory: join(dir, "state"),
     credential: () => ({ apiKey: "fake", baseUrl: null }),
+    engine: "pi-executor",
     executor,
   });
   cleanup.push(() => client.close());
@@ -149,7 +150,7 @@ describe("terminal runtime client", () => {
     expect(f.controller.session.turns).toHaveLength(0);
     expect(f.view.notice).toHaveBeenCalledWith(
       "Task needs attention",
-      expect.stringContaining("Pi harness engine"),
+      expect.stringContaining("legacy executor"),
     );
   });
   it("resumes the live session owner while work is backgrounded", async () => {

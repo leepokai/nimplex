@@ -16,10 +16,10 @@ export function stateDirectory(cwd = process.cwd()) {
     )
   );
 }
-/** Opt-in experimental engine for new sessions; existing sessions keep their recorded engine. */
+/** Engine for new sessions; `pi-executor` is a legacy opt-out. Existing sessions keep their recorded engine. */
 export function engineFromEnvironment(value = process.env.NIMPLEX_ENGINE) {
-  if (value === undefined || value === "" || value === "pi-executor") return "pi-executor" as const;
-  if (value === "pi-harness") return value;
+  if (value === undefined || value === "" || value === "pi-harness") return "pi-harness" as const;
+  if (value === "pi-executor") return value;
   throw new Error("NIMPLEX_ENGINE must be pi-executor or pi-harness.");
 }
 /** Pi's agent directory: user extensions load from here and project trust is recorded here. */

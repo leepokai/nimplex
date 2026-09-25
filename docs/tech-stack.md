@@ -24,19 +24,19 @@ events, model accounting, Pi storage records and workspace snapshots; a separate
 SQLite ownership database holds an OS lock for the runtime lifetime. See
 [the local design](product/2026-09-13-local-runtime.md).
 
-Two engines exist during migration. `pi-executor` is the default: a host-owned Pi
-`Agent`, one turn at a time, nimplex-owned persistence. `pi-harness`
-(`NIMPLEX_ENGINE=pi-harness`) runs Pi's public `AgentHarness` over the same SQLite
-transaction through an async `Storage` port; Pi-native sessions, compaction,
-branching, steering, thinking levels, the full provider catalog and trust-gated
-extensions live there. Existing sessions keep their recorded engine.
+`pi-harness` is the default engine for new sessions since 2026-09-25: Pi's public
+`AgentHarness` over nimplex's SQLite transaction through an async `Storage` port,
+with Pi-native sessions, compaction, branching, steering, thinking levels, the full
+provider catalog and trust-gated extensions. `pi-executor`, a host-owned Pi `Agent`
+with nimplex-owned persistence, remains as the legacy engine for sessions that
+recorded it and for `NIMPLEX_ENGINE=pi-executor`. Sessions keep their recorded engine.
 
 Harness sessions use the complete installed Pi built-in model catalog and provider
 adapters. Pi ModelRuntime resolves provider authentication, headers and cloud
 environment configuration; Anthropic/OpenAI API-key files and Codex OAuth remain
 compatible. There are no USD budgets. Pi supplies usage/cost estimates; call IDs
-and atomic commits preserve accounting and recovery. The default executor
-supports Anthropic and Codex.
+and atomic commits preserve accounting and recovery. The legacy executor
+supports Anthropic and Codex only.
 
 | Area | Choice | Rationale |
 |---|---|---|

@@ -77,6 +77,6 @@ export interface SessionSnapshot {
   turns: SessionTurn[];
   headRunId?: string;
   parentSessionId?: string;
-  /** Execution engine owning this session's history; absent means the default executor. */
+  /** Execution engine owning this session's history; absent on records written before 2026-09-25 means the legacy executor. */
   engine?: "pi-executor" | "pi-harness";
 }

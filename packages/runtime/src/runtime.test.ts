@@ -21,6 +21,10 @@ async function setup(script?: Parameters<typeof startFakeAnthropic>[1], executor
   const options = {
     directory: dir,
     credential: () => ({ apiKey: "fake-key", baseUrl: upstream.url }),
+    // This suite covers the legacy executor, which legacy sessions still run on; the
+    // default harness engine has pi-harness-engine.test.ts. An injected executor
+    // replaces the legacy loop.
+    engine: "pi-executor" as const,
     executor,
   };
   const runtime = new NimplexRuntime(options);
@@ -37,6 +41,29 @@ async function finish(runtime: NimplexRuntime, id: string) {
 }
 
 describe("local session authority", () => {
+  it("refuses an injected executor unless the legacy engine is selected", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nimplex-runtime-"));
+    cleanup.push(() => rmSync(dir, { recursive: true, force: true }));
+    const executor: RunExecutor = async (run) => ({
+      events: [],
+      files: run.files,
+      costUsd: 0,
+      stopReason: "stop",
+    });
+    const credential = () => ({ apiKey: "unused", baseUrl: null });
+    for (const engine of [undefined, "pi-harness"] as const)
+      expect(() => new NimplexRuntime({ directory: dir, credential, executor, engine })).toThrow(
+        'requires engine: "pi-executor"',
+      );
+    const legacy = new NimplexRuntime({
+      directory: dir,
+      credential,
+      executor,
+      engine: "pi-executor",
+    });
+    cleanup.push(() => legacy.close());
+    expect(legacy.createSession(dir).engine).toBe("pi-executor");
+  });
   it("runs the real Pi loop without API/Postgres, continues history, and isolates branches", async () => {
     const f = await setup({
       script: [{ name: "bash", input: { command: "echo FIRST > /workspace/hello.txt" } }],

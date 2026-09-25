@@ -56,6 +56,7 @@ describe.skipIf(backend !== "docker" && backend !== "e2b")("native session integ
     const runtime = new NimplexRuntime({
       directory,
       credential: () => ({ apiKey: "unused", baseUrl: null }),
+      engine: "pi-executor",
       executor,
     });
     try {

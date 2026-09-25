@@ -19,7 +19,7 @@ export class Sessions {
   createSession(
     cwd: string,
     title = "New conversation",
-    engine: SessionEngine = "pi-executor",
+    engine: SessionEngine = "pi-harness",
   ): SessionSnapshot {
     const session: StoredSession = {
       id: randomUUID(),
@@ -28,7 +28,7 @@ export class Sessions {
       updatedAt: new Date().toISOString(),
       turnIds: [],
       sandboxGeneration: 0,
-      ...(engine === "pi-executor" ? {} : { engine }),
+      engine,
     };
     this.store.transaction(() => this.store.saveSession(session));
     return this.getSession(session.id);
@@ -98,9 +98,24 @@ export class Sessions {
   }
   private forkPiSession(sourceId: string, branchId: string, turnId: string) {
     const inline = <T>(operation: () => T) => operation();
+    const lookup = this.store.db.prepare(
+      "SELECT data FROM pi_store_values WHERE tenant_id=? AND session_id=? AND namespace='pi.result' AND key=?",
+    );
+    // A branch inherits earlier turns without their Pi results; those stay in the scope of
+    // the ancestor that ran them, and fork-copied entries keep their identity. Ancestors
+    // cannot disappear: a branch inherits turns only from sessions that own turns, and
+    // RuntimeStore.deleteSession refuses any session with turns.
+    let ownerId: string | undefined = sourceId;
+    let result = lookup.get(PI_TENANT, ownerId, turnId);
+    while (!result && ownerId) {
+      ownerId = this.store.session(ownerId).parentSessionId;
+      if (ownerId) result = lookup.get(PI_TENANT, ownerId, turnId);
+    }
+    if (!result || !ownerId)
+      throw new Error("The selected turn has no settled Pi operation to branch from.");
     const from = new SqlitePiStorage(
       this.store.db,
-      { tenantId: PI_TENANT, sessionId: sourceId },
+      { tenantId: PI_TENANT, sessionId: ownerId },
       () => {},
       { transaction: inline },
     );
@@ -110,12 +125,6 @@ export class Sessions {
       () => {},
       { transaction: inline },
     );
-    const result = this.store.db
-      .prepare(
-        "SELECT data FROM pi_store_values WHERE tenant_id=? AND session_id=? AND namespace='pi.result' AND key=?",
-      )
-      .get(PI_TENANT, sourceId, turnId);
-    if (!result) throw new Error("The selected turn has no settled Pi operation to branch from.");
     const { tipId } = JSON.parse(String(result.data)) as { tipId: string | null };
     if (tipId === null) throw new Error("The selected turn left no conversation to branch from.");
     to.importForkSync(from, { scope: "branch", branch: PI_LANE, entryId: tipId, position: "at" });
@@ -174,11 +183,11 @@ export class Sessions {
     if (session.engine !== "pi-harness") {
       if (selected.provider !== "anthropic" && selected.provider !== "openai-codex")
         throw new Error(
-          "Additional Pi providers run on the Pi harness engine. Start a new session with NIMPLEX_ENGINE=pi-harness.",
+          "This session runs on the legacy executor, which supports only Anthropic and Codex models. Open a new session on the default Pi harness engine (unset NIMPLEX_ENGINE=pi-executor if it is set).",
         );
       if (request.thinking && request.thinking !== "off")
         throw new Error(
-          "Thinking levels run on the Pi harness engine. Start a new session with NIMPLEX_ENGINE=pi-harness.",
+          "This session runs on the legacy executor, which has no thinking levels. Open a new session on the default Pi harness engine (unset NIMPLEX_ENGINE=pi-executor if it is set).",
         );
     }
     const turn: StoredTurn = {

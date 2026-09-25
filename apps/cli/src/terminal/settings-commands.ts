@@ -72,7 +72,7 @@ export const settingsCommands: Command[] = [
   {
     name: "thinking",
     group: "Settings",
-    description: "Choose the Pi thinking level for new turns (Pi harness engine)",
+    description: "Choose the Pi thinking level for new turns",
     action: async (c, arg) => {
       const value =
         arg ||
@@ -92,7 +92,7 @@ export const settingsCommands: Command[] = [
       if (!parsed.success) throw new Error(`Choose one of ${THINKING_LEVELS.join(", ")}.`);
       if (parsed.data !== "off" && c.session.engine !== "pi-harness")
         throw new Error(
-          "Thinking runs on the Pi harness engine. Start nimplex with NIMPLEX_ENGINE=pi-harness and open a new session.",
+          "This session runs on the legacy executor, which has no thinking levels. Open a new session on the default Pi harness engine (unset NIMPLEX_ENGINE=pi-executor if it is set).",
         );
       if (parsed.data === "off") delete c.preferences.thinking;
       else c.preferences.thinking = parsed.data;

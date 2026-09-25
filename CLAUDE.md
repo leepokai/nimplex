@@ -105,9 +105,9 @@ composition or persistence. Event mirroring alone does not meet this requirement
 full Pi parity and durability must both be preserved.
 
 Implementation sequencing is proposed in
-`docs/product/2026-09-16-durable-pi-implementation-plan.md`. The opt-in
-`pi-harness` engine is the current bridge; do not switch the default engine
-before its remaining gates pass.
+`docs/product/2026-09-16-durable-pi-implementation-plan.md`. Kevin made
+`pi-harness` the default engine for new sessions on 2026-09-25; `pi-executor`
+remains only for sessions that recorded it and for `NIMPLEX_ENGINE=pi-executor`.
 
 Native/browser recovery must follow
 `docs/product/2026-09-16-environment-browser-recovery.md`: preserve supported

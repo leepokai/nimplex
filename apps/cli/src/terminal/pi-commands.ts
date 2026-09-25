@@ -54,7 +54,7 @@ export const piCommands: Command[] = [
         "Extensions",
         [
           `Project .pi/extensions: ${summary.projectTrusted ? "trusted" : "not trusted (/trust)"}`,
-          `Engine: ${c.session.engine === "pi-harness" ? "Pi harness" : "legacy executor (extensions do not run; start with NIMPLEX_ENGINE=pi-harness)"}`,
+          `Engine: ${c.session.engine === "pi-harness" ? "Pi harness" : "legacy executor (extensions do not run; open a new session without NIMPLEX_ENGINE=pi-executor)"}`,
           ...summary.extensions.map(
             (extension) =>
               `• ${extension.path}${extension.tools.length ? ` · tools: ${extension.tools.join(", ")}` : ""}${extension.events.length ? ` · events: ${extension.events.join(", ")}` : ""}`,

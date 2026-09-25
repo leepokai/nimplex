@@ -43,7 +43,7 @@ export interface RuntimeOptions {
   ) => ExecutorRunContext["credential"] | Promise<ExecutorRunContext["credential"]>;
   /** Engine for sessions created by this runtime; existing sessions keep their own. */
   engine?: SessionEngine;
-  /** Injectable only at composition time, for deterministic integration tests. */
+  /** Replaces the legacy `pi-executor` loop; injectable only at composition time, for deterministic tests. */
   executor?: RunExecutor;
   /** Test seam: awaited after each harness-engine commit before execution continues. */
   afterCommit?: (turnId: string, events: ExecutorEvent[]) => Promise<void> | void;
@@ -67,6 +67,10 @@ export class NimplexRuntime {
   private closing = false;
   private closePromise?: Promise<void>;
   constructor(private readonly options: RuntimeOptions) {
+    // An injected executor replaces only the legacy loop; with the harness default it
+    // would be silently bypassed by real provider calls.
+    if (options.executor && options.engine !== "pi-executor")
+      throw new Error('An injected executor requires engine: "pi-executor".');
     this.store = new RuntimeStore(options.directory);
     this.sessions = new Sessions(this.store);
     // Recovery never silently spends money. The user explicitly resumes interrupted turns.
@@ -92,7 +96,7 @@ export class NimplexRuntime {
   private readonly sessions: Sessions;
   createSession(cwd: string, title?: string): SessionSnapshot {
     this.assertOpen();
-    return this.sessions.createSession(cwd, title, this.options.engine ?? "pi-executor");
+    return this.sessions.createSession(cwd, title, this.options.engine ?? "pi-harness");
   }
   getSession(id: string): SessionSnapshot {
     return this.sessions.getSession(id);

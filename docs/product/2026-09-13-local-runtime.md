@@ -271,3 +271,31 @@ from estimated charges and unavailable prices, and preserve durable deduplicatio
 across retries, cancellation and recovery. Missing sandbox prices must not appear
 as zero-cost usage. Model and sandbox subtotals must remain distinguishable when
 reporting combined usage.
+
+## Harness engine becomes the default (2026-09-25)
+
+Kevin made `pi-harness` the default engine for new sessions. The runtime default
+(`RuntimeOptions.engine`) and the CLI default are both `pi-harness`;
+`NIMPLEX_ENGINE=pi-executor` still creates legacy-executor sessions. New sessions
+always record their engine. A session record without an `engine` field was written
+by the legacy executor (schema version 2, or before this change) and keeps running on
+it; the recorded engine still wins over the environment on resume. No session is
+converted between engines, so the change is reversible: restoring the old default
+leaves harness-owned sessions on the harness. Legacy-executor sessions keep their
+Anthropic/Codex-only model set, and their refusals now tell the user to open a new
+session instead of setting an environment variable.
+
+Covered by the engine-isolation case in `pi-harness-engine.test.ts` (an unmarked
+legacy record runs on the executor beside default harness sessions), the default and
+legacy-override cases in `apps/cli/src/cli.test.ts`, and the legacy refusals in
+`providers.test.ts` and `controller.test.ts`. Tests that inject a `RunExecutor`
+select `pi-executor` explicitly, because the injected executor replaces only the
+legacy loop.
+
+The same day's end-to-end run found that `/rewind` or `/fork` on a branch failed
+for turns the branch inherited ("no settled Pi operation"): a branch copies its
+source's turn list, but each turn's Pi result stays in the scope of the session
+that ran it. Branching now resolves the selected turn through the parent chain and
+forks from the owning scope; fork-copied entries keep their identity, so the path is
+the same. Covered by "branches a branch from a turn it inherited from its source" in
+`pi-harness-engine.test.ts`.

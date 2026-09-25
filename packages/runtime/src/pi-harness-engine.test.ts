@@ -336,6 +336,38 @@ describe("Pi harness engine", () => {
     await finish(slow.runtime, e.runId);
   });
 
+  it("branches a branch from a turn it inherited from its source", async () => {
+    const f = await setup();
+    const session = f.runtime.createSession(f.dir);
+    const a = await f.runtime.startTurn(session.id, request("Turn one"));
+    expect((await finish(f.runtime, a.runId)).status).toBe("completed");
+    const b = await f.runtime.startTurn(session.id, request("Turn two"));
+    expect((await finish(f.runtime, b.runId)).status).toBe("completed");
+    // A fresh branch owns no Pi results yet: both inherited turns live in the source's scope.
+    const branch = f.runtime.forkSession(session.id);
+    const again = f.runtime.forkSession(branch.id);
+    expect(again.turns.map((t) => t.runId)).toEqual([a.runId, b.runId]);
+    const c = await f.runtime.startTurn(branch.id, request("Branch turn"));
+    expect((await finish(f.runtime, c.runId)).status).toBe("completed");
+    // Rewind the branch to its first, inherited turn.
+    const rewound = f.runtime.forkSession(branch.id, a.runId);
+    expect(rewound.parentSessionId).toBe(branch.id);
+    expect(rewound.turns.map((t) => t.runId)).toEqual([a.runId]);
+    const d = await f.runtime.startTurn(rewound.id, request("After rewind"));
+    expect((await finish(f.runtime, d.runId)).status).toBe("completed");
+    const sent = JSON.stringify(f.upstream.state.messagesCalls.at(-1)?.body.messages);
+    expect(sent).toContain("Turn one");
+    expect(sent).toContain("After rewind");
+    expect(sent).not.toContain("Turn two");
+    expect(sent).not.toContain("Branch turn");
+    // The second-level branch from the fresh branch continues the full inherited path.
+    const e = await f.runtime.startTurn(again.id, request("Second level"));
+    expect((await finish(f.runtime, e.runId)).status).toBe("completed");
+    const nested = JSON.stringify(f.upstream.state.messagesCalls.at(-1)?.body.messages);
+    expect(nested).toContain("Turn two");
+    expect(nested).not.toContain("Branch turn");
+  });
+
   it("creates the branch's Pi scope and host record atomically", async () => {
     const f = await setup();
     const session = f.runtime.createSession(f.dir);
@@ -695,24 +727,32 @@ describe("Pi harness engine", () => {
     const legacy = new NimplexRuntime({ ...f.options, engine: "pi-executor" });
     cleanup.push(() => legacy.close());
     const oldSession = legacy.createSession(f.dir);
-    expect(oldSession.engine).toBeUndefined();
+    expect(oldSession.engine).toBe("pi-executor");
     const a = await legacy.startTurn(oldSession.id, request("Legacy"));
     expect((await finish(legacy, a.runId)).status).toBe("completed");
     await legacy.close();
+    const db = new DatabaseSync(join(f.dir, "runtime.sqlite"));
+    cleanup.push(() => db.close());
+    // Legacy-executor records written before the harness became the default carry no engine.
+    db.prepare("UPDATE sessions SET data=json_remove(data,'$.engine') WHERE id=?").run(
+      oldSession.id,
+    );
     const mixed = new NimplexRuntime(f.options);
     cleanup.push(() => mixed.close());
+    expect(mixed.getSession(oldSession.id).engine).toBeUndefined();
     const first = mixed.createSession(f.dir);
     const second = mixed.createSession(f.dir);
+    expect(first.engine).toBe("pi-harness");
     const [b, c] = await Promise.all([
       mixed.startTurn(first.id, request("One")),
       mixed.startTurn(second.id, request("Two")),
     ]);
     expect((await finish(mixed, b.runId)).status).toBe("completed");
     expect((await finish(mixed, c.runId)).status).toBe("completed");
-    expect(mixed.getSession(oldSession.id).engine).toBeUndefined();
-    expect(mixed.getSession(oldSession.id).turns).toHaveLength(1);
-    const db = new DatabaseSync(join(f.dir, "runtime.sqlite"));
-    cleanup.push(() => db.close());
+    // The unmarked record keeps running on the legacy executor under the new default.
+    const d = await mixed.startTurn(oldSession.id, request("Legacy again"));
+    expect((await finish(mixed, d.runId)).status).toBe("completed");
+    expect(mixed.getSession(oldSession.id).turns).toHaveLength(2);
     expect(db.prepare("PRAGMA user_version").get()?.user_version).toBe(4);
     const scopes = db
       .prepare("SELECT session_id FROM pi_store_sessions ORDER BY session_id")

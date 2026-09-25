@@ -179,13 +179,13 @@ it("refuses OpenAI models and thinking levels on the legacy executor before any 
   const session = f.client.createSession(f.directory);
   await expect(
     f.client.startTurn(session.id, request({ model: "openai/gpt-5.4-mini" })),
-  ).rejects.toThrow("Additional Pi providers run on the Pi harness engine");
+  ).rejects.toThrow("supports only Anthropic and Codex models");
   await expect(f.client.startTurn(session.id, request({ thinking: "low" }))).rejects.toThrow(
-    "Thinking levels run on the Pi harness engine",
+    "legacy executor, which has no thinking levels",
   );
   await expect(
     f.client.startTurn(session.id, request({ model: "openai/gpt-4o-2024-05-13" })),
-  ).rejects.toThrow("Additional Pi providers run on the Pi harness engine");
+  ).rejects.toThrow("supports only Anthropic and Codex models");
   expect(f.client.getSession(session.id).turns).toHaveLength(0);
   expect(calls).toHaveLength(0);
   expect(upstream.state.messagesCalls).toHaveLength(0);
