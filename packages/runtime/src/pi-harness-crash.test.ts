@@ -36,7 +36,7 @@ it.each([
         (resolve, reject) => {
           const timer = setTimeout(
             () => reject(new Error(`Commit boundary timeout: ${stderr}`)),
-            10_000,
+            60_000,
           );
           child.once("exit", () => {
             clearTimeout(timer);

@@ -25,7 +25,7 @@ describeSandboxConformance(
   () =>
     new ComputeSdkSandboxProvider({
       backendId: "daytona",
-      unavailableReason: () => (process.env.DAYTONA_API_KEY ? null : "缺 DAYTONA_API_KEY"),
+      unavailableReason: () => (process.env.DAYTONA_API_KEY ? null : "DAYTONA_API_KEY is not set"),
       backend: () => daytona({ apiKey: process.env.DAYTONA_API_KEY }),
     }),
   { timeoutMs: 180_000 },
@@ -38,7 +38,7 @@ describeSandboxConformance(
       unavailableReason: () =>
         process.env.VERCEL_TOKEN && process.env.VERCEL_TEAM_ID && process.env.VERCEL_PROJECT_ID
           ? null
-          : "缺 VERCEL_TOKEN / VERCEL_TEAM_ID / VERCEL_PROJECT_ID",
+          : "VERCEL_TOKEN, VERCEL_TEAM_ID and VERCEL_PROJECT_ID are not all set",
       backend: () =>
         vercel({
           token: process.env.VERCEL_TOKEN,

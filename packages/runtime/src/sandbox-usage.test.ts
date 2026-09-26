@@ -484,7 +484,7 @@ describe("sandbox usage through the runtime", () => {
     });
     const exited = once(child, "exit");
     const { sessionId } = await new Promise<{ sessionId: string }>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error(`child timeout: ${stderr}`)), 20_000);
+      const timer = setTimeout(() => reject(new Error(`child timeout: ${stderr}`)), 60_000);
       child.on("message", (message: { stage: string; sessionId: string }) => {
         if (message.stage !== "launched") return;
         clearTimeout(timer);

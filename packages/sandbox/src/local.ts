@@ -32,7 +32,7 @@ export class LocalSandboxSession implements SandboxSession {
 
   private get workspaceRoot(): string {
     const root = (this.state.providerState as LocalProviderState).workspaceRoot;
-    if (typeof root !== "string") throw new Error("local sandbox state 缺少 workspaceRoot");
+    if (typeof root !== "string") throw new Error("local sandbox state is missing workspaceRoot");
     return root;
   }
 
@@ -45,7 +45,7 @@ export class LocalSandboxSession implements SandboxSession {
       : path;
     const full = resolve(this.workspaceRoot, relative);
     if (full !== this.workspaceRoot && !full.startsWith(`${this.workspaceRoot}/`)) {
-      throw new Error(`路徑逃出工作區：${path}`);
+      throw new Error(`Path escapes the workspace: ${path}`);
     }
     return full;
   }
@@ -88,7 +88,7 @@ export class LocalSandboxProvider implements SandboxProvider {
 
   unavailableReason(): string | null {
     if (process.env.NIMPLEX_ALLOW_LOCAL_SANDBOX === "1") return null;
-    return "local sandbox 沒有隔離，預設關閉；開發環境請設 NIMPLEX_ALLOW_LOCAL_SANDBOX=1";
+    return "local sandbox has no isolation and is off by default; set NIMPLEX_ALLOW_LOCAL_SANDBOX=1 for development";
   }
 
   async create(args: SandboxCreateArgs): Promise<SandboxSession> {

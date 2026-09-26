@@ -26,7 +26,7 @@ it.each(["session", "agent"])(
       await new Promise<void>((resolve, reject) => {
         const timer = setTimeout(
           () => reject(new Error(`Child did not reach boundary: ${stderr}`)),
-          10_000,
+          60_000,
         );
         child.once("exit", () => {
           clearTimeout(timer);

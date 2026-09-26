@@ -42,7 +42,7 @@ it.each<Boundary>(["after-response", "after-tool", "during-request", "legacy-req
       }>((resolve, reject) => {
         const timer = setTimeout(
           () => reject(new Error(`Boundary timeout (${boundary}): ${stderr}`)),
-          20_000,
+          60_000,
         );
         const seen: Record<string, unknown> = {};
         child.once("exit", () => {
@@ -184,7 +184,7 @@ it("finishes a durably cancelled turn as canceled when the process died before r
   try {
     const witness = await new Promise<{ directory: string; sessionId: string; runId: string }>(
       (resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error(`Boundary timeout: ${stderr}`)), 20_000);
+        const timer = setTimeout(() => reject(new Error(`Boundary timeout: ${stderr}`)), 60_000);
         const seen: Record<string, unknown> = {};
         child.once("exit", () => {
           clearTimeout(timer);

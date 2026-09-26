@@ -36,7 +36,7 @@ export class DockerSandboxSession implements SandboxSession {
 
   private get containerId(): string {
     const id = (this.state.providerState as DockerProviderState).containerId;
-    if (typeof id !== "string") throw new Error("docker sandbox state 缺少 containerId");
+    if (typeof id !== "string") throw new Error("docker sandbox state is missing containerId");
     return id;
   }
 
@@ -66,13 +66,13 @@ export class DockerSandboxSession implements SandboxSession {
       stdin: contents,
     });
     if (result.exitCode !== 0) {
-      throw new Error(`寫入 ${path} 失敗：${result.stderr.trim()}`);
+      throw new Error(`Writing ${path} failed: ${result.stderr.trim()}`);
     }
   }
 
   async readFile(path: string): Promise<string> {
     const result = await this.exec({ cmd: `cat ${shellQuote(path)}` });
-    if (result.exitCode !== 0) throw new Error(`讀取 ${path} 失敗：${result.stderr.trim()}`);
+    if (result.exitCode !== 0) throw new Error(`Reading ${path} failed: ${result.stderr.trim()}`);
     return result.stdout;
   }
 
@@ -85,7 +85,9 @@ export class DockerSandboxProvider implements SandboxProvider {
   readonly backendId = DOCKER_BACKEND_ID;
 
   async unavailableReason(): Promise<string | null> {
-    return (await probe("docker", ["info"])) ? null : "docker daemon 沒有回應（docker info 失敗）";
+    return (await probe("docker", ["info"]))
+      ? null
+      : "docker daemon is not responding (docker info failed)";
   }
 
   async create(args: SandboxCreateArgs): Promise<SandboxSession> {
@@ -111,7 +113,7 @@ export class DockerSandboxProvider implements SandboxProvider {
 
     const created = await spawnCollect("docker", runArgs, { timeoutMs: 180_000 });
     if (created.exitCode !== 0) {
-      throw new Error(`docker run 失敗：${created.stderr.trim() || created.stdout.trim()}`);
+      throw new Error(`docker run failed: ${created.stderr.trim() || created.stdout.trim()}`);
     }
     const containerId = created.stdout.trim();
 

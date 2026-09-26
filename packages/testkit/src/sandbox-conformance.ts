@@ -46,7 +46,7 @@ export function describeSandboxConformance(
     beforeAll(async () => {
       provider = factory();
       unavailable = await provider.unavailableReason();
-      if (unavailable) console.log(`  [conformance:${label}] 跳過：${unavailable}`);
+      if (unavailable) console.log(`  [conformance:${label}] skipped: ${unavailable}`);
     }, timeout);
 
     // Clean up sandboxes regardless of test outcome.

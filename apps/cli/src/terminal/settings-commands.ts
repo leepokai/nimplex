@@ -180,7 +180,9 @@ export const settingsCommands: Command[] = [
           "Execution: local runtime (no API or worker)",
           `Credential: ${credential}`,
           `Models: ${c.client.models().length}`,
-          ...providers.map((p) => `${p.id}: ${p.available ? "available" : "not configured"}`),
+          ...providers.map(
+            (p) => `${p.id}: ${p.available ? "available" : `not configured (${p.reason})`}`,
+          ),
         ].join("\n"),
       );
     },

@@ -526,8 +526,13 @@ export class NimplexRuntime {
     return Promise.all(
       listSandboxProviders()
         .filter((p) => ["docker", "e2b"].includes(p.backendId))
-        .map(async (p) => ({ id: p.backendId, available: !(await p.unavailableReason()) })),
+        .map((p) => this.sandboxStatus(p.backendId)),
     );
+  }
+  /** Probes one provider only; the Docker probe can take seconds when its daemon is down. */
+  async sandboxStatus(id: string) {
+    const reason = await getSandboxProvider(id).unavailableReason();
+    return { id, available: !reason, reason };
   }
   close(): Promise<void> {
     if (this.closePromise) return this.closePromise;

@@ -1,4 +1,5 @@
 import type { readOptions } from "../config.ts";
+import { sandboxWarning } from "../display.ts";
 import { openRuntime } from "../local-runtime.ts";
 import { Controller, errorMessage } from "./controller.ts";
 import { loadResources } from "./resources.ts";
@@ -38,6 +39,19 @@ export async function startTerminal(options: ReturnType<typeof readOptions>) {
         `${errorMessage(error)}\nFix the resource file and run /reload. Built-in commands remain available.`,
       );
     }
+    // Advisory only: a failed probe must not block the terminal.
+    void Promise.resolve()
+      .then(() => client.sandboxProviders())
+      .then((providers) => {
+        const selected = providers.find((p) => p.id === preferences.sandbox);
+        if (!selected || selected.available) return;
+        const other = providers.find((p) => p.id !== selected.id && p.available);
+        view.notice(
+          "Sandbox not configured",
+          sandboxWarning(selected.id, selected.reason ?? "not configured", other?.id),
+        );
+      })
+      .catch(() => undefined);
     if (options.resume) await controller.resume(client.getSession(options.resume));
     await view.done;
   } finally {

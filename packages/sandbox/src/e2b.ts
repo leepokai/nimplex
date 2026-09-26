@@ -144,7 +144,7 @@ export class E2bSandboxProvider implements SandboxProvider {
   }
 
   unavailableReason(): string | null {
-    if (!apiKey()) return "缺 E2B_API_KEY（e2b.dev 取得後設進環境變數）";
+    if (!apiKey()) return "E2B_API_KEY is not set (create one at e2b.dev and export it)";
     try {
       defaultLifetimeMs();
     } catch (error) {
@@ -232,6 +232,6 @@ export class E2bSandboxProvider implements SandboxProvider {
 
 function sandboxIdOf(state: SandboxSessionState): string {
   const id = (state.providerState as E2bProviderState).sandboxId;
-  if (typeof id !== "string") throw new Error("e2b sandbox state 缺少 sandboxId");
+  if (typeof id !== "string") throw new Error("e2b sandbox state is missing sandboxId");
   return id;
 }

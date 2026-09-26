@@ -201,7 +201,8 @@ export class ComputeSdkSandboxProvider implements SandboxProvider {
 
   async resume(state: SandboxSessionState): Promise<SandboxSession> {
     const sandbox = await this.backend().sandbox.getById(sandboxIdOf(state));
-    if (!sandbox) throw new Error(`${this.backendId} 沙箱 ${sandboxIdOf(state)} 已不存在`);
+    if (!sandbox)
+      throw new Error(`${this.backendId} sandbox ${sandboxIdOf(state)} no longer exists`);
     return new ComputeSdkSandboxSession(state, sandbox);
   }
 
@@ -211,13 +212,13 @@ export class ComputeSdkSandboxProvider implements SandboxProvider {
       .sandbox.destroy(sandboxIdOf(state))
       .catch((err: unknown) => {
         const message = err instanceof Error ? err.message : String(err);
-        if (!/not found|404|does not exist|已不存在/i.test(message)) throw err;
+        if (!/not found|404|does not exist|no longer exists/i.test(message)) throw err;
       });
   }
 }
 
 function sandboxIdOf(state: SandboxSessionState): string {
   const id = (state.providerState as ComputeSdkProviderState).sandboxId;
-  if (typeof id !== "string") throw new Error("computesdk sandbox state 缺少 sandboxId");
+  if (typeof id !== "string") throw new Error("computesdk sandbox state is missing sandboxId");
   return id;
 }

@@ -1,6 +1,6 @@
 import { createInterface } from "node:readline/promises";
 import { HELP, readOptions } from "./config.ts";
-import { eventText, runText, sandboxEstimate } from "./display.ts";
+import { eventText, runText, sandboxEstimate, sandboxWarning } from "./display.ts";
 import { openRuntime } from "./local-runtime.ts";
 import { attachmentsFromPrompt, projectInstructions } from "./terminal/local-io.ts";
 
@@ -68,6 +68,13 @@ export async function main() {
       ? runtime.getSession(options.resume)
       : runtime.createSession(process.cwd());
     console.log(`Session: ${session.id}`);
+    // Resuming without a new task reruns the session's own sandbox, not the flag's default.
+    const sandbox =
+      !prompt && options.resume
+        ? (session.turns.at(-1)?.result?.sandbox.provider ?? options.sandbox)
+        : options.sandbox;
+    const warning = await unavailableSandboxWarning(runtime, sandbox);
+    if (warning) console.error(`Warning: ${warning}`);
     if (!prompt && options.resume) {
       const result = await runtime.resumeTurn(session.id);
       await watch(result.runId, session.id);
@@ -116,4 +123,17 @@ export async function main() {
     process.off("SIGTERM", terminate);
     await runtime.close();
   }
+}
+
+/** Probes the selected sandbox, and the other one only when the selected one is unusable. */
+async function unavailableSandboxWarning(
+  runtime: ReturnType<typeof openRuntime>,
+  sandbox: string,
+): Promise<string | null> {
+  if (sandbox !== "docker" && sandbox !== "e2b") return null;
+  const status = await runtime.sandboxStatus(sandbox);
+  if (status.available) return null;
+  const other = sandbox === "e2b" ? "docker" : "e2b";
+  const alternative = (await runtime.sandboxStatus(other)).available ? other : undefined;
+  return sandboxWarning(sandbox, status.reason ?? "not configured", alternative);
 }

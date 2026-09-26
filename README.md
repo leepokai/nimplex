@@ -133,7 +133,7 @@ pnpm install
 (cd apps/cli && pnpm link --global)       # puts `nimplex` on PATH; `pnpm setup` first if asked
 
 nimplex                                   # interactive
-nimplex "Create /workspace/hello.js and run node hello.js to verify it"
+nimplex --sandbox docker "Create /workspace/hello.js and run node hello.js to verify it"
 printf 'Inspect the workspace' | nimplex
 nimplex --resume SESSION_ID "Continue this task"
 nimplex --resume SESSION_ID --request-id task-001 "Run this task once"
@@ -141,8 +141,10 @@ nimplex --resume SESSION_ID --request-id task-001 "Run this task once"
 
 Set `ANTHROPIC_API_KEY`, run `nimplex login`, or keep the credential in the
 project's `.env` (see `.env.example`). Defaults are Haiku 4.5 and E2B for native
-commands (`E2B_API_KEY`) or `--sandbox docker`; just-bash-only tasks create no
-sandbox at all. Local state lives in `~/.local/state/nimplex/<project-hash>`
+commands (`E2B_API_KEY`), or pass `--sandbox docker` to use a local Docker daemon
+instead; just-bash-only tasks create no sandbox at all. When the selected sandbox
+is not configured, nimplex says so at startup and native commands fail with the
+same message. Local state lives in `~/.local/state/nimplex/<project-hash>`
 (`NIMPLEX_STATE_DIR` overrides it); one runtime owns a state root at a time.
 
 Any installed Pi provider works; sign in and pass `provider/model`:

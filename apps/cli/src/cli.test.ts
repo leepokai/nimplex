@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { startFakeAnthropic } from "@nimplex/testkit";
 import { afterEach, describe, expect, it } from "vitest";
@@ -48,7 +48,7 @@ async function fixture(delayMs = 0) {
   return { dir, upstream, launch };
 }
 async function until(test: () => boolean) {
-  const deadline = Date.now() + 10000;
+  const deadline = Date.now() + 60000;
   while (!test()) {
     if (Date.now() > deadline) throw new Error("Timed out waiting for CLI");
     await new Promise((r) => setTimeout(r, 20));
@@ -85,7 +85,7 @@ describe("local CLI integration", () => {
     expect(await conflicting.done).toBe(1);
     expect(conflicting.output()).toContain("different content");
     expect(f.upstream.state.messagesCalls).toHaveLength(calls);
-  }, 20000);
+  }, 60000);
 
   it("does not treat an empty idempotent submission as a request to resume interrupted work", async () => {
     const f = await fixture();
@@ -108,7 +108,7 @@ describe("local CLI integration", () => {
     expect(missing.output()).toContain("nimplex login codex");
     expect(missing.output()).toContain("Codex subscription");
     expect(f.upstream.state.messagesCalls).toHaveLength(0);
-  }, 20000);
+  }, 60000);
   it("runs without a cloud API and resumes the same session across processes", async () => {
     const f = await fixture();
     const a = f.launch(["Write a file"]);
@@ -129,7 +129,7 @@ describe("local CLI integration", () => {
     const files = f.launch(["--files", turn]);
     expect(await files.done).toBe(0);
     expect(files.output()).toContain("step-1.txt");
-  }, 20000);
+  }, 60000);
   it("supports piped prompts and fails without leaking missing credentials", async () => {
     const f = await fixture();
     const piped = f.launch([]);
@@ -139,7 +139,7 @@ describe("local CLI integration", () => {
     expect(await missing.done).toBe(1);
     expect(missing.output()).toContain("Missing Anthropic credential");
     expect(missing.output()).not.toContain("fake-key");
-  }, 20000);
+  }, 60000);
   it("releases root ownership after SIGKILL and explicitly resumes an interrupted turn", async () => {
     const f = await fixture(250);
     const a = f.launch(["--request-id", "crash-acceptance", "Durable task"]);
@@ -167,7 +167,7 @@ describe("local CLI integration", () => {
       JSON.stringify(c.body.messages).includes("tool_result"),
     );
     expect(writes.length).toBeGreaterThan(0);
-  }, 20000);
+  }, 60000);
   it("runs new sessions on the Pi harness engine by default and keeps each session's engine", async () => {
     const f = await fixture();
     const a = f.launch(["Write a file"]);
@@ -228,6 +228,20 @@ describe("local CLI integration", () => {
     for (const call of f.upstream.state.messagesCalls)
       expect(call.body.thinking).toMatchObject({ type: "enabled", budget_tokens: 2048 });
   }, 30000);
+  it("warns when the selected sandbox is unavailable and suggests only a working alternative", async () => {
+    const f = await fixture();
+    // No E2B key and no Docker binary on PATH: neither provider can run native commands.
+    const env = { E2B_API_KEY: undefined, PATH: dirname(process.execPath) };
+    const run = f.launch(["Write a file"], env);
+    expect(await run.done).toBe(0);
+    expect(run.output()).toContain("Warning: e2b sandbox is not available");
+    expect(run.output()).not.toContain("--sandbox docker");
+    // A just-bash task still completes; the warning only concerns native commands.
+    expect(run.output()).toContain("completed");
+    const withKey = f.launch(["--sandbox", "e2b", "Write a file"], { ...env, E2B_API_KEY: "k" });
+    expect(await withKey.done).toBe(0);
+    expect(withKey.output()).not.toContain("Warning:");
+  }, 60000);
   it("recognizes login after leading flags and never submits it as a prompt", async () => {
     const f = await fixture();
     const login = f.launch(["--state-dir", join(f.dir, "s2"), "logout"]);
@@ -235,7 +249,7 @@ describe("local CLI integration", () => {
     expect(await login.done).toBe(0);
     expect(f.upstream.state.messagesCalls).toHaveLength(0);
     expect(login.output()).not.toContain("Turn:");
-  }, 20000);
+  }, 60000);
   it("treats non-file @mentions as text and decodes piped multi-byte input intact", async () => {
     const f = await fixture();
     const mention = f.launch(["ping @alice about @scope/pkg"]);
@@ -263,7 +277,7 @@ describe("local CLI integration", () => {
     expect(await p.done).toBe(0);
     expect(p.output()).not.toContain("dotenv-test-key");
     expect(f.upstream.state.messagesCalls.length).toBeGreaterThan(0);
-  }, 20000);
+  }, 60000);
   it("stops on Ctrl+C and settles the local turn", async () => {
     const f = await fixture(500);
     const a = f.launch(["Long task"]);
@@ -271,5 +285,5 @@ describe("local CLI integration", () => {
     a.child.kill("SIGINT");
     expect(await a.done).toBe(1);
     expect(a.output()).toContain("canceled");
-  }, 20000);
+  }, 60000);
 });

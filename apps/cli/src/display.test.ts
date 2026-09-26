@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sandboxEstimate, sandboxIntervalText } from "./display.ts";
+import { sandboxEstimate, sandboxIntervalText, sandboxWarning } from "./display.ts";
 
 const summary = { usd: 0.000279, seconds: 6, unpriced_seconds: 0, uncertain: false, free: false };
 
@@ -73,5 +73,16 @@ describe("sandbox interval breakdown", () => {
     expect(
       sandboxIntervalText({ ...record, cost_usd: null, uncertain: true, reason: "missing" }),
     ).toBe("  e2b missing 3.7s unpriced (unobserved)");
+  });
+});
+
+describe("sandbox warning", () => {
+  it("suggests another sandbox only when it is available", () => {
+    expect(sandboxWarning("e2b", "E2B_API_KEY is not set", "docker")).toBe(
+      "e2b sandbox is not available: E2B_API_KEY is not set. Native commands will fail; pass --sandbox docker to use docker instead.",
+    );
+    expect(sandboxWarning("docker", "docker is not running")).toBe(
+      "docker sandbox is not available: docker is not running. Native commands will fail; configure it before running commands that need node, git or package installs.",
+    );
   });
 });

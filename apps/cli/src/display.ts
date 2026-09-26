@@ -49,6 +49,17 @@ export function eventText(event: RunEvent, outputLimit = 2000): string | undefin
 }
 
 /**
+ * Warning for a sandbox that cannot run native commands. `alternative` is another provider
+ * that is available now; it is only suggested when it would actually work.
+ */
+export function sandboxWarning(sandbox: string, reason: string, alternative?: string): string {
+  const hint = alternative
+    ? `pass --sandbox ${alternative} to use ${alternative} instead`
+    : "configure it before running commands that need node, git or package installs";
+  return `${sandbox} sandbox is not available: ${reason}. Native commands will fail; ${hint}.`;
+}
+
+/**
  * The one wording for estimated sandbox cost. `short` fits the status line; both keep the
  * estimate label and flag time that was unobserved, unpriced or is still running.
  */
